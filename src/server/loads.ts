@@ -73,14 +73,17 @@ interface Subject {
 }
 
 function describe(catalog: Catalog, id: string): Subject {
-  const fragment = (fid: string) => {
-    const found = catalog.fragments.find(f => f.id === fid)
-    if (!found) throw new ModelError(`No model file the studio read declares the fragment ${fid}.`)
-    return found
-  }
   const view = catalog.views.find(v => v.id === id)
-  if (view) return { view, root: fragment(view.root.fragment) }
-  return { root: fragment(id) }
+  return { ...(view ? { view } : {}), root: nodeFragment(catalog, id) }
+}
+
+/** The fragment of the nodes an id names: the fragment itself, or a view's root. */
+function nodeFragment(catalog: Catalog, id: string): Fragment {
+  const view = catalog.views.find(v => v.id === id)
+  const fragmentId = view ? view.root.fragment : id
+  const found = catalog.fragments.find(f => f.id === fragmentId)
+  if (!found) throw new ModelError(`No model file the studio read declares the fragment ${fragmentId}.`)
+  return found
 }
 
 function propertyOf(fragment: Fragment, name: string): Property {
@@ -114,10 +117,7 @@ function reachedNode(catalog: Catalog, relationship: Relationship): { fragment: 
   const relationshipFragment = catalog.relationshipFragments.find(r => r.id === relationship.target)
   const nodeOf = (id: string, through: (node: any) => any) => {
     const view = catalog.views.find(v => v.id === id)
-    const fragmentId = view ? view.root.fragment : id
-    const fragment = catalog.fragments.find(f => f.id === fragmentId)
-    if (!fragment) throw new ModelError(`No model file the studio read declares ${fragmentId}.`)
-    return { fragment, ref: (node: any) => (view ? through(node)[view.root.field] : through(node)) }
+    return { fragment: nodeFragment(catalog, id), ref: (node: any) => (view ? through(node)[view.root.field] : through(node)) }
   }
   return relationshipFragment
     ? nodeOf(relationshipFragment.target.fragment, node => node[relationshipFragment.target.field])
@@ -170,12 +170,27 @@ export function typed(property: Property, value: unknown, bolt: boolean): unknow
       const [, y, mo, d, h, mi, s] = match.map(part => (part === undefined ? 0 : Number(part)))
       return bolt ? new neo4j.types.LocalDateTime(y!, mo!, d!, h!, mi!, s!, 0) : text
     }
+    case 'localTime':
+    case 'time': {
+      const zoned = property.type === 'time'
+      const match = /^(\d{2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:\d{2})?$/.exec(text)
+      if (!match || (zoned && !match[4]) || (!zoned && match[4])) {
+        throw refuse(zoned ? 'a time with its offset, such as 09:30Z or 09:30+02:00' : 'a local time, such as 09:30')
+      }
+      if (!bolt) return text
+      const [h, mi, s] = [match[1], match[2], match[3]].map(part => (part === undefined ? 0 : Number(part)))
+      if (!zoned) return new neo4j.types.LocalTime(h!, mi!, s!, 0)
+      const offset = match[4] === 'Z' ? 0 : (match[4]!.startsWith('-') ? -1 : 1) * (Number(match[4]!.slice(1, 3)) * 3600 + Number(match[4]!.slice(4)) * 60)
+      return new neo4j.types.Time(h!, mi!, s!, 0, offset)
+    }
     default:
       return value
   }
 }
 
+/** A fragment as Drivine's load projects it: its node's properties and labels. */
 export type FragmentRow = { props: Record<string, unknown>; labels: string[] }
+/** A view as Drivine's load projects it: its root, and each relationship, path and aggregate by its field. */
 export type ViewRow = { root: FragmentRow; rels: Record<string, unknown> }
 
 /** The nodes and relationships a load's rows hold, each once. */
@@ -199,7 +214,7 @@ export class GraphBuilder {
     const labels = [...row.labels].sort().join(':')
     const id = nodeId && properties[nodeId] != null
       ? `${labels}#${String(properties[nodeId])}`
-      : `${labels}#${JSON.stringify(Object.entries(properties).sort(([a], [b]) => a.localeCompare(b)))}`
+      : `${labels}#${contents(properties)}`
     if (!this.nodeMap.has(id)) this.nodeMap.set(id, { id, fragment: fragment.name, labels: row.labels, properties, aggregates: {} })
     return id
   }
@@ -211,6 +226,7 @@ export class GraphBuilder {
       .reduce((best, f) => (f.labels.length > best.labels.length ? f : best), expected)
   }
 
+  /** A view's root, and all its relationships and paths lead to, as nested views do too; its aggregates go on the root. */
   view(view: View, row: ViewRow): string {
     const rootFragment = this.fragment(view.root.fragment)
     const root = this.node(row.root, rootFragment)
@@ -247,15 +263,18 @@ export class GraphBuilder {
 
   private edge(root: string, far: string, type: string, direction: string, properties: Record<string, unknown>): void {
     const [from, to] = direction === 'INCOMING' ? [far, root] : [root, far]
-    const id = `${from}-[${type}]->${to}`
+    // An undirected one is the same whichever end it is reached from. Two of a relationship fragment between the same
+    // nodes are told apart by their properties, as two spells at one employer are.
+    const ends = direction === 'UNDIRECTED' ? [from, to].sort().join('-') : `${from}->${to}`
+    const id = `${ends}[${type}]${Object.keys(properties).length ? contents(properties) : ''}`
     if (!this.edgeMap.has(id)) this.edgeMap.set(id, { id, from, to, type, directed: direction !== 'UNDIRECTED', properties })
   }
 
   private fragment(id: string): Fragment {
-    const view = this.catalog.views.find(v => v.id === id)
-    const fragmentId = view ? view.root.fragment : id
-    const found = this.catalog.fragments.find(f => f.id === fragmentId)
-    if (!found) throw new ModelError(`No model file the studio read declares ${fragmentId}.`)
-    return found
+    return nodeFragment(this.catalog, id)
   }
 }
+
+/** What a node or relationship holds, the same text however its properties came back ordered. */
+const contents = (properties: Record<string, unknown>): string =>
+  JSON.stringify(Object.entries(properties).sort(([a], [b]) => a.localeCompare(b)))

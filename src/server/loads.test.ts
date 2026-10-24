@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest'
 import type { Catalog, Property, Query } from '../studio/api'
 import type { Connection } from './connections'
 import { ModelError } from './drivineModels'
+import { catalog as shapes } from './fixtures/shapes'
 import { GraphBuilder, loadCypher, typed } from './loads'
+import type { ViewRow } from './loads'
 import { parseModel } from './models'
 
 const sample = parseModel(readFileSync(new URL('./fixtures/sample.json', import.meta.url), 'utf8'))
@@ -105,6 +107,11 @@ describe('typed', () => {
     expect(neo4j.isLocalDateTime(typed(property('localDatetime'), '2024-05-01T09:30', true) as never)).toBe(true)
     expect(typed(property('date'), '2024-05-01', false)).toBe('2024-05-01')
     expect(() => typed(property('date'), 'May 1', true)).toThrow('p is a date, such as 2024-05-01')
+    expect(neo4j.isLocalTime(typed(property('localTime'), '09:30', true) as never)).toBe(true)
+    expect((typed(property('time'), '09:30:15-02:00', true) as { timeZoneOffsetSeconds: unknown }).timeZoneOffsetSeconds).toBe(-7200)
+    expect(typed(property('time'), '09:30Z', false)).toBe('09:30Z')
+    expect(() => typed(property('localTime'), '09:30Z', true)).toThrow('p is a local time')
+    expect(() => typed(property('time'), '09:30', true)).toThrow('p is a time with its offset')
   })
 
   it('leaves text, and what is not text, as it is', () => {
@@ -157,5 +164,69 @@ describe('GraphBuilder', () => {
     const b = graph.node({ props: { name: 'B' }, labels: ['Organization'] }, organization)
     expect(a).not.toEqual(b)
     expect(graph.node({ props: { name: 'A' }, labels: ['Organization'] }, organization)).toEqual(a)
+  })
+})
+
+describe('GraphBuilder, on every shape a view projects', () => {
+  const view = (id: string) => shapes.views.find(v => v.id === id)!
+  const person = (uuid: string) => ({ props: { person_id: uuid, name: uuid }, labels: ['Person'] })
+  const team = (name: string) => ({ props: { name }, labels: ['Team'] })
+  const edges = (graph: GraphBuilder) => graph.edges().map(e => `${e.from} ${e.type} ${e.to}`).sort()
+
+  it('draws a view that holds itself to its depth, a multi-hop list, a path, and the root\'s aggregates', () => {
+    const graph = new GraphBuilder(shapes)
+    const leaf = (uuid: string) => ({ root: person(uuid), rels: { manages: [], mentor: null, reports: [], teams: [], reportCount: 0, teamSize: 0 } })
+    const root = graph.view(view('Manager'), {
+      root: person('a'),
+      rels: {
+        manages: [person('b'), person('c')],
+        mentor: { ...leaf('m'), rels: { ...leaf('m').rels, mentor: null } },
+        reports: [leaf('b')],
+        teams: [team('Core')],
+        reportCount: 1,
+        teamSize: 7,
+      },
+    } as ViewRow)
+    expect(root).toBe('Person#a')
+    expect(edges(graph)).toEqual([
+      'Person#a MANAGES ×1..3 Person#b',
+      'Person#a MANAGES ×1..3 Person#c',
+      'Person#a MEMBER_OF · PART_OF Team#[["name","Core"]]',
+      'Person#b REPORTS_TO Person#a',
+      'Person#m MENTORS Person#a',
+    ])
+    expect(graph.nodes().find(n => n.id === 'Person#a')?.aggregates).toEqual({ reportCount: 1, teamSize: 7 })
+  })
+
+  it('draws a relationship fragment that leads to a view, with the relationship\'s properties, once for each', () => {
+    const graph = new GraphBuilder(shapes)
+    const core = { root: team('Core'), rels: { lead: person('l') } }
+    graph.view(view('Member'), {
+      root: person('a'),
+      rels: { memberships: [{ rel: { since: '2020' }, target: core }, { rel: { since: '2024' }, target: core }] },
+    } as ViewRow)
+    expect(edges(graph)).toEqual([
+      'Person#a MEMBER_OF Team#[["name","Core"]]',
+      'Person#a MEMBER_OF Team#[["name","Core"]]',
+      'Person#l LEADS Team#[["name","Core"]]',
+    ])
+    expect(graph.edges().filter(e => e.type === 'MEMBER_OF').map(e => e.properties)).toEqual([{ since: '2020' }, { since: '2024' }])
+  })
+
+  it('draws an undirected relationship once, from whichever end it is reached', () => {
+    const friends: Catalog = {
+      ...shapes,
+      views: [{
+        module: 'm', id: 'Friend', name: 'Friend', root: { field: 'person', fragment: 'Person' },
+        relationships: [{ field: 'friends', type: 'KNOWS', direction: 'UNDIRECTED', target: 'Friend', many: true, required: false, maxDepth: 2 }],
+      }],
+    }
+    const graph = new GraphBuilder(friends)
+    graph.view(friends.views[0]!, {
+      root: person('a'),
+      rels: { friends: [{ root: person('b'), rels: { friends: [{ root: person('a'), rels: { friends: [] } }] } }] },
+    } as ViewRow)
+    expect(graph.edges()).toHaveLength(1)
+    expect(graph.edges()[0]?.directed).toBe(false)
   })
 })

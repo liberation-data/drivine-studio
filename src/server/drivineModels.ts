@@ -47,7 +47,7 @@ export class DrivineModels {
     return this.fragment(fragment)
   }
 
-  fragment(fragment: Fragment): FragmentModel {
+  private fragment(fragment: Fragment): FragmentModel {
     const known = this.fragments.get(fragment.id)
     if (known) return known
     const stored = (name: string) => fragment.properties.find(p => p.name === name)?.stored ?? name

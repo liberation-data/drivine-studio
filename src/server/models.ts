@@ -17,10 +17,12 @@ async function stored(): Promise<string[]> {
   return ((await readHomeFile<{ paths?: unknown[] }>(FILE))?.paths ?? []).filter((p): p is string => typeof p === 'string')
 }
 
+/** The paths DRIVINE_STUDIO_MODELS names, which the studio shows but cannot remove. */
 export function fromEnvironment(env: Env = process.env): string[] {
   return (env.DRIVINE_STUDIO_MODELS ?? '').split(delimiter).map(p => p.trim()).filter(p => p !== '')
 }
 
+/** Every path the studio looks in: the environment's first, then those added in the studio that it does not name. */
 export async function listModelPaths(env: Env = process.env): Promise<ModelPath[]> {
   const environment = fromEnvironment(env).map(path => ({ path, source: 'environment' as const }))
   const own = (await stored()).map(path => ({ path, source: 'studio' as const }))
@@ -44,6 +46,7 @@ export async function addModelPath(path: unknown): Promise<ModelPath[]> {
   return listModelPaths()
 }
 
+/** Stops looking in a path added in the studio. One the environment names stays, as the studio did not add it. */
 export async function removeModelPath(path: unknown): Promise<ModelPath[]> {
   if (typeof path !== 'string') throw new ModelPathError('Name the path to stop looking in.')
   if (fromEnvironment().includes(path)) throw new ModelPathError('DRIVINE_STUDIO_MODELS names that path; change it in the environment.')

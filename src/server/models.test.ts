@@ -90,12 +90,16 @@ describe('readCatalog', () => {
     expect(catalog.problems).toEqual([])
   })
 
-  it('takes an id current in one module over the same id removed in another, as when a class moves', async () => {
-    await module('repo/a', model('a', { fragments: [fragment('x.Moved', true)] }))
-    await module('repo/b', model('b', { fragments: [fragment('x.Moved')] }))
-    const [moved] = (await readCatalog([join(dir, 'repo')])).fragments
-    expect(moved).toMatchObject({ id: 'x.Moved', module: 'b' })
-    expect(moved?.removed).toBeUndefined()
+  it.each([
+    ['a', true],
+    ['b', false],
+  ])('takes an id current in one module over the same id removed in another, as when a class moves: removed in %s', async (_, firstRemoved) => {
+    await module('repo/a', model('a', { fragments: [fragment('x.Moved', firstRemoved)] }))
+    await module('repo/b', model('b', { fragments: [fragment('x.Moved', !firstRemoved)] }))
+    const catalog = await readCatalog([join(dir, 'repo')])
+    expect(catalog.fragments).toMatchObject([{ id: 'x.Moved', module: firstRemoved ? 'b' : 'a' }])
+    expect(catalog.fragments[0]?.removed).toBeUndefined()
+    expect(catalog.problems).toEqual([])
   })
 
   it('keeps an entry removed everywhere, removed', async () => {
