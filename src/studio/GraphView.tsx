@@ -1,7 +1,9 @@
 import cytoscape from 'cytoscape'
 import type { Core } from 'cytoscape'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { GraphEdge, GraphNode, Result } from './api'
+import { IconPicker, Swatch } from './IconPicker'
+import { useLabelIcons } from './icons'
 
 // One colour per fragment, in the order the catalogue lists them. Every node is also named, and the
 // legend says which is which, so colour is never the only thing telling two apart.
@@ -64,6 +66,11 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
             width: 30, height: 30, 'border-width': 0, 'border-color': ink,
           },
         },
+        // The label's icon, drawn white on its colour, where it has one.
+        {
+          selector: 'node[icon]',
+          style: { 'background-image': 'data(icon)', 'background-width': '58%', 'background-height': '58%', 'background-clip': 'none' },
+        },
         // The roots are what loadAll returned; everything else was reached from one of them.
         { selector: 'node[?root]', style: { width: 38, height: 38, 'border-width': 3 } },
         {
@@ -118,17 +125,34 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
   }, [graph, fragments])
 
   const present = fragments.filter(f => graph.nodes.some(n => n.fragment === f))
+  const { images, icons } = useLabelIcons(present)
+  const [choosing, setChoosing] = useState<string | null>(null)
+
+  // Icons arrive after the graph is drawn, and change when one is chosen: set on the nodes, with no new layout.
+  useEffect(() => {
+    const core = cy.current
+    if (!core) return
+    core.nodes().forEach(node => {
+      const image = images[(node.data('node') as GraphNode).fragment]
+      if (image) node.data('icon', image)
+      else node.removeData('icon')
+    })
+  }, [images, graph])
+
   return (
     <div className="studio-graph">
       <div ref={container} className="studio-graph-canvas" role="img" aria-label={`Graph of ${graph.nodes.length} nodes and ${graph.edges.length} relationships`} />
       <ul className="studio-legend desk-text-caption" aria-label="Fragments">
         {present.map(fragment => (
           <li key={fragment}>
-            <span className="studio-swatch" style={{ background: colourOf(fragments, fragment) }} />
-            {fragment}
+            <button type="button" className="studio-legend-entry" title={`Choose the icon of ${fragment}`} onClick={() => setChoosing(fragment)}>
+              <Swatch colour={colourOf(fragments, fragment)} icon={icons[fragment]?.icon ?? null} />
+              {fragment}
+            </button>
           </li>
         ))}
       </ul>
+      {choosing && <IconPicker label={choosing} current={icons[choosing]} onDone={() => setChoosing(null)} />}
     </div>
   )
 }

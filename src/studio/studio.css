@@ -58,7 +58,28 @@ html, body, #root { height: 100%; margin: 0; }
   background: color-mix(in srgb, var(--desk-surface) 88%, transparent); color: var(--desk-ink); pointer-events: none;
 }
 .studio-legend li, .studio-inspector h3 { display: flex; align-items: center; gap: var(--desk-space-2); }
-.studio-swatch { flex: none; width: 10px; height: 10px; border-radius: 50%; }
+.studio-swatch { flex: none; display: inline-grid; place-items: center; width: 10px; height: 10px; border-radius: 50%; }
+
+/* Icons: Lucide's SVGs as masks over a colour, so they follow the page's scheme. */
+.studio-legend { pointer-events: auto; }
+.studio-legend-entry {
+  display: flex; align-items: center; gap: var(--desk-space-2); padding: 0; border: 0; background: none;
+  color: inherit; font: inherit; cursor: pointer; text-align: start;
+}
+.studio-legend-entry:hover { text-decoration: underline; }
+.studio-legend-entry:focus-visible { outline: 2px solid var(--desk-accent); outline-offset: 2px; }
+.studio-legend .studio-swatch { width: 18px; height: 18px; }
+.studio-swatch-icon, .studio-icon { mask-size: contain; mask-repeat: no-repeat; mask-position: center; -webkit-mask-size: contain; -webkit-mask-repeat: no-repeat; -webkit-mask-position: center; }
+.studio-swatch-icon { width: 70%; height: 70%; background: #ffffff; }
+.studio-icon { display: block; width: 22px; height: 22px; background: var(--desk-ink); }
+.studio-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: var(--desk-space-1); max-height: 50vh; overflow-y: auto; }
+.studio-icon-choice {
+  display: grid; place-items: center; aspect-ratio: 1; border: 1px solid transparent; border-radius: var(--desk-control-radius);
+  background: none; cursor: pointer;
+}
+.studio-icon-choice:hover { background: color-mix(in srgb, var(--desk-ink) 6%, transparent); }
+.studio-icon-choice[aria-selected='true'] { border-color: var(--desk-accent); background: color-mix(in srgb, var(--desk-accent) 16%, transparent); }
+.studio-icon-choice:focus-visible { outline: 2px solid var(--desk-accent); outline-offset: -2px; }
 
 .studio-inspector {
   flex: none; width: min(300px, 45%); overflow-y: auto; padding: var(--desk-space-4);
