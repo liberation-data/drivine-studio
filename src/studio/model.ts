@@ -1,18 +1,18 @@
-import type { Catalog, Condition, FragmentDescriptor, Operator, PropertyDescriptor, Query, ViewDescriptor } from './api'
+import type { Catalog, Condition, Fragment, Operator, Property, Query, View } from './api'
 
 /** What is on the canvas: a view or a fragment from the catalogue. */
 export type Subject =
-  | { kind: 'view'; view: ViewDescriptor }
-  | { kind: 'fragment'; fragment: FragmentDescriptor }
+  | { kind: 'view'; view: View }
+  | { kind: 'fragment'; fragment: Fragment }
 
 export const subjectName = (subject: Subject): string =>
   subject.kind === 'view' ? subject.view.name : subject.fragment.name
 
-export const subjectClass = (subject: Subject): string =>
-  subject.kind === 'view' ? subject.view.className : subject.fragment.className
+/** The id of the view or fragment: its class's whole name, which two packages' classes of one simple name differ by. */
+export const subjectId = (subject: Subject): string => (subject.kind === 'view' ? subject.view.id : subject.fragment.id)
 
-/** Tells subjects apart by class, since two packages may each have a class of the same simple name. */
-export const subjectKey = (subject: Subject): string => `${subject.kind}:${subjectClass(subject)}`
+/** Tells subjects apart by id. */
+export const subjectKey = (subject: Subject): string => `${subject.kind}:${subjectId(subject)}`
 
 /**
  * What the canvas shows once next is asked for. The catalogue makes a new object for the subject on each
@@ -27,25 +27,39 @@ export interface Scope {
   /** '' for the root; otherwise the relationship's field. */
   id: string
   label: string
-  properties: PropertyDescriptor[]
+  properties: Property[]
 }
 
+/**
+ * The root, and each relationship a query can look along: one that leads to a fragment, a view (by its root) or a
+ * relationship fragment (by the node it leads to). A path is not one yet, as Drivine's query DSL does not look along
+ * one.
+ */
 export function scopesOf(subject: Subject, catalog: Catalog): Scope[] {
-  const fragment = (className: string) => catalog.fragments.find(f => f.className === className)
+  const fragment = (id: string) => {
+    const view = catalog.views.find(v => v.id === id)
+    return catalog.fragments.find(f => f.id === (view ? view.root.fragment : id))
+  }
   if (subject.kind === 'fragment') {
     return [{ id: '', label: subject.fragment.name, properties: filterable(subject.fragment) }]
   }
   const root = fragment(subject.view.root.fragment)
   const scopes: Scope[] = [{ id: '', label: subject.view.root.field, properties: root ? filterable(root) : [] }]
   for (const relationship of subject.view.relationships) {
-    const target = relationship.filterOn ? fragment(relationship.filterOn) : undefined
+    if (relationship.path) continue
+    const relationshipFragment = catalog.relationshipFragments.find(r => r.id === relationship.target)
+    const target = fragment(relationshipFragment ? relationshipFragment.target.fragment : relationship.target)
     if (target) scopes.push({ id: relationship.field, label: relationship.field, properties: filterable(target) })
   }
   return scopes
 }
 
-// An embedding is searched by similarity, which the studio does not do yet; it is never compared.
-const filterable = (fragment: FragmentDescriptor) => fragment.properties.filter(p => !p.vector)
+/**
+ * What a condition can compare: not an embedding, which is searched by similarity, which the studio does not do yet;
+ * nor a value packed as JSON, a map, a list, or one of a type the library could not name.
+ */
+const filterable = (fragment: Fragment) =>
+  fragment.properties.filter(p => !p.vector && !p.packed && !['list', 'map', 'json', 'any'].includes(p.type))
 
 export interface OperatorChoice {
   value: Operator
@@ -55,8 +69,8 @@ export interface OperatorChoice {
 }
 
 const COMMON: OperatorChoice[] = [
-  { value: 'EQUALS', label: 'is', operand: 'one' },
-  { value: 'NOT_EQUALS', label: 'is not', operand: 'one' },
+  { value: 'EQ', label: 'is', operand: 'one' },
+  { value: 'NEQ', label: 'is not', operand: 'one' },
 ]
 const TEXT: OperatorChoice[] = [
   { value: 'CONTAINS', label: 'contains', operand: 'one' },
@@ -65,10 +79,10 @@ const TEXT: OperatorChoice[] = [
   { value: 'ENDS_WITH', label: 'ends with', operand: 'one' },
 ]
 const ORDERED: OperatorChoice[] = [
-  { value: 'GREATER_THAN', label: 'is more than', operand: 'one' },
-  { value: 'GREATER_THAN_OR_EQUAL', label: 'is at least', operand: 'one' },
-  { value: 'LESS_THAN', label: 'is less than', operand: 'one' },
-  { value: 'LESS_THAN_OR_EQUAL', label: 'is at most', operand: 'one' },
+  { value: 'GT', label: 'is more than', operand: 'one' },
+  { value: 'GTE', label: 'is at least', operand: 'one' },
+  { value: 'LT', label: 'is less than', operand: 'one' },
+  { value: 'LTE', label: 'is at most', operand: 'one' },
 ]
 const REST: OperatorChoice[] = [
   { value: 'IN', label: 'is one of', operand: 'list' },
@@ -77,11 +91,12 @@ const REST: OperatorChoice[] = [
   { value: 'IS_NOT_NULL', label: 'is present', operand: 'none' },
 ]
 
-export function operatorsFor(property: PropertyDescriptor | undefined): OperatorChoice[] {
+export function operatorsFor(property: Property | undefined): OperatorChoice[] {
   if (!property) return COMMON
-  if (property.javaType === 'java.lang.String') return [...COMMON, ...TEXT, ...REST]
-  // By the Java type: a Java field's type is its Java simple name, so a primitive one is 'boolean'.
-  if (property.javaType === 'boolean' || property.javaType === 'java.lang.Boolean') return [...COMMON, ...REST.slice(2)]
+  if (property.type === 'string') return [...COMMON, ...TEXT, ...REST]
+  if (property.type === 'boolean') return [...COMMON, ...REST.slice(2)]
+  // Ids and enum members are told apart by what they are, not ordered.
+  if (property.type === 'uuid' || property.type === 'enum') return [...COMMON, ...REST]
   return [...COMMON, ...ORDERED, ...REST]
 }
 
@@ -115,7 +130,7 @@ export function toQuery(subject: Subject, draft: QueryDraft, catalog: Catalog): 
     if (!scope || !property) continue
     const operand = operatorsFor(property).find(o => o.value === row.op)?.operand ?? 'one'
     const condition: Condition = { kind: 'property', property: row.property, op: row.op }
-    // The endpoint turns each value into the property's own type, so text is all the browser sends.
+    // The server turns each value into the property's own type, so text is all the browser sends.
     if (operand === 'one') condition.value = row.value
     if (operand === 'list') condition.value = row.value.split(',').map(v => v.trim()).filter(v => v !== '')
     where.push(
@@ -126,7 +141,7 @@ export function toQuery(subject: Subject, draft: QueryDraft, catalog: Catalog): 
   }
   const limit = Number.parseInt(draft.limit, 10)
   return {
-    type: subjectClass(subject),
+    type: subjectId(subject),
     where,
     orderBy: draft.orderBy ? [{ property: draft.orderBy, direction: draft.direction }] : [],
     ...(Number.isFinite(limit) ? { limit } : {}),

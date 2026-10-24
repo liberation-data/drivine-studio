@@ -1,10 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 
 import { DATABASE_TYPES } from '../studio/database'
 import type { DatabaseType } from '../studio/database'
+import { readHomeFile, serially, writeHomeFile } from './home'
 
 /** A connection as the studio keeps it, password and all. Never sent to the browser: see toPublic. */
 export interface Connection {
@@ -37,32 +35,16 @@ export type Env = Record<string, string | undefined>
 
 export const toPublic = ({ password, ...rest }: Connection): PublicConnection => ({ ...rest, hasPassword: !!password })
 
-/**
- * Where the studio keeps its connections: `connections.json` in DRIVINE_STUDIO_HOME, or `~/.drivine-studio`. The file
- * holds passwords, so only its owner may read it.
- */
-export const studioHome = (): string => process.env.DRIVINE_STUDIO_HOME ?? join(homedir(), '.drivine-studio')
-const file = () => join(studioHome(), 'connections.json')
+/** The studio's connections, passwords and all: see writeHomeFile. */
+const FILE = 'connections.json'
 
 async function readStored(): Promise<Connection[]> {
-  let text: string
-  try {
-    text = await readFile(file(), 'utf8')
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw e
-  }
-  const parsed = JSON.parse(text) as { connections?: Connection[] }
-  return (parsed.connections ?? []).map(c => ({ ...c, source: 'studio' as const }))
+  const parsed = await readHomeFile<{ connections?: Connection[] }>(FILE)
+  return (parsed?.connections ?? []).map(c => ({ ...c, source: 'studio' as const }))
 }
 
 async function writeStored(connections: Connection[]): Promise<void> {
-  await mkdir(studioHome(), { recursive: true, mode: 0o700 })
-  const stored = connections.map(({ source: _, ...rest }) => rest)
-  // Written beside the file and moved over it, so a crash part way leaves the old file whole.
-  const temporary = `${file()}.${process.pid}.tmp`
-  await writeFile(temporary, `${JSON.stringify({ connections: stored }, null, 2)}\n`, { mode: 0o600 })
-  await rename(temporary, file())
+  await writeHomeFile(FILE, { connections: connections.map(({ source: _, ...rest }) => rest) })
 }
 
 /**
@@ -142,15 +124,6 @@ export function validate(input: unknown): ConnectionInput {
     ...(graph ? { graph } : {}),
     ...(raw.clearPassword === true ? { clearPassword: true } : {}),
   }
-}
-
-// One change at a time, so two at once cannot each write the file over the other's. On globalThis, as the providers
-// are, since Next may give each route its own copy of this module, and the routes change the one file.
-const queue = globalThis as typeof globalThis & { drivineStudioChanges?: Promise<unknown> }
-function serially<T>(change: () => Promise<T>): Promise<T> {
-  const next = (queue.drivineStudioChanges ?? Promise.resolve()).then(change, change)
-  queue.drivineStudioChanges = next.catch(() => undefined)
-  return next
 }
 
 const settled = ({ clearPassword: _, ...input }: ConnectionInput): Omit<Connection, 'id' | 'source'> => input

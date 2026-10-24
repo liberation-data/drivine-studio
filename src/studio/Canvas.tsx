@@ -14,25 +14,31 @@ import type { ConditionDraft, QueryDraft, Scope, Subject } from './model'
 type Run = { state: 'idle' } | { state: 'running' } | { state: 'failed'; message: string }
 
 export function Canvas() {
-  const { catalog, subject, show } = useStudio()
+  const { catalog, subject, show, connection } = useStudio()
   const { dropProps } = useDropTarget<Subject>({ accepts: SUBJECT, onDrop: drag => show(drag.payload) })
 
   return (
     <div className="studio-canvas" {...dropProps}>
-      {subject && catalog ? (
-        // Keyed, so a new subject starts with a clean query and nothing selected.
-        <Loaded key={subjectKey(subject)} subject={subject} catalog={catalog} onClear={() => show(null)} />
+      {subject && catalog && connection ? (
+        // Keyed, so a new subject, or a load on another connection, starts with a clean query and nothing selected.
+        <Loaded key={`${subjectKey(subject)}@${connection.id}`} subject={subject} catalog={catalog} connection={connection.id} onClear={() => show(null)} />
+      ) : subject && catalog ? (
+        <div className="studio-hint">
+          <h2>No connection in use</h2>
+          <p>Add one in Connections to load {subjectName(subject)} from it.</p>
+        </div>
       ) : (
         <div className="studio-hint">
           <h2>Drag a view or fragment here</h2>
-          <p>The studio loads it with <code>loadAll</code> and draws what came back. It reads and never writes.</p>
+          <p>The studio loads it as <code>loadAll</code> does, with the Cypher Drivine writes for it, and draws what came back. It reads and never writes.</p>
         </div>
       )}
     </div>
   )
 }
 
-function Loaded({ subject, catalog, onClear }: { subject: Subject; catalog: Catalog; onClear: () => void }) {
+function Loaded({ subject, catalog, connection, onClear }: { subject: Subject; catalog: Catalog; connection: string; onClear: () => void }) {
+  const { openInCypher } = useStudio()
   const [draft, setDraft] = useState<QueryDraft>(emptyDraft)
   const [result, setResult] = useState<Result | null>(null)
   const [run, setRun] = useState<Run>({ state: 'idle' })
@@ -46,7 +52,7 @@ function Loaded({ subject, catalog, onClear }: { subject: Subject; catalog: Cata
     const controller = new AbortController()
     inFlight.current = controller
     setRun({ state: 'running' })
-    runQuery(toQuery(subject, from, catalog), controller.signal).then(
+    runQuery(connection, toQuery(subject, from, catalog), controller.signal).then(
       loaded => {
         setResult(loaded)
         setSelection(null)
@@ -57,7 +63,7 @@ function Loaded({ subject, catalog, onClear }: { subject: Subject; catalog: Cata
         setRun({ state: 'failed', message: e instanceof Error ? e.message : String(e) })
       },
     )
-  }, [subject, catalog])
+  }, [subject, catalog, connection])
 
   // Dropping something loads it at once, unfiltered: the first thing wanted is to see it.
   useEffect(() => {
@@ -105,6 +111,14 @@ function Loaded({ subject, catalog, onClear }: { subject: Subject; catalog: Cata
         </div>
       </form>
       {run.state === 'failed' && <p className="studio-failure" role="alert">{run.message}</p>}
+      {result && (
+        <details className="studio-cypher">
+          <summary className="desk-text-small desk-text-muted">The Cypher loadAll runs</summary>
+          <pre>{result.cypher.statement}</pre>
+          {Object.keys(result.cypher.parameters).length > 0 && <pre>{JSON.stringify(result.cypher.parameters, null, 2)}</pre>}
+          <Button size="small" onClick={() => openInCypher(result.cypher.statement, result.cypher.parameters)}>Open in Cypher</Button>
+        </details>
+      )}
       <div className="studio-result">
         {result && result.graph.nodes.length > 0 && <GraphView graph={result.graph} fragments={fragments} onSelect={setSelection} />}
         {result && result.graph.nodes.length === 0 && (
@@ -133,8 +147,7 @@ function Status({ run, result }: { run: Run; result: Result | null }) {
 
 let nextKey = 1
 
-// A condition is rarely on the id, which the catalogue lists first; start on the property after it.
-const firstProperty = (scope: Scope): string => (scope.properties[1] ?? scope.properties[0])?.name ?? ''
+const firstProperty = (scope: Scope): string => scope.properties[0]?.name ?? ''
 
 function Where({ scopes, draft, onChange }: { scopes: Scope[]; draft: QueryDraft; onChange: (draft: QueryDraft) => void }) {
   const root = scopes[0]
@@ -144,7 +157,7 @@ function Where({ scopes, draft, onChange }: { scopes: Scope[]; draft: QueryDraft
   const add = () =>
     onChange({
       ...draft,
-      conditions: [...draft.conditions, { key: nextKey++, scope: '', quantifier: 'any', property: firstProperty(root), op: 'EQUALS', value: '' }],
+      conditions: [...draft.conditions, { key: nextKey++, scope: '', quantifier: 'any', property: firstProperty(root), op: 'EQ', value: '' }],
     })
 
   return (
@@ -163,7 +176,7 @@ function Where({ scopes, draft, onChange }: { scopes: Scope[]; draft: QueryDraft
                 value={row.scope}
                 onChange={id => {
                   const next = scopes.find(s => s.id === id) ?? root
-                  change(row.key, { scope: id, property: firstProperty(next), op: 'EQUALS', value: '' })
+                  change(row.key, { scope: id, property: firstProperty(next), op: 'EQ', value: '' })
                 }}
                 options={scopes.map(s => ({ value: s.id, label: s.label }))}
               />
@@ -179,12 +192,12 @@ function Where({ scopes, draft, onChange }: { scopes: Scope[]; draft: QueryDraft
             <PopUpButton
               label="Property" labelHidden size="small"
               value={row.property}
-              onChange={name => change(row.key, { property: name, op: 'EQUALS' })}
+              onChange={name => change(row.key, { property: name, op: 'EQ' })}
               options={scope.properties.map(p => ({ value: p.name, label: p.name, description: p.type }))}
             />
             <PopUpButton
               label="Comparison" labelHidden size="small"
-              value={operator?.value ?? 'EQUALS'}
+              value={operator?.value ?? 'EQ'}
               onChange={op => change(row.key, { op })}
               options={operators.map(o => ({ value: o.value, label: o.label }))}
             />

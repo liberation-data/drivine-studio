@@ -73,6 +73,18 @@ html, body, #root { height: 100%; margin: 0; }
   overflow-wrap: anywhere; white-space: pre-wrap;
 }
 
+/* A removed entry: the code no longer declares it, though the store may still hold it. */
+.studio-entry[data-removed] { color: var(--desk-muted); }
+.studio-entry[data-removed] .studio-entry-name { text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* The Cypher a load ran */
+.studio-cypher { padding: var(--desk-space-2) var(--desk-space-4); border-bottom: 1px solid var(--desk-rule); }
+.studio-cypher summary { cursor: pointer; }
+.studio-cypher pre {
+  margin: var(--desk-space-2) 0; max-height: 14em; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: var(--desk-font-mono); font-size: var(--desk-text-small);
+}
+
 /* Connections */
 .studio-connection {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--desk-space-2);

@@ -73,6 +73,28 @@ export async function run(
   parameters: Record<string, unknown> = {},
   limit: number = DEFAULT_LIMIT,
 ): Promise<CypherResult> {
+  const cells = new Cells(connection.type === 'FALKORDB' ? 'falkordb' : 'bolt')
+  const started = performance.now()
+  const read = await readRows(connection, statement, parameters, limit, value => cells.cell(value))
+  return { ...read, graph: cells.graph(), limit, milliseconds: Math.round(performance.now() - started) }
+}
+
+/** Rows as a statement gave them back, each value as `read` takes it. */
+export interface Rows<T> {
+  columns: string[]
+  rows: T[][]
+  /** More rows came back than the limit, and the rest were not read. */
+  truncated: boolean
+}
+
+/** Runs a statement as `run` does, and gives each value to `read` as the database's client gave it back. */
+export async function readRows<T>(
+  connection: Connection,
+  statement: string,
+  parameters: Record<string, unknown>,
+  limit: number,
+  read: (value: unknown) => T,
+): Promise<Rows<T>> {
   if (!RUNS_CYPHER.includes(connection.type)) {
     // The environment's DATABASE_TYPE is taken as it is, so it may name no type at all.
     const sql = connection.type === 'ORACLE' ? 'Oracle' : connection.type === 'POSTGRES' ? 'Postgres' : undefined
@@ -82,18 +104,22 @@ export async function run(
   }
   if (statement.trim() === '') throw new StatementError('There is no statement to run.')
   const provider = await providerFor(connection)
-  const started = performance.now()
-  const read = connection.type === 'FALKORDB' ? await falkor(provider, statement, parameters, limit) : await bolt(provider, statement, parameters, limit)
-  return { ...read, limit, milliseconds: Math.round(performance.now() - started) }
+  return connection.type === 'FALKORDB'
+    ? falkor(provider, statement, parameters, limit, read)
+    : bolt(provider, statement, parameters, limit, read)
 }
-
-type Rows = Pick<CypherResult, 'columns' | 'rows' | 'graph' | 'truncated'>
 
 /**
  * Neo4j, Memgraph and Neptune: a session of the provider's own driver, rather than one of Drivine's connections,
  * which opens it to write and gives nodes back as their properties alone.
  */
-async function bolt(provider: ConnectionProvider, statement: string, parameters: Record<string, unknown>, limit: number): Promise<Rows> {
+async function bolt<T>(
+  provider: ConnectionProvider,
+  statement: string,
+  parameters: Record<string, unknown>,
+  limit: number,
+  read: (value: unknown) => T,
+): Promise<Rows<T>> {
   const { driver, database } = provider as unknown as { driver?: Driver; database?: string }
   if (!driver) throw new StatementError('This version of Drivine keeps its Bolt driver where the studio cannot find it.')
   const session = driver.session({ defaultAccessMode: neo4j.session.READ, ...(database ? { database } : {}) })
@@ -101,17 +127,16 @@ async function bolt(provider: ConnectionProvider, statement: string, parameters:
   try {
     const result = transaction.run(statement, boltParameters(parameters))
     const columns = [...(await result.keys())]
-    const cells = new Cells('bolt')
-    const rows = []
+    const rows: T[][] = []
     let truncated = false
     for await (const record of result) {
       if (rows.length === limit) {
         truncated = true
         break
       }
-      rows.push(columns.map((_, i) => cells.cell(record.get(i))))
+      rows.push(columns.map((_, i) => read(record.get(i))))
     }
-    return { columns, rows, graph: cells.graph(), truncated }
+    return { columns, rows, truncated }
   } finally {
     await transaction.rollback().catch(() => undefined)
     await session.close().catch(() => undefined)
@@ -120,12 +145,13 @@ async function bolt(provider: ConnectionProvider, statement: string, parameters:
 
 /**
  * Parameters as Bolt takes them. JSON has one kind of number, and the driver sends every JavaScript number as a float,
- * which an integer property never equals: so a whole number goes as an integer.
+ * which an integer property never equals: so a whole number goes as an integer. A value of the driver's own, a
+ * temporal one, say, goes as it is.
  */
 export function boltParameters(value: unknown): any {
   if (typeof value === 'number' && Number.isInteger(value)) return neo4j.int(value)
   if (Array.isArray(value)) return value.map(boltParameters)
-  if (value !== null && typeof value === 'object') {
+  if (value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
     return Object.fromEntries(Object.entries(value).map(([key, v]) => [key, boltParameters(v)]))
   }
   return value
@@ -139,7 +165,13 @@ interface FalkorGraph {
  * FalkorDB: its client's read-only query, which keeps the nodes it gives back. The client writes the parameters into
  * the statement as text, so they go as Drivine prepares them, which refuses a name that would change the statement.
  */
-async function falkor(provider: ConnectionProvider, statement: string, parameters: Record<string, unknown>, limit: number): Promise<Rows> {
+async function falkor<T>(
+  provider: ConnectionProvider,
+  statement: string,
+  parameters: Record<string, unknown>,
+  limit: number,
+  read: (value: unknown) => T,
+): Promise<Rows<T>> {
   let params: Record<string, unknown>
   try {
     params = new FalkorDbParameterCoercer().coerce(parameters)
@@ -154,9 +186,8 @@ async function falkor(provider: ConnectionProvider, statement: string, parameter
     })
     const data = reply.data ?? []
     const columns = data.length ? Object.keys(data[0]!) : []
-    const cells = new Cells('falkordb')
-    const rows = data.slice(0, limit).map(row => columns.map(column => cells.cell(row[column])))
-    return { columns, rows, graph: cells.graph(), truncated: data.length > limit }
+    const rows = data.slice(0, limit).map(row => columns.map(column => read(row[column])))
+    return { columns, rows, truncated: data.length > limit }
   } finally {
     await session.release().catch(() => undefined)
   }
