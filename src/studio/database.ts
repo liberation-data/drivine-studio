@@ -1,6 +1,8 @@
 // The studio's own endpoints for connections and for running Cypher on them: what this app's server
 // answers, in src/app/api/connections and src/app/api/cypher.
 
+import { json, read } from './fetching'
+
 export const DATABASE_TYPES = ['NEO4J', 'MEMGRAPH', 'FALKORDB', 'NEPTUNE', 'POSTGRES', 'ORACLE'] as const
 export type DatabaseType = (typeof DATABASE_TYPES)[number]
 
@@ -99,19 +101,6 @@ export interface CypherRequest {
 }
 
 const API = '/api'
-
-async function read<T>(response: Response): Promise<T> {
-  if (response.ok) return (await response.json()) as T
-  const problem = (await response.json().catch(() => null)) as { error?: string } | null
-  throw new Error(problem?.error ?? `The studio answered ${response.status}`)
-}
-
-const json = (method: string, body?: unknown, signal?: AbortSignal): RequestInit => ({
-  method,
-  headers: { 'content-type': 'application/json' },
-  ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  ...(signal ? { signal } : {}),
-})
 
 export const listConnections = (): Promise<StudioConnection[]> =>
   fetch(`${API}/connections`, { cache: 'no-store' }).then(r => read<StudioConnection[]>(r))

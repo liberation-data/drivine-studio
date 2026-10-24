@@ -1,11 +1,36 @@
 # Drivine Studio
 
-Run Cypher on a graph database and see what came back as a graph or as rows; browse a
-[Drivine](https://github.com/liberation-data) model, load its views and fragments, and see those as a graph too. The
-studio reads and never writes.
+Browse a [Drivine](https://github.com/liberation-data) model, load its views and fragments as `loadAll` does, and
+see what came back as a graph; run Cypher, and see it as a graph or as rows. The studio reads and never writes.
 
 The browser app talks only to this app's own server, which connects to the databases with Drivine (TypeScript). The
 same build runs from `npm start`, as a desktop app in Electron, and is meant to run in a container too.
+
+## Model files
+
+Each Drivine library writes a module's model as `.drivine/model.json`, beside its build file, when it builds: its
+fragments, relationship fragments and views, and how each is stored. The
+[format](https://github.com/liberation-data/drivine-cypher-spec/tree/main/model) is shared by the three libraries.
+
+The Catalogue's Folders sheet names the folders the studio looks in: each, and the folders in it, for model files,
+leaving out those a build fills (`node_modules`, `build`, `target` and the like). A model file may be named itself.
+`DRIVINE_STUDIO_MODELS` names more, separated as `PATH` is. The studio keeps the rest in `models.json` in its home.
+
+It reads the files afresh for each load, so a model the build has just written is the one loaded. Every module's
+entries are merged by id. An entry the code no longer declares is greyed out, as the store may still hold it; an id
+current in one module and removed in another, as when a class moves, is the current one.
+
+## Loading
+
+Drag a view or fragment to the Canvas, and the studio loads it on the connection in use. Drivine (TypeScript) writes
+the Cypher, from Drivine's own models of the file's entries and its own query DSL: the Cypher `loadAll` runs for the
+query, which the Canvas shows, and opens in the Cypher window. Conditions are on the root's properties, or on the
+nodes a relationship leads to, that one of them meets them or that none does; the roots are ordered by a property of
+the root, and limited.
+
+What comes back is drawn as a graph. A node is told apart by its fragment's id, and one whose fragment has none by
+all it holds. A temporal value in a condition goes over Bolt as a Bolt temporal value, as drivine4j stores one, and to
+FalkorDB as text.
 
 ## Connections
 
@@ -44,22 +69,12 @@ npm install
 npm run dev                                    # http://localhost:5187
 ```
 
-Add a connection in the Connections window, and run Cypher in the Cypher window.
-
-The Catalogue and Canvas windows still read the endpoints an application serves with
-[`drivine4j-studio`](https://github.com/liberation-data/drivine4j/tree/main/drivine4j-studio), until the studio reads
-model files. Start an application with `@EnableDrivineStudio`, or the drivine4j demo (the sample domain, seeded, on
-`:8087`; needs Docker):
-
-```sh
-./gradlew :drivine4j-studio:studioDemo        # in drivine4j
-```
-
-`DRIVINE_STUDIO_API` names the endpoints when they are not the demo's,
-`http://localhost:8087/drivine/studio/api`.
+Add a connection in the Connections window, and a folder with model files in the Catalogue's Folders sheet: a
+drivine4j checkout, say, whose `drivine4j-sample` has one. Then drag a view to the Canvas, or run Cypher in the
+Cypher window.
 
 `npm run build && npm start` serves the standalone build on the same port. `npm test` runs the tests, and
-`npm run test:db` the ones against Neo4j and FalkorDB, in Docker.
+`npm run test:db` the ones against Neo4j and FalkorDB, in Docker, the sample domain's loads among them.
 
 ## Desktop app
 
@@ -76,9 +91,8 @@ The packages are unsigned, and use Electron's default icon for now.
 
 ## Where it is going
 
-- A model file: each Drivine library writes its views and fragments as JSON, and the studio loads it,
-  so it no longer needs the application running.
-- The query builder writing the Cypher `loadAll` would run, with Drivine (TypeScript), and running it on a connection.
+- Model files read straight from GitHub, with nothing built.
+- Conditions on a relationship's own properties, and along a path.
 - Cypher on Oracle and Postgres, once Drivine (TypeScript) compiles it to SQL as drivine4j does.
 - A container image, from the same standalone build.
 

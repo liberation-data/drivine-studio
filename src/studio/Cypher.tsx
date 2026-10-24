@@ -32,7 +32,7 @@ const STATEMENT = 'drivine-studio.cypher.statement'
 const PARAMETERS = 'drivine-studio.cypher.parameters'
 
 export function Cypher() {
-  const { connections, connection, chooseConnection } = useStudio()
+  const { connections, connection, chooseConnection, pendingCypher, takeCypher } = useStudio()
   const [statement, setStatement] = useState(() => remembered(STATEMENT, 'MATCH (n) RETURN n LIMIT 25'))
   const [parameters, setParameters] = useState(() => remembered(PARAMETERS, ''))
   const [showParameters, setShowParameters] = useState(() => parameters.trim() !== '')
@@ -46,6 +46,16 @@ export function Cypher() {
   useEffect(() => remember(STATEMENT, statement), [statement])
   useEffect(() => remember(PARAMETERS, parameters), [parameters])
   useEffect(() => () => inFlight.current?.abort(), [])
+
+  // A statement sent from the canvas replaces what is in the editor.
+  useEffect(() => {
+    if (!pendingCypher) return
+    setStatement(pendingCypher.statement)
+    const parameters = Object.keys(pendingCypher.parameters).length ? JSON.stringify(pendingCypher.parameters, null, 2) : ''
+    setParameters(parameters)
+    setShowParameters(parameters !== '')
+    takeCypher()
+  }, [pendingCypher, takeCypher])
 
   const execute = useCallback(() => {
     if (!connection) return

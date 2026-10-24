@@ -12,7 +12,7 @@ import { Connections } from './Connections'
 import { Cypher } from './Cypher'
 import { listConnections } from './database'
 import type { StudioConnection } from './database'
-import { nextSubject } from './model'
+import { inCatalog, nextSubject } from './model'
 import type { Subject } from './model'
 
 const desk = createDesk()
@@ -35,6 +35,12 @@ interface Studio {
   /** The connection the Cypher window runs on. */
   connection: StudioConnection | null
   chooseConnection: (id: string) => void
+  /** A statement the Cypher window is to take up, with its parameters, once it is open. */
+  pendingCypher: { statement: string; parameters: Record<string, unknown> } | null
+  /** Opens the Cypher window on a statement. */
+  openInCypher: (statement: string, parameters: Record<string, unknown>) => void
+  /** The Cypher window has taken up the statement. */
+  takeCypher: () => void
 }
 
 const StudioContext = createContext<Studio | null>(null)
@@ -83,10 +89,23 @@ export function App() {
   const [connections, setConnections] = useState<StudioConnection[] | null>(null)
   const [connectionProblem, setConnectionProblem] = useState<string | null>(null)
   const [chosen, setChosen] = useState<string | null>(null)
+  const [pendingCypher, setPendingCypher] = useState<Studio['pendingCypher']>(null)
+  const openInCypher = useCallback((statement: string, parameters: Record<string, unknown>) => {
+    setPendingCypher({ statement, parameters })
+    desk.open('cypher')
+  }, [])
+  const takeCypher = useCallback(() => setPendingCypher(null), [])
 
   const reload = useCallback(() => {
     setProblem(null)
-    loadCatalog().then(setCatalog, (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)))
+    loadCatalog().then(
+      read => {
+        setCatalog(read)
+        // What is on the canvas is loaded as the files now declare it, and leaves once none does.
+        setSubject(current => inCatalog(current, read))
+      },
+      (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)),
+    )
   }, [])
   useEffect(reload, [reload])
 
@@ -133,8 +152,14 @@ export function App() {
   }, [])
 
   const studio = useMemo(
-    () => ({ catalog, problem, reload, subject, show, connections, connectionProblem, reloadConnections, connection, chooseConnection }),
-    [catalog, problem, reload, subject, show, connections, connectionProblem, reloadConnections, connection, chooseConnection],
+    () => ({
+      catalog, problem, reload, subject, show, connections, connectionProblem, reloadConnections, connection, chooseConnection,
+      pendingCypher, openInCypher, takeCypher,
+    }),
+    [
+      catalog, problem, reload, subject, show, connections, connectionProblem, reloadConnections, connection, chooseConnection,
+      pendingCypher, openInCypher, takeCypher,
+    ],
   )
 
   const menus = useMemo(() => [
