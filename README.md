@@ -27,7 +27,7 @@ npm run dev                                    # http://localhost:5187
 `DRIVINE_STUDIO_API` names the endpoints when they are not the demo's,
 `http://localhost:8087/drivine/studio/api`.
 
-`npm run build && npm start` serves the standalone build on the same port.
+`npm run build && npm start` serves the standalone build on the same port. `npm test` runs the tests.
 
 ## Desktop app
 

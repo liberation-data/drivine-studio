@@ -8,6 +8,7 @@ import { loadCatalog } from './api'
 import type { Catalog } from './api'
 import { Canvas } from './Canvas'
 import { Catalogue } from './Catalogue'
+import { nextSubject } from './model'
 import type { Subject } from './model'
 
 const desk = createDesk()
@@ -21,7 +22,7 @@ interface Studio {
   problem: string | null
   reload: () => void
   subject: Subject | null
-  /** Puts a view or fragment on the canvas and brings the canvas forward. */
+  /** Puts a view or fragment on the canvas, unless it is there already, and brings the canvas forward. */
   show: (subject: Subject | null) => void
 }
 
@@ -62,7 +63,7 @@ export function App() {
   useEffect(reload, [reload])
 
   const show = useCallback((next: Subject | null) => {
-    setSubject(next)
+    setSubject(current => nextSubject(current, next))
     if (next) desk.open('canvas')
   }, [])
 

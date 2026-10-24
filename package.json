@@ -20,7 +20,8 @@
     "package:win:installer": "npm run build && electron-builder --win",
     "package:linux": "npm run build && electron-builder --linux --dir",
     "package:linux:appimage": "npm run build && electron-builder --linux",
-    "package:all": "npm run build && electron-builder --mac --win --linux"
+    "package:all": "npm run build && electron-builder --mac --win --linux",
+    "test": "vitest run"
   },
   "dependencies": {
     "@liberation-data/desk": "^0.35.2",
@@ -37,7 +38,8 @@
     "concurrently": "^10.0.6",
     "electron": "^45.0.0",
     "electron-builder": "^26.15.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   },
   "build": {
     "appId": "org.drivine.studio",
@@ -69,6 +71,7 @@
       ".next/static/**/*",
       "public/**/*",
       "main.cjs",
+      "server-start.cjs",
       "package.json",
       "!node_modules/**/*"
     ],

@@ -11,6 +11,17 @@ export const subjectName = (subject: Subject): string =>
 export const subjectClass = (subject: Subject): string =>
   subject.kind === 'view' ? subject.view.className : subject.fragment.className
 
+/** Tells subjects apart by class, since two packages may each have a class of the same simple name. */
+export const subjectKey = (subject: Subject): string => `${subject.kind}:${subjectClass(subject)}`
+
+/**
+ * What the canvas shows once next is asked for. The catalogue makes a new object for the subject on each
+ * render, and the canvas reloads, unfiltered, whenever its subject changes; so showing what is already
+ * there keeps the current object, and with it the query and the result that match the form.
+ */
+export const nextSubject = (current: Subject | null, next: Subject | null): Subject | null =>
+  current && next && subjectKey(current) === subjectKey(next) ? current : next
+
 /** Where a condition looks: the root, or the node at the far end of a relationship. */
 export interface Scope {
   /** '' for the root; otherwise the relationship's field. */
@@ -69,7 +80,8 @@ const REST: OperatorChoice[] = [
 export function operatorsFor(property: PropertyDescriptor | undefined): OperatorChoice[] {
   if (!property) return COMMON
   if (property.javaType === 'java.lang.String') return [...COMMON, ...TEXT, ...REST]
-  if (property.type === 'Boolean') return [...COMMON, ...REST.slice(2)]
+  // By the Java type: a Java field's type is its Java simple name, so a primitive one is 'boolean'.
+  if (property.javaType === 'boolean' || property.javaType === 'java.lang.Boolean') return [...COMMON, ...REST.slice(2)]
   return [...COMMON, ...ORDERED, ...REST]
 }
 

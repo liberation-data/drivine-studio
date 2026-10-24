@@ -7,7 +7,7 @@ import { useStudio } from './App'
 import { SUBJECT } from './Catalogue'
 import { captionOf, colourOf, GraphView } from './GraphView'
 import type { Selection } from './GraphView'
-import { emptyDraft, operatorsFor, scopesOf, subjectName, toQuery } from './model'
+import { emptyDraft, operatorsFor, scopesOf, subjectKey, subjectName, toQuery } from './model'
 import type { ConditionDraft, QueryDraft, Scope, Subject } from './model'
 
 type Run = { state: 'idle' } | { state: 'running' } | { state: 'failed'; message: string }
@@ -20,7 +20,7 @@ export function Canvas() {
     <div className="studio-canvas" {...dropProps}>
       {subject && catalog ? (
         // Keyed, so a new subject starts with a clean query and nothing selected.
-        <Loaded key={`${subject.kind}:${subjectName(subject)}`} subject={subject} catalog={catalog} onClear={() => show(null)} />
+        <Loaded key={subjectKey(subject)} subject={subject} catalog={catalog} onClear={() => show(null)} />
       ) : (
         <div className="studio-hint">
           <h2>Drag a view or fragment here</h2>

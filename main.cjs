@@ -1,9 +1,10 @@
 // main.cjs: the desktop app. It runs the studio's standalone Next.js server in Electron's own Node and
 // opens a window on it, so the browser app talks to the same server here as it does from npm start.
-const { app, BrowserWindow, Menu, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell, utilityProcess } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { answers, waitForServer } = require('./server-start.cjs');
 
 const PORT = process.env.PORT ?? '5187';
 const URL = `http://localhost:${PORT}`;
@@ -13,13 +14,15 @@ const isDev = process.env.ELECTRON_DEV === '1';
 const logPath = path.join(os.tmpdir(), 'drivine-studio-electron.log');
 const logStream = fs.createWriteStream(logPath, { flags: 'a' });
 
+// Only while the stream is open: the server's exit is reported after before-quit has ended it, and a
+// write after the end is an uncaught error rather than a lost line.
 function log(...args) {
-  logStream.write(`[${new Date().toISOString()}] ${args.join(' ')}\n`);
+  if (logStream.writable) logStream.write(`[${new Date().toISOString()}] ${args.join(' ')}\n`);
   console.log(...args);
 }
 
 function logError(...args) {
-  logStream.write(`[${new Date().toISOString()}] ERROR: ${args.join(' ')}\n`);
+  if (logStream.writable) logStream.write(`[${new Date().toISOString()}] ERROR: ${args.join(' ')}\n`);
   console.error(...args);
 }
 
@@ -31,36 +34,40 @@ log('Log file:', logPath);
 // Before the app is ready, so the menu and dock carry it.
 app.setName('Drivine Studio');
 
+// A second launch would find this one's server on the port and refuse to start; bring this one forward instead.
+if (!app.requestSingleInstanceLock()) {
+  log('[Electron] Already running; leaving it to that instance');
+  app.exit(0);
+}
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+});
+
 let serverProcess = null;
+// No window until the server answers: on a Mac, launching the app also activates it.
+let serverReady = false;
 
 process.on('uncaughtException', error => logError('Uncaught exception:', error));
 process.on('unhandledRejection', error => logError('Unhandled rejection:', error));
-
-/** Resolves once the server answers, rather than after a guess at how long it takes to start. */
-async function waitForServer(timeoutMs = 30000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      await fetch(URL, { method: 'HEAD' });
-      return;
-    } catch {
-      await new Promise(resolve => setTimeout(resolve, 250));
-    }
-  }
-  throw new Error(`The studio server did not answer at ${URL} within ${timeoutMs / 1000}s`);
-}
 
 async function startServer() {
   // In development the Next.js dev server is already running.
   if (isDev) {
     log('[Electron] Dev mode - using the Next.js dev server at', URL);
-    return waitForServer();
+    return waitForServer(URL);
   }
 
   const serverCwd = path.join(app.getAppPath(), '.next', 'standalone');
   const serverPath = path.join(serverCwd, 'server.js');
   log('[Electron] Starting the studio server:', serverPath);
   if (!fs.existsSync(serverPath)) throw new Error(`Server file not found at: ${serverPath}`);
+  // Ours could not bind the port, and the window would show whatever does hold it in its place.
+  if (await answers(URL)) {
+    throw new Error(`Another server already answers at ${URL}. Stop it (npm run dev, say), or set PORT to a free port.`);
+  }
 
   // Electron's utilityProcess runs it in Electron's own Node, so no separate Node is needed.
   // The environment passes on, DRIVINE_STUDIO_API included.
@@ -71,9 +78,13 @@ async function startServer() {
   });
   serverProcess.stdout.on('data', data => log('[Next.js]', data.toString().trim()));
   serverProcess.stderr.on('data', data => logError('[Next.js Error]', data.toString().trim()));
-  serverProcess.on('exit', code => log(`[Next.js] Process exited with code ${code}`));
+  let exited = null;
+  serverProcess.on('exit', code => {
+    exited = `The studio server exited with code ${code} before it answered at ${URL}`;
+    log(`[Next.js] Process exited with code ${code}`);
+  });
 
-  return waitForServer();
+  return waitForServer(URL, { stopped: () => exited });
 }
 
 function createWindow() {
@@ -184,9 +195,12 @@ app.whenReady().then(async () => {
     await startServer();
   } catch (error) {
     logError('[Electron] Failed to start server:', error);
+    // A packaged app has no terminal, so say why it is going rather than vanish.
+    dialog.showErrorBox('Drivine Studio could not start', `${error.message}\n\nThe log is at ${logPath}.`);
     app.quit();
     return;
   }
+  serverReady = true;
   setMenu();
   createWindow();
 });
@@ -196,7 +210,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  if (serverReady && BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
 app.on('before-quit', () => {
