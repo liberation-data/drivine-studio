@@ -30,7 +30,8 @@ transactions, it runs as a read-only query, which FalkorDB will not let write. A
 its own, as some of APOC's do, is beyond both: give the studio a user that may only read, and that is the whole
 guarantee.
 
-Drivine (TypeScript) runs SQL on Postgres and Oracle, not Cypher, so the Cypher window does not run there yet.
+Drivine (TypeScript) runs SQL on Postgres and Oracle, not Cypher, so the Cypher window does not run there yet, and
+the Connections window keeps them without testing them.
 
 The server answers only the studio's own pages, on `localhost`: a page of another site, or one whose name has been
 pointed at this machine, is refused. `DRIVINE_STUDIO_ALLOWED_HOSTS` names the hosts to answer to in its place, as a

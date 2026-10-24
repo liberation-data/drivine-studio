@@ -7,6 +7,8 @@ import type { ConnectionInput, DatabaseType, StudioConnection } from './database
 
 type Test = { state: 'testing' } | { state: 'passed'; milliseconds: number } | { state: 'failed'; message: string }
 
+const RUNS_CYPHER: readonly DatabaseType[] = ['NEO4J', 'MEMGRAPH', 'NEPTUNE', 'FALKORDB']
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 export function Connections() {
@@ -71,7 +73,10 @@ export function Connections() {
                   {active?.id === c.id
                     ? <span className="desk-text-caption desk-text-muted">In use</span>
                     : <Button size="small" onClick={() => chooseConnection(c.id)}>Use</Button>}
-                  <Button size="small" intent="quiet" onClick={() => test(c)} disabled={result?.state === 'testing'}>Test</Button>
+                  {/* A test runs Cypher, which the studio does not run on Oracle and Postgres; connecting to Oracle writes. */}
+                  {RUNS_CYPHER.includes(c.type) && (
+                    <Button size="small" intent="quiet" onClick={() => test(c)} disabled={result?.state === 'testing'}>Test</Button>
+                  )}
                   {c.source === 'studio' && (
                     <>
                       <Button size="small" intent="quiet" onClick={() => setEditing(c)}>Edit</Button>

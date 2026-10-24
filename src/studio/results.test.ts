@@ -13,8 +13,20 @@ describe('graphOf', () => {
     })
     expect(graph.nodes.map(n => n.fragment)).toEqual(['Person', NO_LABEL])
     expect(labels).toEqual([NO_LABEL, 'Person'].sort((a, b) => a.localeCompare(b)))
-    expect(graph.edges).toEqual([{ id: 'r0', from: 'n0', to: 'n1', type: 'KNOWS', directed: true, properties: {} }])
+    expect(graph.edges).toMatchObject([{ type: 'KNOWS', directed: true, properties: {} }])
+    expect(graph.edges[0]?.from).toBe(graph.nodes[0]?.id)
+    expect(graph.edges[0]?.to).toBe(graph.nodes[1]?.id)
     expect(graph.roots).toEqual([])
+  })
+
+  it('keeps a node and a relationship apart when the database gives both the same id, as FalkorDB does', () => {
+    const { graph } = graphOf({
+      nodes: [{ ...ada, id: '0' }, { ...bare, id: '1' }],
+      relationships: [{ id: '0', type: 'KNOWS', from: '0', to: '1', properties: {} }],
+    })
+    const ids = [...graph.nodes.map(n => n.id), ...graph.edges.map(e => e.id)]
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(graph.edges[0]).toMatchObject({ from: graph.nodes[0]?.id, to: graph.nodes[1]?.id })
   })
 })
 

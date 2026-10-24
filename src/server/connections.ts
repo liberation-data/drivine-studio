@@ -144,11 +144,12 @@ export function validate(input: unknown): ConnectionInput {
   }
 }
 
-// One change at a time, so two at once cannot each write the file over the other's.
-let changes: Promise<unknown> = Promise.resolve()
+// One change at a time, so two at once cannot each write the file over the other's. On globalThis, as the providers
+// are, since Next may give each route its own copy of this module, and the routes change the one file.
+const queue = globalThis as typeof globalThis & { drivineStudioChanges?: Promise<unknown> }
 function serially<T>(change: () => Promise<T>): Promise<T> {
-  const next = changes.then(change, change)
-  changes = next.catch(() => undefined)
+  const next = (queue.drivineStudioChanges ?? Promise.resolve()).then(change, change)
+  queue.drivineStudioChanges = next.catch(() => undefined)
   return next
 }
 

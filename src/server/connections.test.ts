@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   addConnection, ConnectionError, findConnection, fromEnvironment, listConnections, removeConnection, toPublic,
   updateConnection, validate,
@@ -93,6 +93,13 @@ describe('the connections file', () => {
 
   it('makes changes one at a time, so none is lost', async () => {
     await Promise.all(['A', 'B', 'C', 'D'].map(name => addConnection(validate({ ...neo4j, name }))))
+    expect((await listConnections()).map(c => c.name)).toEqual(['A', 'B', 'C', 'D'])
+  })
+
+  it('makes changes one at a time across copies of this module, as Next may give each route its own', async () => {
+    vi.resetModules()
+    const other = await import('./connections')
+    await Promise.all(['A', 'B', 'C', 'D'].map((name, i) => (i % 2 ? other : { addConnection }).addConnection(validate({ ...neo4j, name }))))
     expect((await listConnections()).map(c => c.name)).toEqual(['A', 'B', 'C', 'D'])
   })
 })

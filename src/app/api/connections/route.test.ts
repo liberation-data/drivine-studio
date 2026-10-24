@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DELETE, PUT } from './[id]/route'
+import { POST as TEST } from './[id]/test/route'
 import { GET, POST } from './route'
 
 let home: string
@@ -50,10 +51,21 @@ describe('the connections endpoints', () => {
     expect((await DELETE(request('DELETE', '/environment'), context('environment'))).status).toBe(400)
   })
 
+  it('answer a test of a connection that is not there, or one Cypher does not run on, as a 400', async () => {
+    const missing = await TEST(request('POST', '/missing/test'), context('missing'))
+    expect(missing.status).toBe(400)
+    expect(await missing.json()).toEqual({ error: 'There is no connection missing.' })
+    const { id } = (await (await POST(request('POST', '', { ...neo4j, type: 'POSTGRES', database: 'app' }))).json()) as { id: string }
+    const postgres = await TEST(request('POST', `/${id}/test`), context(id))
+    expect(postgres.status).toBe(400)
+    expect(((await postgres.json()) as { error: string }).error).toContain('runs SQL, not Cypher')
+  })
+
   it('refuse a page of another site', async () => {
     const foreign = { origin: 'https://example.com' }
     expect((await GET(request('GET', '', undefined, foreign))).status).toBe(403)
     expect((await POST(request('POST', '', neo4j, foreign))).status).toBe(403)
     expect((await DELETE(request('DELETE', '/x', undefined, foreign), context('x'))).status).toBe(403)
+    expect((await TEST(request('POST', '/x/test', undefined, foreign), context('x'))).status).toBe(403)
   })
 })

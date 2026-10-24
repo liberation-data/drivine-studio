@@ -10,14 +10,16 @@ export const NO_LABEL = 'No label'
  * by its first label, the labels sorted, so a label keeps its colour from one run to the next.
  */
 export function graphOf(graph: CypherGraph): { graph: Result['graph']; labels: string[] } {
+  // The graph view keeps nodes and relationships under one set of ids, and FalkorDB numbers each from 0.
+  const nodeId = (id: string) => `node:${id}`
   const nodes: GraphNode[] = graph.nodes.map(node => ({
-    id: node.id,
+    id: nodeId(node.id),
     fragment: node.labels[0] ?? NO_LABEL,
     labels: node.labels,
     properties: node.properties,
     aggregates: {},
   }))
-  const edges = graph.relationships.map(r => ({ id: r.id, from: r.from, to: r.to, type: r.type, directed: true, properties: r.properties }))
+  const edges = graph.relationships.map(r => ({ id: `relationship:${r.id}`, from: nodeId(r.from), to: nodeId(r.to), type: r.type, directed: true, properties: r.properties }))
   const labels = [...new Set(nodes.map(n => n.fragment))].sort((a, b) => a.localeCompare(b))
   return { graph: { nodes, edges, roots: [] }, labels }
 }
