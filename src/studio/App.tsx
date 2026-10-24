@@ -8,12 +8,16 @@ import { loadCatalog } from './api'
 import type { Catalog } from './api'
 import { Canvas } from './Canvas'
 import { Catalogue } from './Catalogue'
+import { Connections } from './Connections'
+import { Cypher } from './Cypher'
+import { listConnections } from './database'
+import type { StudioConnection } from './database'
 import { nextSubject } from './model'
 import type { Subject } from './model'
 
 const desk = createDesk()
 
-const TITLES: Record<string, string> = { catalogue: 'Catalogue', canvas: 'Canvas' }
+const TITLES: Record<string, string> = { catalogue: 'Catalogue', canvas: 'Canvas', cypher: 'Cypher', connections: 'Connections' }
 const title = (id: string) => TITLES[id] ?? id
 
 interface Studio {
@@ -24,6 +28,13 @@ interface Studio {
   subject: Subject | null
   /** Puts a view or fragment on the canvas, unless it is there already, and brings the canvas forward. */
   show: (subject: Subject | null) => void
+  connections: StudioConnection[] | null
+  /** Why the connections could not be read, when they could not. */
+  connectionProblem: string | null
+  reloadConnections: () => void
+  /** The connection the Cypher window runs on. */
+  connection: StudioConnection | null
+  chooseConnection: (id: string) => void
 }
 
 const StudioContext = createContext<Studio | null>(null)
@@ -38,6 +49,8 @@ export function useStudio(): Studio {
 function renderWindow(id: string): ReactNode {
   if (id === 'catalogue') return <Catalogue />
   if (id === 'canvas') return <Canvas />
+  if (id === 'cypher') return <Cypher />
+  if (id === 'connections') return <Connections />
   return null
 }
 
@@ -46,8 +59,20 @@ const icon = (path: string) => (
     <path d={path} />
   </svg>
 )
+// The connection in use, kept in this browser only: a convenience, and lost without harm.
+const CONNECTION = 'drivine-studio.connection'
+const rememberedConnection = (): string | null => {
+  try {
+    return window.localStorage.getItem(CONNECTION)
+  } catch {
+    return null
+  }
+}
+
 const DOCK = [
   dockItem({ id: 'catalogue', label: 'Catalogue', description: 'Views and fragments', icon: icon('M4 6h16M4 12h16M4 18h10') }),
+  dockItem({ id: 'cypher', label: 'Cypher', description: 'Run Cypher, see a graph or rows', icon: icon('M8 6l-5 6 5 6M16 6l5 6-5 6M14 4l-4 16') }),
+  dockItem({ id: 'connections', label: 'Connections', description: 'The databases to read', icon: icon('M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2zM4 6v12c0 1.1 3.6 2 8 2s8-.9 8-2V6M4 12c0 1.1 3.6 2 8 2s8-.9 8-2') }),
   dockItem({ id: 'canvas', label: 'Canvas', description: 'Load and see the graph', icon: icon('M6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7.7 7l8.5 2.4M16.6 11.5l-7.2 5.3M6.4 8l1.2 8') }),
 ]
 
@@ -55,12 +80,36 @@ export function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [subject, setSubject] = useState<Subject | null>(null)
+  const [connections, setConnections] = useState<StudioConnection[] | null>(null)
+  const [connectionProblem, setConnectionProblem] = useState<string | null>(null)
+  const [chosen, setChosen] = useState<string | null>(null)
 
   const reload = useCallback(() => {
     setProblem(null)
     loadCatalog().then(setCatalog, (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)))
   }, [])
   useEffect(reload, [reload])
+
+  const reloadConnections = useCallback(() => {
+    setConnectionProblem(null)
+    listConnections().then(setConnections, (e: unknown) => setConnectionProblem(e instanceof Error ? e.message : String(e)))
+  }, [])
+  useEffect(reloadConnections, [reloadConnections])
+  useEffect(() => setChosen(rememberedConnection()), [])
+
+  const chooseConnection = useCallback((id: string) => {
+    setChosen(id)
+    try {
+      window.localStorage.setItem(CONNECTION, id)
+    } catch {
+      // Not remembered; still in use.
+    }
+  }, [])
+  // The one chosen while it is still there; otherwise the first, so a single connection needs no choosing.
+  const connection = useMemo(
+    () => connections?.find(c => c.id === chosen) ?? connections?.[0] ?? null,
+    [connections, chosen],
+  )
 
   const show = useCallback((next: Subject | null) => {
     setSubject(current => nextSubject(current, next))
@@ -83,10 +132,19 @@ export function App() {
     desk.open('canvas', { frame: { x: side + gap * 2, y: gap, width: stage.width - side - gap * 3, height } })
   }, [])
 
-  const studio = useMemo(() => ({ catalog, problem, reload, subject, show }), [catalog, problem, reload, subject, show])
+  const studio = useMemo(
+    () => ({ catalog, problem, reload, subject, show, connections, connectionProblem, reloadConnections, connection, chooseConnection }),
+    [catalog, problem, reload, subject, show, connections, connectionProblem, reloadConnections, connection, chooseConnection],
+  )
 
   const menus = useMemo(() => [
-    { id: 'studio', label: 'Drivine Studio', emphasis: true, items: [menuAction('Reload Catalogue', reload)] },
+    { id: 'studio', label: 'Drivine Studio', emphasis: true, items: [
+        menuAction('Reload Catalogue', reload),
+        menuAction('Reload Connections', reloadConnections),
+        menuSeparator(),
+        menuAction('Cypher', () => desk.open('cypher')),
+        menuAction('Connections', () => desk.open('connections')),
+      ] },
     {
       id: 'window',
       label: 'Window',
@@ -96,7 +154,7 @@ export function App() {
         ...windowMenuItems(desk.getState(), id => desk.focus(id), title),
       ],
     },
-  ], [reload])
+  ], [reload, reloadConnections])
 
   return (
     <DeskShell desk={desk}>
