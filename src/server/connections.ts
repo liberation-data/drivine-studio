@@ -155,6 +155,7 @@ function serially<T>(change: () => Promise<T>): Promise<T> {
 
 const settled = ({ clearPassword: _, ...input }: ConnectionInput): Omit<Connection, 'id' | 'source'> => input
 
+/** Adds a connection to the file, under an id of its own. */
 export const addConnection = (input: ConnectionInput): Promise<Connection> => serially(async () => {
   const stored = await readStored()
   const added: Connection = { ...settled(input), id: randomUUID(), source: 'studio' }
@@ -175,6 +176,7 @@ export const updateConnection = (id: string, input: ConnectionInput): Promise<Co
   return updated
 })
 
+/** Removes a connection from the file. The environment's is not in it, so it is refused. */
 export const removeConnection = (id: string): Promise<void> => serially(async () => {
   if (id === 'environment') throw new ConnectionError('The environment\'s connection is removed from the environment.')
   const stored = await readStored()

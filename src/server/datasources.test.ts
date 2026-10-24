@@ -1,5 +1,6 @@
 import neo4j from 'neo4j-driver'
 import { describe, expect, it } from 'vitest'
+import { ConnectionError } from './connections'
 import type { Connection } from './connections'
 import { boltParameters, run, StatementError } from './datasources'
 
@@ -22,6 +23,14 @@ describe('run, with nothing to run', () => {
   it('says so, before connecting', async () => {
     const connection: Connection = { id: 'blank', name: 'Blank', type: 'NEO4J', host: 'nowhere.invalid', source: 'studio' }
     await expect(run(connection, ' \n ')).rejects.toThrow(new StatementError('There is no statement to run.'))
+  })
+})
+
+describe('run, on a connection Drivine will not build', () => {
+  it('says what to fix, as the person\'s to fix, before connecting', async () => {
+    const connection: Connection = { id: 'no-user', name: 'No user', type: 'NEO4J', host: 'nowhere.invalid', source: 'studio' }
+    await expect(run(connection, 'RETURN 1')).rejects.toThrow(ConnectionError)
+    await expect(run(connection, 'RETURN 1')).rejects.toThrow(/username/)
   })
 })
 

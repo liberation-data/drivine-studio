@@ -1,9 +1,10 @@
-import { DatabaseRegistry, DatabaseType } from '@liberation-data/drivine'
+import { DatabaseRegistry, DatabaseType, FalkorDbParameterCoercer } from '@liberation-data/drivine'
 import type { ConnectionProvider } from '@liberation-data/drivine'
 import neo4j from 'neo4j-driver'
 import type { Driver } from 'neo4j-driver'
 import { DEFAULT_LIMIT, RUNS_CYPHER } from '../studio/database'
 import type { CypherResult } from '../studio/database'
+import { ConnectionError } from './connections'
 import type { Connection } from './connections'
 import { Cells } from './values'
 
@@ -35,7 +36,13 @@ async function providerFor(connection: Connection): Promise<ConnectionProvider> 
   if (connection.password) builder.password(connection.password)
   if (connection.database) builder.databaseName(connection.database)
   if (connection.graph) builder.defaultGraphPath(connection.graph)
-  const provider = builder.register(`studio-${connection.id}-${++cache.built}`)
+  let provider: ConnectionProvider
+  try {
+    provider = builder.register(`studio-${connection.id}-${++cache.built}`)
+  } catch (e) {
+    // Drivine refuses settings it cannot build on, as Neo4j without a user: the person's to fix.
+    throw new ConnectionError(e instanceof Error ? e.message : String(e))
+  }
   providers.set(connection.id, { settings, provider })
   return provider
 }
@@ -128,12 +135,21 @@ interface FalkorGraph {
   roQuery(query: string, options?: { params?: Record<string, unknown> }): Promise<{ data?: Record<string, unknown>[] }>
 }
 
-/** FalkorDB: its client's read-only query, which keeps the nodes it gives back. */
+/**
+ * FalkorDB: its client's read-only query, which keeps the nodes it gives back. The client writes the parameters into
+ * the statement as text, so they go as Drivine prepares them, which refuses a name that would change the statement.
+ */
 async function falkor(provider: ConnectionProvider, statement: string, parameters: Record<string, unknown>, limit: number): Promise<Rows> {
+  let params: Record<string, unknown>
+  try {
+    params = new FalkorDbParameterCoercer().coerce(parameters)
+  } catch (e) {
+    throw new StatementError(e instanceof Error ? e.message : String(e))
+  }
   const session = await provider.connect()
   try {
     const graph = (session as unknown as { graph: FalkorGraph }).graph
-    const reply = await graph.roQuery(statement, Object.keys(parameters).length ? { params: parameters } : undefined).catch((e: unknown) => {
+    const reply = await graph.roQuery(statement, Object.keys(params).length ? { params } : undefined).catch((e: unknown) => {
       throw refused(e, provider.graphName)
     })
     const data = reply.data ?? []

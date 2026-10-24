@@ -99,6 +99,21 @@ describe('on FalkorDB', () => {
     expect((await run(connection, 'MATCH (n:Intruder) RETURN count(n) AS n')).rows).toEqual([[{ kind: 'value', value: 0 }]])
   })
 
+  it('reads no more than the limit, and says so', async () => {
+    const result = await run(connection, 'UNWIND range(1, 10) AS i RETURN i', {}, 3)
+    expect(result.rows).toHaveLength(3)
+    expect(result.truncated).toBe(true)
+  })
+
+  it('binds parameters, and refuses a name FalkorDB would read as part of the statement', async () => {
+    expect((await run(connection, 'MATCH (p:Person {name: $name}) RETURN p.name AS name', { name: 'Ada' })).rows).toEqual([[{ kind: 'value', value: 'Ada' }]])
+    // FalkorDB's client writes each name into the statement as it is: this one would make it return 99.
+    const changes = run(connection, 'RETURN $one AS one', { one: 1, 'x=1 RETURN 99 AS one //': 2 })
+    await expect(changes).rejects.toThrow(StatementError)
+    await expect(changes).rejects.toThrow(/letters, digits and underscores/)
+    await expect(run(connection, 'RETURN $one AS one', { one: { 'not a name': 1 } })).rejects.toThrow(/letters, digits and underscores/)
+  })
+
   it('says what is wrong with a statement, and that a graph is not there', async () => {
     await expect(run(connection, 'MATCH (n RETURN n')).rejects.toThrow(StatementError)
     const missing = { ...connection, id: 'falkor-missing', database: 'nothing-here' }
