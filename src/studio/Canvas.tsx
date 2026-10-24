@@ -5,8 +5,9 @@ import { runQuery } from './api'
 import type { Catalog, Result } from './api'
 import { useStudio } from './App'
 import { SUBJECT } from './Catalogue'
-import { captionOf, colourOf, GraphView } from './GraphView'
+import { GraphView } from './GraphView'
 import type { Selection } from './GraphView'
+import { Inspector } from './Inspector'
 import { emptyDraft, operatorsFor, scopesOf, subjectKey, subjectName, toQuery } from './model'
 import type { ConditionDraft, QueryDraft, Scope, Subject } from './model'
 
@@ -112,7 +113,7 @@ function Loaded({ subject, catalog, onClear }: { subject: Subject; catalog: Cata
             <p>No {subjectName(subject)} satisfies these conditions.</p>
           </div>
         )}
-        {selection && <Inspector selection={selection} result={result} fragments={fragments} />}
+        {selection && <Inspector selection={selection} nodes={result?.graph.nodes ?? []} fragments={fragments} />}
       </div>
     </>
   )
@@ -211,56 +212,5 @@ function Where({ scopes, draft, onChange }: { scopes: Scope[]; draft: QueryDraft
         <Button type="button" size="small" onClick={add}>Add Condition</Button>
       </div>
     </>
-  )
-}
-
-function Inspector({ selection, result, fragments }: { selection: NonNullable<Selection>; result: Result | null; fragments: readonly string[] }) {
-  if (selection.kind === 'edge') {
-    const { edge } = selection
-    const end = (id: string) => {
-      const node = result?.graph.nodes.find(n => n.id === id)
-      return node ? captionOf(node) : id
-    }
-    return (
-      <aside className="studio-inspector" aria-label="Selected relationship">
-        <h3>{edge.type}</h3>
-        <p className="desk-text-small desk-text-muted">{end(edge.from)} {edge.directed ? '→' : '—'} {end(edge.to)}</p>
-        <Properties values={edge.properties} empty="This relationship carries no properties in this view." />
-      </aside>
-    )
-  }
-  const { node } = selection
-  return (
-    <aside className="studio-inspector" aria-label="Selected node">
-      <h3>
-        <span className="studio-swatch" style={{ background: colourOf(fragments, node.fragment) }} />
-        {captionOf(node)}
-      </h3>
-      <p className="desk-text-small desk-text-muted">{node.fragment} {node.labels.map(l => `:${l}`).join('')}</p>
-      <Properties values={node.properties} empty="No properties." />
-      {Object.keys(node.aggregates).length > 0 && (
-        <>
-          <h4 className="desk-text-small desk-text-muted">Aggregates</h4>
-          <Properties values={node.aggregates} empty="" />
-        </>
-      )}
-    </aside>
-  )
-}
-
-function Properties({ values, empty }: { values: Record<string, unknown>; empty: string }) {
-  const entries = Object.entries(values)
-  if (entries.length === 0) return empty ? <p className="desk-text-small desk-text-muted">{empty}</p> : null
-  return (
-    <dl className="studio-properties">
-      {entries.map(([name, value]) => (
-        <div key={name}>
-          <dt className="desk-text-caption desk-text-muted">{name}</dt>
-          <dd className={value === null ? 'desk-text-muted' : undefined}>
-            {value === null ? 'absent' : typeof value === 'object' ? JSON.stringify(value) : String(value)}
-          </dd>
-        </div>
-      ))}
-    </dl>
   )
 }

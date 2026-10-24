@@ -73,6 +73,25 @@ html, body, #root { height: 100%; margin: 0; }
   overflow-wrap: anywhere; white-space: pre-wrap;
 }
 
+/* Connections */
+.studio-connection {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--desk-space-2);
+  padding: var(--desk-space-2) var(--desk-space-3); border-radius: var(--desk-control-radius);
+}
+.studio-connection[aria-current] { background: color-mix(in srgb, var(--desk-accent) 16%, transparent); }
+.studio-connection-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 18ch; overflow-wrap: anywhere; }
+.studio-connection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--desk-space-1); }
+.studio-form { display: flex; flex-direction: column; gap: var(--desk-space-3); }
+.studio-form p { margin: 0; }
+.studio-bad { color: var(--desk-bad); margin: 0; }
+
+/* Cypher */
+.studio-editor { min-height: 0; resize: vertical; font-family: var(--desk-font-mono); font-size: var(--desk-text-small); line-height: 1.5; padding-block: var(--desk-space-2); }
+.studio-tabs { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.studio-tabs [role='tabpanel'] { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.studio-rows { flex: 1; min-height: 0; overflow: auto; }
+.studio-cell { display: block; max-width: 48ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--desk-font-mono); font-size: var(--desk-text-small); }
+
 @media (max-width: 640px) {
   .studio-result { flex-direction: column; }
   .studio-inspector { width: auto; max-height: 40%; border-left: 0; border-top: 1px solid var(--desk-rule); }
