@@ -93,8 +93,17 @@ describe('on FalkorDB', () => {
     expect(result.graph.relationships).toMatchObject([{ type: 'KNOWS' }])
   })
 
-  it('writes nothing', async () => {
-    await expect(run(connection, "CREATE (:Intruder {name: 'x'})")).rejects.toThrow()
+  it('writes nothing, and says why', async () => {
+    await expect(run(connection, "CREATE (:Intruder {name: 'x'})")).rejects.toThrow(StatementError)
+    await expect(run(connection, "CREATE (:Intruder {name: 'x'})")).rejects.toThrow(/^The studio reads and never writes/)
     expect((await run(connection, 'MATCH (n:Intruder) RETURN count(n) AS n')).rows).toEqual([[{ kind: 'value', value: 0 }]])
+  })
+
+  it('says what is wrong with a statement, and that a graph is not there', async () => {
+    await expect(run(connection, 'MATCH (n RETURN n')).rejects.toThrow(StatementError)
+    const missing = { ...connection, id: 'falkor-missing', database: 'nothing-here' }
+    await expect(check(missing)).rejects.toThrow(StatementError)
+    await expect(check(missing)).rejects.toThrow(/no graph nothing-here/)
+    await forget('falkor-missing')
   })
 })

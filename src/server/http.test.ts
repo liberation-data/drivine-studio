@@ -25,6 +25,10 @@ describe('foreign', () => {
     expect(((await refused?.json()) as { error: string }).error).toContain('DRIVINE_STUDIO_ALLOWED_HOSTS')
   })
 
+  it('refuses a call that names no host', () => {
+    expect(foreign(request({}), {})?.status).toBe(403)
+  })
+
   it('answers the hosts DRIVINE_STUDIO_ALLOWED_HOSTS names, in place of localhost', () => {
     const env = { DRIVINE_STUDIO_ALLOWED_HOSTS: 'studio.internal, Other' }
     expect(foreign(request({ host: 'studio.internal', origin: 'https://studio.internal' }), env)).toBeUndefined()
@@ -44,6 +48,8 @@ describe('failure', () => {
     expect(await answer(new StatementError('No statement.'))).toEqual({ status: 400, error: 'No statement.' })
     const syntax = Object.assign(new Error('Invalid input'), { code: 'Neo.ClientError.Statement.SyntaxError' })
     expect(await answer(syntax)).toEqual({ status: 400, error: 'Invalid input' })
+    const memgraph = Object.assign(new Error('Unbound variable: n.'), { code: 'Memgraph.ClientError.MemgraphError.MemgraphError' })
+    expect(await answer(memgraph)).toEqual({ status: 400, error: 'Unbound variable: n.' })
   })
 
   it('says why a write was refused', async () => {
@@ -51,6 +57,10 @@ describe('failure', () => {
     const { status, error } = await answer(write)
     expect(status).toBe(400)
     expect(error).toMatch(/^The studio reads and never writes.*Writing in read access mode not allowed\.$/)
+    const memgraph = Object.assign(new Error('Accessor type READ and query type WRITE are misaligned!'), {
+      code: 'Memgraph.ClientError.MemgraphError.MemgraphError',
+    })
+    expect(await answer(memgraph)).toMatchObject({ status: 400, error: expect.stringMatching(/^The studio reads and never writes.*misaligned!$/) })
   })
 
   it('answers the database or the network failing as a 502, with what it said', async () => {

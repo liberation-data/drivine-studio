@@ -15,8 +15,8 @@ FalkorDB, Postgres and Oracle. The studio keeps them in `connections.json` in `~
 is only ever told whether a connection has one.
 
 Drivine's own environment variables, as an application reads them (`DATABASE_TYPE`, `DATABASE_HOST`,
-`DATABASE_PORT`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_NAME`), add one more connection, which the studio
-cannot change: so a container needs no file.
+`DATABASE_PORT`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_NAME`, `DATABASE_DEFAULT_GRAPH_PATH`), add one more
+connection, which the studio cannot change: so a container needs no file. `DRIVINE_STUDIO_CONNECTION_NAME` names it.
 
 ## Cypher
 

@@ -75,6 +75,13 @@ describe('the connections file', () => {
     expect((await findConnection(id)).password).toBeUndefined()
   })
 
+  it('takes a new password over the one there, and refuses to change a connection it does not have', async () => {
+    const { id } = await addConnection(validate(neo4j))
+    await updateConnection(id, validate({ ...neo4j, password: 'newer' }))
+    expect((await findConnection(id)).password).toBe('newer')
+    await expect(updateConnection('missing', validate(neo4j))).rejects.toThrow(ConnectionError)
+  })
+
   it('lists by name, and removes', async () => {
     const b = await addConnection(validate({ ...neo4j, name: 'B' }))
     const a = await addConnection(validate({ ...neo4j, name: 'A' }))

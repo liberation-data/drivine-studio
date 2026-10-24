@@ -11,16 +11,22 @@ import { Cells } from './values'
  * changed since gets a new one, and the old one is closed. Each is registered under its own name in Drivine's
  * registry, since a name, once there, keeps the provider it was first given.
  */
-const providers = new Map<string, { settings: string; provider: ConnectionProvider }>()
-let built = 0
+// On globalThis, since Next may give each route its own copy of this module, and the route that removes a connection
+// must close the provider the route that ran Cypher on it built.
+const shared = globalThis as typeof globalThis & {
+  drivineStudioProviders?: { providers: Map<string, { settings: string; provider: ConnectionProvider }>; built: number }
+}
+const cache = (shared.drivineStudioProviders ??= { providers: new Map(), built: 0 })
+const providers = cache.providers
 
 async function providerFor(connection: Connection): Promise<ConnectionProvider> {
   const settings = JSON.stringify(connection)
   const known = providers.get(connection.id)
   if (known?.settings === settings) return known.provider
+  // Closed without waiting for it, so that a second call meanwhile finds the new provider rather than building another.
   if (known) {
     providers.delete(connection.id)
-    await known.provider.end().catch(() => undefined)
+    void known.provider.end().catch(() => undefined)
   }
   const builder = DatabaseRegistry.getInstance().builder().withType(connection.type as DatabaseType).host(connection.host)
   if (connection.port) builder.port(connection.port)
@@ -28,7 +34,7 @@ async function providerFor(connection: Connection): Promise<ConnectionProvider> 
   if (connection.password) builder.password(connection.password)
   if (connection.database) builder.databaseName(connection.database)
   if (connection.graph) builder.defaultGraphPath(connection.graph)
-  const provider = builder.register(`studio-${connection.id}-${++built}`)
+  const provider = builder.register(`studio-${connection.id}-${++cache.built}`)
   providers.set(connection.id, { settings, provider })
   return provider
 }
@@ -40,7 +46,11 @@ export async function forget(id: string): Promise<void> {
   await known?.provider.end().catch(() => undefined)
 }
 
+/** A statement the studio will not run, or one the database turned down: the person can fix it, so it is a 400. */
 export class StatementError extends Error {}
+
+/** Said before a database's refusal to write, so the person knows the refusal is the studio's doing. */
+export const READS_ONLY = 'The studio reads and never writes, and runs each statement where it cannot.'
 
 export const DEFAULT_LIMIT = 1000
 export const MAX_LIMIT = 10000
@@ -62,8 +72,10 @@ export async function run(
   limit: number = DEFAULT_LIMIT,
 ): Promise<CypherResult> {
   if (!RUNS_CYPHER.includes(connection.type)) {
+    // The environment's DATABASE_TYPE is taken as it is, so it may name no type at all.
+    const sql = connection.type === 'ORACLE' ? 'Oracle' : connection.type === 'POSTGRES' ? 'Postgres' : undefined
     throw new StatementError(
-      `The studio runs Cypher on Neo4j, Memgraph, Neptune and FalkorDB. On ${connection.type === 'ORACLE' ? 'Oracle' : 'Postgres'}, Drivine (TypeScript) runs SQL, not Cypher.`,
+      `The studio runs Cypher on Neo4j, Memgraph, Neptune and FalkorDB. ${sql ? `On ${sql}, Drivine (TypeScript) runs SQL, not Cypher.` : `It does not know the database type ${connection.type}.`}`,
     )
   }
   if (statement.trim() === '') throw new StatementError('There is no statement to run.')
@@ -126,7 +138,9 @@ async function falkor(provider: ConnectionProvider, statement: string, parameter
   const session = await provider.connect()
   try {
     const graph = (session as unknown as { graph: FalkorGraph }).graph
-    const reply = await graph.roQuery(statement, Object.keys(parameters).length ? { params: parameters } : undefined)
+    const reply = await graph.roQuery(statement, Object.keys(parameters).length ? { params: parameters } : undefined).catch((e: unknown) => {
+      throw refused(e, provider.graphName)
+    })
     const data = reply.data ?? []
     const columns = data.length ? Object.keys(data[0]!) : []
     const cells = new Cells('falkordb')
@@ -135,6 +149,23 @@ async function falkor(provider: ConnectionProvider, statement: string, parameter
   } finally {
     await session.release().catch(() => undefined)
   }
+}
+
+/**
+ * What FalkorDB said, as a StatementError when it turned the statement down: a refusal to write, a statement it
+ * could not read, or a graph that is not there, which FalkorDB calls an empty key. Its client gives each as an
+ * ErrorReply, which the studio does not import, so it is known by its class's name. Anything else is as it came.
+ */
+function refused(e: unknown, graphName: string | undefined): unknown {
+  let reply = false
+  for (let p = e instanceof Error ? Object.getPrototypeOf(e) : null; p && !reply; p = Object.getPrototypeOf(p)) {
+    reply = p.constructor?.name === 'ErrorReply'
+  }
+  if (!reply) return e
+  const { message } = e as Error
+  if (/only on read-only queries/.test(message)) return new StatementError(`${READS_ONLY} ${message}`)
+  if (/empty key/.test(message)) return new StatementError(`FalkorDB has no graph ${graphName ?? ''}, or nothing in it yet.`)
+  return new StatementError(message)
 }
 
 /** Connects and runs the smallest read there is, to say whether the connection works. */

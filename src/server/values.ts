@@ -126,6 +126,7 @@ function plainProperties(properties: Record<string, unknown>): Record<string, un
   return Object.fromEntries(Object.entries(properties ?? {}).map(([key, value]) => [key, plain(value)]))
 }
 
+/** A property's value as plain JSON: what has no JSON of its own, as a temporal value or a large integer, as its text. */
 export function plain(value: unknown): unknown {
   if (value === null || value === undefined) return null
   if (Array.isArray(value)) return value.map(plain)

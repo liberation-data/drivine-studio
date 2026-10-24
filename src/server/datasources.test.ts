@@ -9,6 +9,13 @@ describe('run', () => {
     await expect(run(connection, 'RETURN 1')).rejects.toThrow(StatementError)
     await expect(run(connection, 'RETURN 1')).rejects.toThrow(/Drivine \(TypeScript\) runs SQL, not Cypher/)
   })
+
+  it('says it does not know a type the environment names wrongly, rather than calling it Postgres', async () => {
+    const connection = { id: 'environment', name: 'Env', type: 'neo4j', host: 'nowhere.invalid', source: 'environment' } as unknown as Connection
+    await expect(run(connection, 'RETURN 1')).rejects.toThrow(StatementError)
+    await expect(run(connection, 'RETURN 1')).rejects.toThrow(/neo4j/)
+    await expect(run(connection, 'RETURN 1')).rejects.not.toThrow(/Postgres/)
+  })
 })
 
 describe('boltParameters', () => {

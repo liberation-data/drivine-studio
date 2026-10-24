@@ -93,6 +93,8 @@ export function Connections() {
           editing={editing}
           onDone={saved => {
             setEditing(null)
+            // A test of the settings it had says nothing of the ones it has now.
+            if (saved) setTests(({ [saved.id]: _, ...rest }) => rest)
             reloadConnections()
             // The first connection there is, is the one to use.
             if (saved && !active) chooseConnection(saved.id)
@@ -117,7 +119,7 @@ const DATABASE_FIELD: Record<DatabaseType, { label: string; help: string } | nul
   NEO4J: { label: 'Database', help: 'The server\'s default database when empty.' },
   MEMGRAPH: null,
   NEPTUNE: null,
-  FALKORDB: { label: 'Graph', help: 'The graph to query.' },
+  FALKORDB: { label: 'Graph', help: 'The graph to query: graph when empty.' },
   POSTGRES: { label: 'Database', help: 'Required.' },
   ORACLE: { label: 'Service name', help: 'Required, such as FREEPDB1.' },
 }

@@ -1,6 +1,6 @@
 import { ConnectionError } from './connections'
 import type { Env } from './connections'
-import { StatementError } from './datasources'
+import { READS_ONLY, StatementError } from './datasources'
 
 /**
  * Refuses a request that does not come from the studio's own pages. The studio holds connections and their
@@ -51,16 +51,19 @@ export async function body(request: Request): Promise<unknown> {
 
 /**
  * A failure as the browser app shows it. What the person can fix is a 400: a connection's settings, or a statement
- * the database turned down, as Neo4j's client errors say. Anything else is the database or the network, as a 502,
- * with what it said.
+ * the database turned down, as Neo4j's and Memgraph's client errors say. Anything else is the database or the
+ * network, as a 502, with what it said.
  */
 export function failure(e: unknown): Response {
   if (e instanceof ConnectionError || e instanceof StatementError) return refuse(400, e.message)
   const code = (e as { code?: unknown } | null)?.code
   const reason = e instanceof Error ? e.message || (typeof code === 'string' ? code : '') || e.name : String(e)
-  if (code === 'Neo.ClientError.Statement.AccessMode') {
-    return refuse(400, `The studio reads and never writes, and runs each statement where it cannot. ${reason}`)
+  // Memgraph gives every client error one code, so its refusal to write is known by what it says.
+  if (code === 'Neo.ClientError.Statement.AccessMode' || (code === MEMGRAPH_CLIENT_ERROR && /^Accessor type READ /.test(reason))) {
+    return refuse(400, `${READS_ONLY} ${reason}`)
   }
-  if (typeof code === 'string' && code.startsWith('Neo.ClientError.')) return refuse(400, reason)
+  if (typeof code === 'string' && /^(Neo|Memgraph)\.ClientError\./.test(code)) return refuse(400, reason)
   return refuse(502, reason)
 }
+
+const MEMGRAPH_CLIENT_ERROR = 'Memgraph.ClientError.MemgraphError.MemgraphError'

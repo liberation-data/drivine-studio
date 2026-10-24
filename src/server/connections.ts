@@ -29,6 +29,7 @@ export type PublicConnection = Omit<Connection, 'password'> & { hasPassword: boo
 /** What the browser sends to add or change a connection. A change without a password keeps the one there. */
 export type ConnectionInput = Omit<Connection, 'id' | 'source'> & { clearPassword?: boolean }
 
+/** A connection's settings are wrong, or it is not there: the person can fix it, so it is a 400. */
 export class ConnectionError extends Error {}
 
 /** The environment, or as much of one as a test gives. */
@@ -93,6 +94,7 @@ export async function listConnections(): Promise<Connection[]> {
   return environment ? [environment, ...stored] : stored
 }
 
+/** The connection with this id, the environment's included, or a ConnectionError. */
 export async function findConnection(id: string): Promise<Connection> {
   const found = (await listConnections()).find(c => c.id === id)
   if (!found) throw new ConnectionError(`There is no connection ${id}.`)
