@@ -89,6 +89,19 @@ describe('loadCypher', () => {
     expect(() => loadCypher(neo, catalog, asked)).toThrow(ModelError)
     expect(() => loadCypher(neo, catalog, asked)).toThrow(message)
   })
+
+  it.each([
+    [query({ type: 'Manager', where: [{ kind: 'related', relationship: 'teams', conditions: [] }] }), 'Manager.teams is a path, which a query cannot look along yet.'],
+    [
+      query({ type: 'Member', where: [{ kind: 'related', relationship: 'memberships', conditions: [{ kind: 'related', relationship: 'lead', conditions: [] }] }] }),
+      'A condition on a related node is on one of its properties.',
+    ],
+    [query({ type: 'Manager', orderBy: [{ property: 'age', direction: 'ASC' }] }), 'Person has no property age.'],
+  ])('says what is wrong with a condition or an order it cannot write: %#', (asked, message) => {
+    expect(() => loadCypher(neo, shapes, asked)).toThrow(ModelError)
+    expect(() => loadCypher(neo, shapes, asked)).toThrow(message)
+  })
+
   it('refuses a connection that runs SQL, as the Cypher window does, before Drivine writes anything for it', () => {
     expect(() => loadCypher({ ...neo, type: 'POSTGRES' }, catalog, query({}))).toThrow(StatementError)
     expect(() => loadCypher({ ...neo, type: 'POSTGRES' }, catalog, query({}))).toThrow('On Postgres, Drivine (TypeScript) runs SQL')
