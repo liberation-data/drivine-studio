@@ -1,0 +1,27 @@
+{
+  "name": "drivine-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browse a Drivine model, load it, and see the graph. Reads and never writes.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "next dev --port 5187",
+    "build": "next build",
+    "start": "next start --port 5187",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@liberation-data/desk": "^0.35.2",
+    "cytoscape": "^3.30.0",
+    "next": "^16.4.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/cytoscape": "^3.21.0",
+    "@types/node": "^24.1.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.9.3"
+  }
+}
