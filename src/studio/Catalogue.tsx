@@ -118,19 +118,23 @@ function ModelPaths({ onDone }: { onDone: () => void }) {
     listModelPaths().then(setPaths, (e: unknown) => setProblem(message(e)))
   }, [])
 
+  // Resolves once the paths are changed, so an add clears its field only then, and a remove leaves it as typed.
   const change = (changed: Promise<ModelPath[]>) => {
     setProblem(null)
-    changed.then(
+    return changed.then(
       next => {
         setPaths(next)
-        setAdding('')
+        return true
       },
-      (e: unknown) => setProblem(message(e)),
+      (e: unknown) => {
+        setProblem(message(e))
+        return false
+      },
     )
   }
   const add = (event?: FormEvent) => {
     event?.preventDefault()
-    if (adding.trim() !== '') change(addModelPath(adding))
+    if (adding.trim() !== '') void change(addModelPath(adding)).then(added => added && setAdding(''))
   }
 
   return (

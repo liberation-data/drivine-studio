@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Catalog, Fragment, Property, View } from './api'
-import { emptyDraft, nextSubject, operatorsFor, scopesOf, subjectKey, toQuery } from './model'
+import { emptyDraft, inCatalog, nextSubject, operatorsFor, scopesOf, subjectKey, toQuery } from './model'
 import type { ConditionDraft, Subject } from './model'
 
 const property = (name: string, type: Property['type'], extra: Partial<Property> = {}): Property =>
@@ -162,5 +162,21 @@ describe('nextSubject', () => {
     expect(nextSubject(onView, onFragment)).toBe(onFragment)
     expect(nextSubject(null, onView)).toBe(onView)
     expect(nextSubject(onView, null)).toBeNull()
+  })
+})
+
+describe('inCatalog', () => {
+  it('takes the subject as a catalogue read afresh has it', () => {
+    const renamed: View = { ...view, root: { ...view.root, field: 'who' } }
+    const fresh: Catalog = { ...catalog, views: [renamed] }
+    expect(inCatalog(onView, fresh)).toEqual({ kind: 'view', view: renamed })
+    expect(inCatalog(onFragment, fresh)).toEqual(onFragment)
+  })
+
+  it('takes the subject off the canvas once no file has it', () => {
+    const empty: Catalog = { ...catalog, views: [], fragments: [] }
+    expect(inCatalog(onView, empty)).toBeNull()
+    expect(inCatalog(onFragment, empty)).toBeNull()
+    expect(inCatalog(null, catalog)).toBeNull()
   })
 })

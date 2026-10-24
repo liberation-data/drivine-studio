@@ -12,7 +12,7 @@ import { Connections } from './Connections'
 import { Cypher } from './Cypher'
 import { listConnections } from './database'
 import type { StudioConnection } from './database'
-import { nextSubject } from './model'
+import { inCatalog, nextSubject } from './model'
 import type { Subject } from './model'
 
 const desk = createDesk()
@@ -98,7 +98,14 @@ export function App() {
 
   const reload = useCallback(() => {
     setProblem(null)
-    loadCatalog().then(setCatalog, (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)))
+    loadCatalog().then(
+      read => {
+        setCatalog(read)
+        // What is on the canvas is loaded as the files now declare it, and leaves once none does.
+        setSubject(current => inCatalog(current, read))
+      },
+      (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)),
+    )
   }, [])
   useEffect(reload, [reload])
 

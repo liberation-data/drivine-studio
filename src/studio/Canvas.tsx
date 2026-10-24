@@ -65,11 +65,12 @@ function Loaded({ subject, catalog, connection, onClear }: { subject: Subject; c
     )
   }, [subject, catalog, connection])
 
-  // Dropping something loads it at once, unfiltered: the first thing wanted is to see it.
+  // Dropping something loads it at once, unfiltered: the first thing wanted is to see it. Only then: a catalogue read
+  // afresh is used by the next Load, so what is drawn stays the answer to the conditions the form shows.
   useEffect(() => {
     load(emptyDraft())
     return () => inFlight.current?.abort()
-  }, [load])
+  }, [])
 
   const submit = (event: FormEvent) => {
     event.preventDefault()

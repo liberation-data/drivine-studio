@@ -22,6 +22,20 @@ export const subjectKey = (subject: Subject): string => `${subject.kind}:${subje
 export const nextSubject = (current: Subject | null, next: Subject | null): Subject | null =>
   current && next && subjectKey(current) === subjectKey(next) ? current : next
 
+/**
+ * The subject as a catalogue read afresh has it, so the canvas queries what the files now say; or none, once no file
+ * the studio reads has it, as there is then nothing to load it by.
+ */
+export function inCatalog(subject: Subject | null, catalog: Catalog): Subject | null {
+  if (!subject) return null
+  if (subject.kind === 'view') {
+    const view = catalog.views.find(v => v.id === subject.view.id)
+    return view ? { kind: 'view', view } : null
+  }
+  const fragment = catalog.fragments.find(f => f.id === subject.fragment.id)
+  return fragment ? { kind: 'fragment', fragment } : null
+}
+
 /** Where a condition looks: the root, or the node at the far end of a relationship. */
 export interface Scope {
   /** '' for the root; otherwise the relationship's field. */
