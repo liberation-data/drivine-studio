@@ -13,6 +13,13 @@ export const DATABASE_NAMES: Record<DatabaseType, string> = {
   ORACLE: 'Oracle',
 }
 
+/** The databases the studio runs Cypher on. Drivine (TypeScript) runs SQL on Oracle and Postgres, not Cypher. */
+export const RUNS_CYPHER: readonly DatabaseType[] = ['NEO4J', 'MEMGRAPH', 'NEPTUNE', 'FALKORDB']
+
+/** The rows a statement reads unless told otherwise, and the most it may read: the browser holds every one. */
+export const DEFAULT_LIMIT = 1000
+export const MAX_LIMIT = 10000
+
 /** A connection, as the server shows it: whether it has a password, never the password. */
 export interface StudioConnection {
   id: string

@@ -2,7 +2,7 @@ import { Button, PopUpButton, Spinner, Table, Tabs, TextField } from '@liberatio
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useStudio } from './App'
-import { DATABASE_NAMES, runCypher } from './database'
+import { DATABASE_NAMES, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
 import type { Cell, CypherResult } from './database'
 import { GraphView } from './GraphView'
 import type { Selection } from './GraphView'
@@ -36,7 +36,7 @@ export function Cypher() {
   const [statement, setStatement] = useState(() => remembered(STATEMENT, 'MATCH (n) RETURN n LIMIT 25'))
   const [parameters, setParameters] = useState(() => remembered(PARAMETERS, ''))
   const [showParameters, setShowParameters] = useState(() => parameters.trim() !== '')
-  const [limit, setLimit] = useState('1000')
+  const [limit, setLimit] = useState(String(DEFAULT_LIMIT))
   const [result, setResult] = useState<CypherResult | null>(null)
   const [run, setRun] = useState<Run>({ state: 'idle' })
   const [view, setView] = useState<View>('graph')
@@ -111,7 +111,7 @@ export function Cypher() {
           </Button>
           <span className="studio-query-word desk-text-small desk-text-muted">at most</span>
           <span className="studio-limit">
-            <TextField label="Rows to read, at most" labelHidden type="number" min={1} max={10000} value={limit} onChange={e => setLimit(e.target.value)} />
+            <TextField label="Rows to read, at most" labelHidden type="number" min={1} max={MAX_LIMIT} value={limit} onChange={e => setLimit(e.target.value)} />
           </span>
           <span className="desk-text-small desk-text-muted">rows</span>
           <Button type="submit" intent="default" disabled={!connection || run.state === 'running'} title="⌘↵">Run</Button>

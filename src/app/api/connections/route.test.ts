@@ -45,6 +45,13 @@ describe('the connections endpoints', () => {
     expect(JSON.parse(listed)).toMatchObject([{ id: 'environment', hasPassword: true }, { id, hasPassword: true }])
   })
 
+  it('remove a connection, which is then not listed', async () => {
+    const { id } = (await (await POST(request('POST', '', neo4j))).json()) as { id: string }
+    const removed = await DELETE(request('DELETE', `/${id}`), context(id))
+    expect(removed.status).toBe(200)
+    expect(await (await GET(request('GET', ''))).json()).toEqual([])
+  })
+
   it('answer what is wrong with a connection as a 400', async () => {
     expect((await POST(request('POST', '', { ...neo4j, host: '' }))).status).toBe(400)
     expect((await PUT(request('PUT', '/missing', neo4j), context('missing'))).status).toBe(400)

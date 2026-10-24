@@ -1,5 +1,6 @@
 import { findConnection } from '../../../server/connections'
-import { DEFAULT_LIMIT, MAX_LIMIT, run } from '../../../server/datasources'
+import { run } from '../../../server/datasources'
+import { DEFAULT_LIMIT, MAX_LIMIT } from '../../../studio/database'
 import { body, failure, foreign, refuse } from '../../../server/http'
 
 export async function POST(request: Request) {

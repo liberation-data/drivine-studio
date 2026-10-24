@@ -2,12 +2,10 @@ import { Alert, Button, Checkbox, Loading, Pane, PopUpButton, Section, Sheet, Te
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useStudio } from './App'
-import { addConnection, DATABASE_NAMES, DATABASE_TYPES, removeConnection, testConnection, updateConnection } from './database'
+import { addConnection, DATABASE_NAMES, DATABASE_TYPES, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
 
 type Test = { state: 'testing' } | { state: 'passed'; milliseconds: number } | { state: 'failed'; message: string }
-
-const RUNS_CYPHER: readonly DatabaseType[] = ['NEO4J', 'MEMGRAPH', 'NEPTUNE', 'FALKORDB']
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 

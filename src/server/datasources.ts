@@ -2,6 +2,7 @@ import { DatabaseRegistry, DatabaseType } from '@liberation-data/drivine'
 import type { ConnectionProvider } from '@liberation-data/drivine'
 import neo4j from 'neo4j-driver'
 import type { Driver } from 'neo4j-driver'
+import { DEFAULT_LIMIT, RUNS_CYPHER } from '../studio/database'
 import type { CypherResult } from '../studio/database'
 import type { Connection } from './connections'
 import { Cells } from './values'
@@ -51,12 +52,6 @@ export class StatementError extends Error {}
 
 /** Said before a database's refusal to write, so the person knows the refusal is the studio's doing. */
 export const READS_ONLY = 'The studio reads and never writes, and runs each statement where it cannot.'
-
-export const DEFAULT_LIMIT = 1000
-export const MAX_LIMIT = 10000
-
-/** The databases the studio runs Cypher on. Drivine (TypeScript) runs SQL on Oracle and Postgres, not Cypher. */
-const RUNS_CYPHER: readonly string[] = ['NEO4J', 'MEMGRAPH', 'NEPTUNE', 'FALKORDB']
 
 /**
  * Runs a statement and reads at most `limit` rows of what it gives back. The studio reads and never writes, so the
