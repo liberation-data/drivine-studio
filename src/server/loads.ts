@@ -5,7 +5,7 @@ import type {
   Catalog, Condition, Fragment, GraphEdge, GraphNode, Property, Query, Relationship, Result, View,
 } from '../studio/api'
 import type { Connection } from './connections'
-import { readRows } from './datasources'
+import { readRows, runsCypher } from './datasources'
 import { DrivineModels, ModelError } from './drivineModels'
 import { plain } from './values'
 
@@ -37,6 +37,7 @@ export async function load(connection: Connection, catalog: Catalog, query: Quer
 
 /** The Cypher `loadAll` runs for the query on this connection's database, with its parameters as it binds them. */
 export function loadCypher(connection: Connection, catalog: Catalog, query: Query): { statement: string; parameters: Record<string, unknown> } {
+  runsCypher(connection)
   const target = new DrivineModels(catalog).target(query.type)
   const backend = backendFor(connection.type as DatabaseType)
   const subject = describe(catalog, query.type)
@@ -141,6 +142,14 @@ export function typed(property: Property, value: unknown, bolt: boolean): unknow
   if (typeof value !== 'string') return value
   const text = value.trim()
   const refuse = (what: string) => new ModelError(`${property.name} is ${what}, and ${JSON.stringify(value)} is not one.`)
+  // The driver refuses a month, an hour or the like out of range, which the pattern lets through.
+  const built = (what: string, make: () => unknown) => {
+    try {
+      return make()
+    } catch {
+      throw refuse(what)
+    }
+  }
   switch (property.type) {
     case 'int': {
       if (!/^-?\d+$/.test(text)) throw refuse('a whole number')
@@ -162,13 +171,13 @@ export function typed(property: Property, value: unknown, bolt: boolean): unknow
     case 'date': {
       const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
       if (!match) throw refuse('a date, such as 2024-05-01')
-      return bolt ? new neo4j.types.Date(Number(match[1]), Number(match[2]), Number(match[3])) : text
+      return bolt ? built('a date, such as 2024-05-01', () => new neo4j.types.Date(Number(match[1]), Number(match[2]), Number(match[3]))) : text
     }
     case 'localDatetime': {
       const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(text)
       if (!match) throw refuse('a local date and time, such as 2024-05-01T09:30')
       const [, y, mo, d, h, mi, s] = match.map(part => (part === undefined ? 0 : Number(part)))
-      return bolt ? new neo4j.types.LocalDateTime(y!, mo!, d!, h!, mi!, s!, 0) : text
+      return bolt ? built('a local date and time, such as 2024-05-01T09:30', () => new neo4j.types.LocalDateTime(y!, mo!, d!, h!, mi!, s!, 0)) : text
     }
     case 'localTime':
     case 'time': {
@@ -179,9 +188,9 @@ export function typed(property: Property, value: unknown, bolt: boolean): unknow
       }
       if (!bolt) return text
       const [h, mi, s] = [match[1], match[2], match[3]].map(part => (part === undefined ? 0 : Number(part)))
-      if (!zoned) return new neo4j.types.LocalTime(h!, mi!, s!, 0)
+      if (!zoned) return built('a local time, such as 09:30', () => new neo4j.types.LocalTime(h!, mi!, s!, 0))
       const offset = match[4] === 'Z' ? 0 : (match[4]!.startsWith('-') ? -1 : 1) * (Number(match[4]!.slice(1, 3)) * 3600 + Number(match[4]!.slice(4)) * 60)
-      return new neo4j.types.Time(h!, mi!, s!, 0, offset)
+      return built('a time with its offset, such as 09:30Z or 09:30+02:00', () => new neo4j.types.Time(h!, mi!, s!, 0, offset))
     }
     default:
       return value

@@ -79,6 +79,16 @@ export async function run(
   return { ...read, graph: cells.graph(), limit, milliseconds: Math.round(performance.now() - started) }
 }
 
+/** Refuses a connection the studio cannot run Cypher on, before anything is written for it. */
+export function runsCypher(connection: Connection): void {
+  if (RUNS_CYPHER.includes(connection.type)) return
+  // The environment's DATABASE_TYPE is taken as it is, so it may name no type at all.
+  const sql = connection.type === 'ORACLE' ? 'Oracle' : connection.type === 'POSTGRES' ? 'Postgres' : undefined
+  throw new StatementError(
+    `The studio runs Cypher on Neo4j, Memgraph, Neptune and FalkorDB. ${sql ? `On ${sql}, Drivine (TypeScript) runs SQL, not Cypher.` : `It does not know the database type ${connection.type}.`}`,
+  )
+}
+
 /** Rows as a statement gave them back, each value as `read` takes it. */
 export interface Rows<T> {
   columns: string[]
@@ -95,13 +105,7 @@ export async function readRows<T>(
   limit: number,
   read: (value: unknown) => T,
 ): Promise<Rows<T>> {
-  if (!RUNS_CYPHER.includes(connection.type)) {
-    // The environment's DATABASE_TYPE is taken as it is, so it may name no type at all.
-    const sql = connection.type === 'ORACLE' ? 'Oracle' : connection.type === 'POSTGRES' ? 'Postgres' : undefined
-    throw new StatementError(
-      `The studio runs Cypher on Neo4j, Memgraph, Neptune and FalkorDB. ${sql ? `On ${sql}, Drivine (TypeScript) runs SQL, not Cypher.` : `It does not know the database type ${connection.type}.`}`,
-    )
-  }
+  runsCypher(connection)
   if (statement.trim() === '') throw new StatementError('There is no statement to run.')
   const provider = await providerFor(connection)
   return connection.type === 'FALKORDB'

@@ -52,9 +52,9 @@ export async function body(request: Request): Promise<unknown> {
 }
 
 /**
- * A failure as the browser app shows it. What the person can fix is a 400: a connection's settings, or a statement
- * the database turned down, as Neo4j's and Memgraph's client errors say. Anything else is the database or the
- * network, as a 502, with what it said.
+ * A failure as the browser app shows it. What the person can fix is a 400: a connection's settings, a path to look
+ * for model files in, a load the model files cannot take, or a statement the database turned down, as Neo4j's and
+ * Memgraph's client errors say. Anything else is the database or the network, as a 502, with what it said.
  */
 export function failure(e: unknown): Response {
   if (e instanceof ConnectionError || e instanceof StatementError || e instanceof ModelPathError || e instanceof ModelError) return refuse(400, e.message)

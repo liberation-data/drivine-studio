@@ -70,7 +70,7 @@ async function startServer() {
   }
 
   // Electron's utilityProcess runs it in Electron's own Node, so no separate Node is needed.
-  // The environment passes on, DRIVINE_STUDIO_API included.
+  // The environment passes on, DRIVINE_STUDIO_MODELS and DRIVINE_STUDIO_HOME included.
   serverProcess = utilityProcess.fork(serverPath, [], {
     cwd: serverCwd,
     env: { ...process.env, PORT, HOSTNAME: 'localhost' },

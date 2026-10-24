@@ -3,6 +3,7 @@ import neo4j from 'neo4j-driver'
 import { describe, expect, it } from 'vitest'
 import type { Catalog, Property, Query } from '../studio/api'
 import type { Connection } from './connections'
+import { StatementError } from './datasources'
 import { ModelError } from './drivineModels'
 import { catalog as shapes } from './fixtures/shapes'
 import { GraphBuilder, loadCypher, typed } from './loads'
@@ -88,6 +89,10 @@ describe('loadCypher', () => {
     expect(() => loadCypher(neo, catalog, asked)).toThrow(ModelError)
     expect(() => loadCypher(neo, catalog, asked)).toThrow(message)
   })
+  it('refuses a connection that runs SQL, as the Cypher window does, before Drivine writes anything for it', () => {
+    expect(() => loadCypher({ ...neo, type: 'POSTGRES' }, catalog, query({}))).toThrow(StatementError)
+    expect(() => loadCypher({ ...neo, type: 'POSTGRES' }, catalog, query({}))).toThrow('On Postgres, Drivine (TypeScript) runs SQL')
+  })
 })
 
 describe('typed', () => {
@@ -112,6 +117,10 @@ describe('typed', () => {
     expect(typed(property('time'), '09:30Z', false)).toBe('09:30Z')
     expect(() => typed(property('localTime'), '09:30Z', true)).toThrow('p is a local time')
     expect(() => typed(property('time'), '09:30', true)).toThrow('p is a time with its offset')
+    // The pattern lets these through; the driver refuses them, and so does the studio, as the person's to fix.
+    expect(() => typed(property('date'), '2024-13-01', true)).toThrow(ModelError)
+    expect(() => typed(property('localDatetime'), '2024-05-01T25:00', true)).toThrow('p is a local date and time')
+    expect(() => typed(property('localTime'), '24:00', true)).toThrow('p is a local time')
   })
 
   it('leaves text, and what is not text, as it is', () => {
