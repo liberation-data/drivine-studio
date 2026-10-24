@@ -1,7 +1,7 @@
 import { Button, Loading, Pane, Section, useDragSource } from '@liberation-data/desk/react'
 import { useStudio } from './App'
 import type { Subject } from './model'
-import { subjectName } from './model'
+import { subjectKey, subjectName } from './model'
 
 /** The drag type of a view or fragment picked up from the catalogue. */
 export const SUBJECT = 'drivine-subject'
@@ -23,9 +23,10 @@ export function Catalogue() {
 
   const entry = (item: Subject, detail: string) => {
     const name = subjectName(item)
-    const current = subject !== null && subjectName(subject) === name && subject.kind === item.kind
+    const key = subjectKey(item)
+    const current = subject !== null && subjectKey(subject) === key
     return (
-      <li key={`${item.kind}:${name}`}>
+      <li key={key}>
         <button
           type="button"
           className="studio-entry"

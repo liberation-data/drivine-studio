@@ -11,7 +11,9 @@ export async function forward(path: string, init?: RequestInit): Promise<Respons
     })
   } catch (e) {
     // Answered as the endpoints answer a refusal, so the browser app shows it the same way.
-    const reason = e instanceof Error ? (e.cause instanceof Error ? e.cause.message : e.message) : String(e)
+    // A refused connection to localhost fails on ::1 and 127.0.0.1 both, as an AggregateError with no message but a code.
+    const cause = e instanceof Error && e.cause instanceof Error ? (e.cause as Error & { code?: string }) : undefined
+    const reason = cause ? cause.message || cause.code || String(e) : e instanceof Error ? e.message : String(e)
     return Response.json({ error: `The studio endpoints at ${BACKEND} could not be reached: ${reason}` }, { status: 502 })
   }
 }
