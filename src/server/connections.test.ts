@@ -114,6 +114,19 @@ describe('the environment\'s connection', () => {
     await expect(removeConnection('environment')).rejects.toThrow(ConnectionError)
   })
 
+  it('takes each of Drivine\'s variables to the setting it names, and DRIVINE_STUDIO_CONNECTION_NAME as its name', () => {
+    expect(fromEnvironment({
+      DATABASE_TYPE: 'ORACLE', DATABASE_HOST: 'db', DATABASE_PORT: '1522', DATABASE_USER: 'app', DATABASE_PASSWORD: 'p',
+      DATABASE_NAME: 'FREEPDB1', DATABASE_DEFAULT_GRAPH_PATH: 'social', DRIVINE_STUDIO_CONNECTION_NAME: 'Staging',
+    })).toEqual({
+      id: 'environment', name: 'Staging', type: 'ORACLE', host: 'db', port: 1522, user: 'app', password: 'p',
+      database: 'FREEPDB1', graph: 'social', source: 'environment',
+    })
+    expect(fromEnvironment({ DATABASE_TYPE: 'MEMGRAPH' })).toEqual({
+      id: 'environment', name: 'From the environment', type: 'MEMGRAPH', host: '', source: 'environment',
+    })
+  })
+
   it('is absent when DATABASE_TYPE is not set', () => {
     expect(fromEnvironment({ DATABASE_HOST: 'graph' })).toBeUndefined()
   })

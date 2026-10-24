@@ -66,5 +66,6 @@ describe('failure', () => {
   it('answers the database or the network failing as a 502, with what it said', async () => {
     expect(await answer(Object.assign(new Error(''), { code: 'ECONNREFUSED' }))).toEqual({ status: 502, error: 'ECONNREFUSED' })
     expect(await answer(new Error('Service unavailable'))).toEqual({ status: 502, error: 'Service unavailable' })
+    expect(await answer('socket hang up')).toEqual({ status: 502, error: 'socket hang up' })
   })
 })

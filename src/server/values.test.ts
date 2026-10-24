@@ -49,6 +49,15 @@ describe('Cells over Bolt', () => {
     expect(plain({ photo: new Int8Array([1, 2]) })).toEqual({ photo: '2 bytes' })
   })
 
+  it('shows what JSON cannot hold as its text: a number that is not finite, a bigint, a date, a Buffer\'s bytes', () => {
+    const cells = new Cells('bolt')
+    expect(cells.cell(Number.NaN)).toEqual({ kind: 'value', value: 'NaN', type: 'float' })
+    expect(cells.cell(-Infinity)).toEqual({ kind: 'value', value: '-Infinity', type: 'float' })
+    expect(cells.cell(9007199254740993n)).toEqual({ kind: 'value', value: '9007199254740993', type: 'int' })
+    expect(cells.cell(new Date(Date.UTC(2020, 0, 2)))).toEqual({ kind: 'value', value: '2020-01-02T00:00:00.000Z', type: 'datetime' })
+    expect(cells.cell(Buffer.from([1, 2]))).toEqual({ kind: 'value', value: '2 bytes', type: 'bytes' })
+  })
+
   it('gives lists and maps cell by cell, and null as null', () => {
     expect(new Cells('bolt').cell({ xs: [1, null], ok: true })).toEqual({
       kind: 'map',
