@@ -101,7 +101,8 @@ function scalar(value: unknown): Cell {
     return integer.inSafeRange() ? { kind: 'value', value: integer.toNumber() } : whole(integer.toString())
   }
   if (value instanceof Date) return { kind: 'value', value: value.toISOString(), type: 'datetime' }
-  if (value instanceof Uint8Array) return { kind: 'value', value: `${value.length} bytes`, type: 'bytes' }
+  // Bolt gives bytes as an Int8Array, and a Node client may give a Buffer, which is a Uint8Array.
+  if (value instanceof Int8Array || value instanceof Uint8Array) return { kind: 'value', value: `${value.length} bytes`, type: 'bytes' }
   const type = temporalType(value)
   // A temporal value, a point, or anything else with a meaningful text: shown as that text.
   return { kind: 'value', value: String(value), ...(type ? { type } : {}) }

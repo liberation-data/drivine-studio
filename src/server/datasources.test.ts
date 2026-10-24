@@ -18,6 +18,13 @@ describe('run', () => {
   })
 })
 
+describe('run, with nothing to run', () => {
+  it('says so, before connecting', async () => {
+    const connection: Connection = { id: 'blank', name: 'Blank', type: 'NEO4J', host: 'nowhere.invalid', source: 'studio' }
+    await expect(run(connection, ' \n ')).rejects.toThrow(new StatementError('There is no statement to run.'))
+  })
+})
+
 describe('boltParameters', () => {
   it('sends a whole number as an integer, everywhere in the parameters, and anything else as it is', () => {
     const sent = boltParameters({ born: 1815, ratio: 1.5, names: ['Ada'], nested: { ids: [1, 2] }, none: null })

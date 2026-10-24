@@ -44,6 +44,11 @@ describe('Cells over Bolt', () => {
     expect(new Cells('bolt').cell(new neo4j.types.Point(7203, 1, 2))).toMatchObject({ kind: 'value', type: 'point' })
   })
 
+  it('shows bytes, as Bolt gives them, by how many there are', () => {
+    expect(new Cells('bolt').cell(new Int8Array([1, 2, 3]))).toEqual({ kind: 'value', value: '3 bytes', type: 'bytes' })
+    expect(plain({ photo: new Int8Array([1, 2]) })).toEqual({ photo: '2 bytes' })
+  })
+
   it('gives lists and maps cell by cell, and null as null', () => {
     expect(new Cells('bolt').cell({ xs: [1, null], ok: true })).toEqual({
       kind: 'map',

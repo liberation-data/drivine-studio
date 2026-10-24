@@ -37,7 +37,7 @@ export function Inspector({ selection, nodes, fragments }: { selection: NonNulla
   )
 }
 
-export function Properties({ values, empty }: { values: Record<string, unknown>; empty: string }) {
+function Properties({ values, empty }: { values: Record<string, unknown>; empty: string }) {
   const entries = Object.entries(values)
   if (entries.length === 0) return empty ? <p className="desk-text-small desk-text-muted">{empty}</p> : null
   return (
