@@ -1,7 +1,9 @@
 import cytoscape from 'cytoscape'
 import type { Core } from 'cytoscape'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { GraphEdge, GraphNode, Result } from './api'
+import { IconPicker, Swatch } from './IconPicker'
+import { useLabelIcons } from './icons'
 
 // One colour per fragment, in the order the catalogue lists them. Every node is also named, and the
 // legend says which is which, so colour is never the only thing telling two apart.
@@ -16,6 +18,13 @@ export function captionOf(node: GraphNode): string {
   const text = [name, title, ...Object.values(node.properties)].find(v => typeof v === 'string' && v !== '' && !isUuid(v))
   return typeof text === 'string' ? text : node.fragment
 }
+
+/**
+ * The label a fragment's icon is: its nodes' first label, the one it is told by, the same in every window. Nodes with
+ * no label have none, and are drawn plain.
+ */
+export const iconLabelOf = (nodes: readonly GraphNode[], fragment: string): string | undefined =>
+  nodes.find(n => n.fragment === fragment)?.labels[0]
 
 const isUuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(value)
 const short = (text: string) => (text.length > 26 ? `${text.slice(0, 25)}…` : text)
@@ -63,6 +72,11 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
             'text-background-opacity': 0.85, 'text-background-padding': '2px', 'text-background-shape': 'roundrectangle',
             width: 30, height: 30, 'border-width': 0, 'border-color': ink,
           },
+        },
+        // The label's icon, drawn white on its colour, where it has one.
+        {
+          selector: 'node[icon]',
+          style: { 'background-image': 'data(icon)', 'background-width': '58%', 'background-height': '58%', 'background-clip': 'none' },
         },
         // The roots are what loadAll returned; everything else was reached from one of them.
         { selector: 'node[?root]', style: { width: 38, height: 38, 'border-width': 3 } },
@@ -118,17 +132,46 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
   }, [graph, fragments])
 
   const present = fragments.filter(f => graph.nodes.some(n => n.fragment === f))
+  const labelOf = (fragment: string) => iconLabelOf(graph.nodes, fragment)
+  const { images, icons } = useLabelIcons(present.flatMap(fragment => labelOf(fragment) ?? []))
+  const [choosing, setChoosing] = useState<string | null>(null)
+
+  // Icons arrive after the graph is drawn, and change when one is chosen: set on the nodes, with no new layout.
+  useEffect(() => {
+    const core = cy.current
+    if (!core) return
+    core.nodes().forEach(node => {
+      const label = (node.data('node') as GraphNode).labels[0]
+      const image = label === undefined ? undefined : images[label]
+      if (image) node.data('icon', image)
+      else node.removeData('icon')
+    })
+  }, [images, graph, fragments])
+
   return (
     <div className="studio-graph">
       <div ref={container} className="studio-graph-canvas" role="img" aria-label={`Graph of ${graph.nodes.length} nodes and ${graph.edges.length} relationships`} />
       <ul className="studio-legend desk-text-caption" aria-label="Fragments">
-        {present.map(fragment => (
-          <li key={fragment}>
-            <span className="studio-swatch" style={{ background: colourOf(fragments, fragment) }} />
-            {fragment}
-          </li>
-        ))}
+        {present.map(fragment => {
+          const label = labelOf(fragment)
+          return (
+            <li key={fragment}>
+              {label === undefined ? (
+                <>
+                  <Swatch colour={colourOf(fragments, fragment)} icon={null} />
+                  {fragment}
+                </>
+              ) : (
+                <button type="button" className="studio-legend-entry" title={`Choose the icon of ${label}`} onClick={() => setChoosing(label)}>
+                  <Swatch colour={colourOf(fragments, fragment)} icon={icons[label]?.icon ?? null} />
+                  {fragment}
+                </button>
+              )}
+            </li>
+          )
+        })}
       </ul>
+      {choosing && <IconPicker label={choosing} current={icons[choosing]} onDone={() => setChoosing(null)} />}
     </div>
   )
 }
