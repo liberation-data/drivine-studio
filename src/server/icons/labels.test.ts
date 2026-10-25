@@ -52,6 +52,11 @@ describe('common', () => {
   it('has nothing for a word it does not know', () => {
     expect(common('Probe')).toBeUndefined()
   })
+
+  it("has nothing for a word an object is born with, such as an object's constructor", () => {
+    expect(common('Constructor')).toBeUndefined()
+    expect(common('ToString')).toBeUndefined()
+  })
 })
 
 describe('nearestTo', () => {
@@ -128,10 +133,29 @@ describe('iconsOf', () => {
     expect((await iconsOf(['Probe'], unlike)).Probe).toEqual({ icon: null, source: 'none', score: 0 })
   })
 
+  it('takes a label named as an object is born with for a label, not a choice', async () => {
+    const icons = await iconsOf(['toString', '__proto__'], unlike)
+    expect(Object.keys(icons)).toEqual(['toString', '__proto__'])
+    expect(icons.toString).toEqual({ icon: null, source: 'none', score: 0 })
+    await choose('__proto__', 'smile')
+    expect(await chosen()).toEqual(JSON.parse('{"__proto__":"smile"}'))
+    expect((await iconsOf(['__proto__'], unlike))['__proto__']).toEqual({ icon: 'smile', source: 'chosen' })
+  })
+
   it('asks no model of a label with no words', async () => {
     const never: Embed = async () => {
       throw new Error('asked')
     }
     expect((await iconsOf(['_'], never))._).toEqual({ icon: null, source: 'none' })
+  })
+
+  it('gives a label the model fails on no icon, and the others theirs', async () => {
+    const failing: Embed = async () => {
+      throw new Error('inference failed')
+    }
+    expect(await iconsOf(['Probe', 'Person'], failing)).toEqual({
+      Probe: { icon: null, source: 'none' },
+      Person: { icon: 'user', source: 'common' },
+    })
   })
 })

@@ -13,7 +13,8 @@ const require = createRequire(import.meta.url)
 const tags = require('lucide-static/tags.json')
 const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'server', 'icons')
 
-// Kept in step with src/server/icons/labels.ts: the model, and the icons a label may get.
+// Written to the vectors' file, for src/server/icons/labels.ts to load; it embeds a label as this embeds an icon, in q8
+// with mean pooling, normalized, and the two are kept in step.
 const MODEL = 'Xenova/all-MiniLM-L6-v2'
 // An icon of something crossed out, added or checked off is a variant of another, and wins too often for a plain word.
 const VARIANT = /-(off|x|minus|plus|check|alert|question|slash|dashed|lock|unlock|cog|search|heart|star|pen|sync|up|down|left|right|in|out|\d+)$/

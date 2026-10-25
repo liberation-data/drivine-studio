@@ -62,7 +62,9 @@ export function words(label: string): string[] {
 /** The common word a label's words name, the whole of them first, then each from the last. */
 export function common(label: string): string | undefined {
   const found = words(label)
-  return COMMON[found.join('')] ?? COMMON[found.join(' ')] ?? [...found].reverse().map(it => COMMON[it]).find(Boolean)
+  // Only the list's own words: an object's own `constructor` is no label's icon.
+  const icon = (word: string) => (Object.hasOwn(COMMON, word) ? COMMON[word] : undefined)
+  return icon(found.join('')) ?? [...found].reverse().map(icon).find(Boolean)
 }
 
 // Chosen icons
@@ -77,7 +79,8 @@ export async function chosen(): Promise<Record<string, string | null>> {
 /** Chooses a label's icon, or none with null; undefined forgets the choice, so the label's icon is found again. */
 export function choose(label: string, icon: string | null | undefined): Promise<void> {
   return serially(async () => {
-    const labels = { ...(await chosen()) }
+    // With no prototype, so a label such as `__proto__` is a key like any other.
+    const labels: Record<string, string | null> = Object.assign(Object.create(null), await chosen())
     if (icon === undefined) delete labels[label]
     else labels[label] = icon
     await writeHomeFile(FILE, { labels })
@@ -169,9 +172,9 @@ export function nearestTo(query: number[], icons: Vectors): { icon: string; scor
 /** The icon of each label, as LabelIcon says it is found; by the model given, or the studio's own. */
 export async function iconsOf(labels: string[], embed: Embed | null = null): Promise<Record<string, LabelIcon>> {
   const picked = await chosen()
-  const found: Record<string, LabelIcon> = {}
+  const found: Record<string, LabelIcon> = Object.create(null)
   for (const label of new Set(labels)) {
-    if (label in picked) {
+    if (Object.hasOwn(picked, label)) {
       found[label] = { icon: picked[label] ?? null, source: 'chosen' }
       continue
     }
@@ -180,7 +183,8 @@ export async function iconsOf(labels: string[], embed: Embed | null = null): Pro
       found[label] = { icon: word, source: 'common' }
       continue
     }
-    const near = await nearest(label, embed)
+    // A label the model fails on gets none, rather than costing the labels asked with it theirs.
+    const near = await nearest(label, embed).catch(() => undefined)
     found[label] = near && near.score >= NEAREST
       ? { icon: near.icon, source: 'nearest', score: Math.round(near.score * 1000) / 1000 }
       : { icon: null, source: 'none', ...(near ? { score: Math.round(near.score * 1000) / 1000 } : {}) }

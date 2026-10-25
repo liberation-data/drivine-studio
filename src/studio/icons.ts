@@ -38,6 +38,9 @@ export function refound(label: string, icon: LabelIcon): void {
   changed()
 }
 
+/** A record by label with no prototype, so a label such as `constructor` reads as no label's, not an object's. */
+export const byLabel = <T>(entries: Iterable<readonly [string, T]>): Record<string, T> => Object.assign(Object.create(null), Object.fromEntries(entries))
+
 /**
  * An icon as a node's image: a data URL of its SVG, drawn in white, as it sits on the label's colour. A canvas can't
  * take the SVG's `currentColor` from the page.
@@ -61,7 +64,7 @@ function nodeImage(name: string): Promise<string | undefined> {
 export function useLabelIcons(labels: readonly string[]): { images: Record<string, string>; icons: Record<string, LabelIcon> } {
   const key = [...new Set(labels)].sort().join('\n')
   const [version, setVersion] = useState(0)
-  const [images, setImages] = useState<Record<string, string>>({})
+  const [images, setImages] = useState<Record<string, string>>(() => byLabel([]))
 
   useEffect(() => {
     const listener = () => setVersion(v => v + 1)
@@ -89,13 +92,13 @@ export function useLabelIcons(labels: readonly string[]): { images: Record<strin
           return [label, icon ? await nodeImage(icon) : undefined] as const
         }),
       )
-      if (live) setImages(Object.fromEntries(pairs.filter((it): it is readonly [string, string] => !!it[1])))
+      if (live) setImages(byLabel(pairs.filter((it): it is readonly [string, string] => !!it[1])))
     })
     return () => {
       live = false
     }
   }, [key, version])
 
-  const icons = Object.fromEntries((key ? key.split('\n') : []).flatMap(it => (found.has(it) ? [[it, found.get(it)!]] : [])))
+  const icons = byLabel((key ? key.split('\n') : []).flatMap(it => (found.has(it) ? [[it, found.get(it)!] as const] : [])))
   return { images, icons }
 }
