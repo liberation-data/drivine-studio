@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { choose, chosen, common, iconsOf, NEAREST, nearestTo, words } from './labels'
+import { choose, chosen, common, embedder, iconsOf, NEAREST, nearestTo, RETRY, words } from './labels'
 import type { Embed } from './labels'
 
 let home: string
@@ -27,6 +27,14 @@ describe('words', () => {
     expect(words('created_at')).toEqual(['created', 'at'])
   })
 
+  it('splits numbers from words and leaves them out, and keeps letters of any script', () => {
+    expect(words('Address2')).toEqual(['address'])
+    expect(words('HTTP2Server')).toEqual(['http', 'server'])
+    expect(words('GrößeÄrzte')).toEqual(['größe', 'ärzte'])
+    expect(words('人物')).toEqual(['人物'])
+    expect(words('_')).toEqual([])
+  })
+
   it('keeps a label made only of such words, rather than none', () => {
     expect(words('Node')).toEqual(['node'])
   })
@@ -38,6 +46,7 @@ describe('common', () => {
     expect(common('GithubPerson')).toBe('user')
     expect(common('IssueCore')).toBe('circle-dot')
     expect(common('PurchaseOrder')).toBe('shopping-cart')
+    expect(common('Address2')).toBe('map-pinned')
   })
 
   it('has nothing for a word it does not know', () => {
@@ -50,6 +59,37 @@ describe('nearestTo', () => {
     const icons = { model: 'm', dimensions: 2, names: ['a', 'b'], values: Int8Array.from([127, 0, 0, 127]) }
     expect(nearestTo([0, 1], icons)).toEqual({ icon: 'b', score: 1 })
     expect(nearestTo([0.6, 0.8], icons)).toEqual({ icon: 'b', score: 0.8 })
+  })
+})
+
+describe('embedder', () => {
+  const shared = globalThis as { drivineStudioEmbed?: unknown }
+  beforeEach(() => {
+    delete shared.drivineStudioEmbed
+  })
+  afterEach(() => {
+    delete shared.drivineStudioEmbed
+  })
+  const model = async () => async () => [1]
+
+  it('loads the model once for every label that asks at once', async () => {
+    let loads = 0
+    const load = async () => {
+      loads++
+      return model()
+    }
+    const all = await Promise.all([embedder(load, 0), embedder(load, 0), embedder(load, 0)])
+    expect(loads).toBe(1)
+    expect(new Set(all).size).toBe(1)
+  })
+
+  it('tries again for a model it could not load, once RETRY has passed', async () => {
+    const offline = async () => {
+      throw new Error('fetch failed')
+    }
+    expect(await embedder(offline, 0)).toBeNull()
+    expect(await embedder(model, RETRY - 1)).toBeNull()
+    expect(await embedder(model, RETRY)).toBeTypeOf('function')
   })
 })
 
@@ -86,5 +126,12 @@ describe('iconsOf', () => {
     expect(sure).toMatchObject({ icon: 'flask-conical', source: 'nearest' })
     expect(sure?.score).toBeGreaterThanOrEqual(NEAREST)
     expect((await iconsOf(['Probe'], unlike)).Probe).toEqual({ icon: null, source: 'none', score: 0 })
+  })
+
+  it('asks no model of a label with no words', async () => {
+    const never: Embed = async () => {
+      throw new Error('asked')
+    }
+    expect((await iconsOf(['_'], never))._).toEqual({ icon: null, source: 'none' })
   })
 })

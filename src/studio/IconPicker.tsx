@@ -83,13 +83,13 @@ export function IconPicker({ label, current, onDone }: { label: string; current:
         <TextField label="Search" labelHidden placeholder="Search icons, such as user or building" value={search} autoFocus onChange={e => setSearch(e.target.value)} />
         {!catalog && !problem && <Loading label="Reading the icons" />}
         {catalog && shown.length === 0 && <p className="desk-text-small desk-text-muted">No icon matches.</p>}
-        <div className="studio-icons" role="listbox" aria-label="Icons">
+        <div className="studio-icons" role="group" aria-label="Icons">
           {shown.map(name => (
             <button
               key={name}
               type="button"
-              role="option"
-              aria-selected={current?.icon === name}
+              aria-pressed={current?.icon === name}
+              aria-label={name}
               className="studio-icon-choice"
               title={name}
               onClick={() => choose(name)}

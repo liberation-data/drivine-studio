@@ -37,8 +37,10 @@ FalkorDB as text.
 Each label in a graph is drawn with an icon from [Lucide](https://lucide.dev), found in this order:
 
 1. **The one you chose.** Press a label in the graph's legend to choose another, or none, or Automatic to have it
-   found again. The studio keeps your choices in `icons.json` in its home, for every model with the label.
-2. **A common word in the label.** About a hundred words, such as Person, Organization, Issue, Order and Note, each
+   found again. An icon is a label's: a node's first label, the one it is told by, so a choice shows on the Canvas
+   and in the Cypher window alike, for every model with the label. The studio keeps your choices in `icons.json` in
+   its home.
+2. **A common word in the label.** About eighty words, such as Person, Organization, Issue, Order and Note, each
    with its icon. The label's words are looked up whole, then each from the last, so `GithubPerson` is a person and
    `SampleDocNode` a document.
 3. **The nearest icon by meaning.** A small local model, `all-MiniLM-L6-v2` (23 MB, quantized, on the CPU),
@@ -47,8 +49,8 @@ Each label in a graph is drawn with an icon from [Lucide](https://lucide.dev), f
    plain.
 
 The model is downloaded once, the first time a label needs it, to `models` in the studio's home; offline before then,
-labels get their chosen and common-word icons alone. The icons' own vectors are in the repository, made by
-`npm run icon-vectors` after an upgrade of Lucide or the model.
+labels get their chosen and common-word icons alone, and the download is tried again a minute later. The icons' own
+vectors are in the repository, made by `npm run icon-vectors` after an upgrade of Lucide or the model.
 
 ## Connections
 

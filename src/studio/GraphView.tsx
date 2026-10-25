@@ -125,7 +125,9 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
   }, [graph, fragments])
 
   const present = fragments.filter(f => graph.nodes.some(n => n.fragment === f))
-  const { images, icons } = useLabelIcons(present)
+  // An icon is a label's, the same in every window: a fragment's is its nodes' first label, the one it is told by.
+  const labelOf = (fragment: string): string => graph.nodes.find(n => n.fragment === fragment)?.labels[0] ?? fragment
+  const { images, icons } = useLabelIcons(present.map(labelOf))
   const [choosing, setChoosing] = useState<string | null>(null)
 
   // Icons arrive after the graph is drawn, and change when one is chosen: set on the nodes, with no new layout.
@@ -133,11 +135,11 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
     const core = cy.current
     if (!core) return
     core.nodes().forEach(node => {
-      const image = images[(node.data('node') as GraphNode).fragment]
+      const image = images[(node.data('node') as GraphNode).labels[0] ?? '']
       if (image) node.data('icon', image)
       else node.removeData('icon')
     })
-  }, [images, graph])
+  }, [images, graph, fragments])
 
   return (
     <div className="studio-graph">
@@ -145,8 +147,8 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
       <ul className="studio-legend desk-text-caption" aria-label="Fragments">
         {present.map(fragment => (
           <li key={fragment}>
-            <button type="button" className="studio-legend-entry" title={`Choose the icon of ${fragment}`} onClick={() => setChoosing(fragment)}>
-              <Swatch colour={colourOf(fragments, fragment)} icon={icons[fragment]?.icon ?? null} />
+            <button type="button" className="studio-legend-entry" title={`Choose the icon of ${labelOf(fragment)}`} onClick={() => setChoosing(labelOf(fragment))}>
+              <Swatch colour={colourOf(fragments, fragment)} icon={icons[labelOf(fragment)]?.icon ?? null} />
               {fragment}
             </button>
           </li>

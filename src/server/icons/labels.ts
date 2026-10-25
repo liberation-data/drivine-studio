@@ -43,15 +43,19 @@ const COMMON: Record<string, string> = {
   embedding: 'sparkles', vector: 'sparkles', concept: 'brain', network: 'network',
 }
 
-/** A label's words, lowercased, without those that say how it is used: `SampleDocNode` gives `doc`. */
+/**
+ * A label's words, lowercased, without those that say how it is used, and without bare numbers: `SampleDocNode` gives
+ * `doc`, and `Address2` gives `address`. Letters are any script's, so `Größe` is a word, not two.
+ */
 export function words(label: string): string[] {
   const all = label
-    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-    .split(/[^A-Za-z\d]+/)
+    .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2')
+    .replace(/(\p{Lu}+)(\p{Lu}\p{Ll})/gu, '$1 $2')
+    .replace(/(\p{L})(\p{N})/gu, '$1 $2')
+    .split(/[^\p{L}\p{N}]+/u)
     .map(it => it.toLowerCase())
     .filter(it => it !== '')
-  const meaningful = all.filter(it => !NOISE.has(it))
+  const meaningful = all.filter(it => !NOISE.has(it) && !/^\p{N}+$/u.test(it))
   return meaningful.length ? meaningful : all
 }
 
@@ -103,34 +107,47 @@ function iconVectors(): Vectors {
 /** A text as a unit vector, as the icons' vectors were made. */
 export type Embed = (text: string) => Promise<number[]>
 
+/** How long the studio goes without a model it couldn't load before it tries again, as the network may be back. */
+export const RETRY = 60_000
+
 /**
  * The model, loaded once, on first use: downloaded then, to the studio's home, and read from there after. Null when it
- * can't be had, as offline before it ever was: labels then get the common words' icons alone.
+ * can't be had, as offline before it ever was: labels then get the common words' icons alone, until RETRY has passed.
+ * On globalThis, as Next may give each route its own copy of this module.
  */
-const shared = globalThis as typeof globalThis & { drivineStudioEmbed?: Promise<Embed | null> }
-function embedder(): Promise<Embed | null> {
-  shared.drivineStudioEmbed ??= (async () => {
-    try {
-      const { env, pipeline } = await import('@huggingface/transformers')
-      env.cacheDir = join(studioHome(), 'models')
-      const extract = await pipeline('feature-extraction', iconVectors().model, { dtype: 'q8' })
-      return async (text: string) => {
-        const output = await extract(text, { pooling: 'mean', normalize: true })
-        return Array.from(output.data as Float32Array)
-      }
-    } catch (e) {
+const shared = globalThis as typeof globalThis & { drivineStudioEmbed?: { model: Promise<Embed | null>; failed?: number } }
+export function embedder(load: () => Promise<Embed> = loadModel, now: number = Date.now()): Promise<Embed | null> {
+  const failed = shared.drivineStudioEmbed?.failed
+  if (failed !== undefined && now - failed >= RETRY) shared.drivineStudioEmbed = undefined
+  if (!shared.drivineStudioEmbed) {
+    const loading: { model: Promise<Embed | null>; failed?: number } = { model: Promise.resolve(null) }
+    loading.model = load().catch((e: unknown) => {
+      loading.failed = now
       process.stderr.write(`Drivine Studio: no model to find labels' icons with: ${e instanceof Error ? e.message : String(e)}\n`)
       return null
-    }
-  })()
-  return shared.drivineStudioEmbed
+    })
+    shared.drivineStudioEmbed = loading
+  }
+  return shared.drivineStudioEmbed.model
 }
 
-/** The icon whose words are nearest the label's, and how near, or undefined when there is no model. */
+async function loadModel(): Promise<Embed> {
+  const { env, pipeline } = await import('@huggingface/transformers')
+  env.cacheDir = join(studioHome(), 'models')
+  const extract = await pipeline('feature-extraction', iconVectors().model, { dtype: 'q8' })
+  return async (text: string) => {
+    const output = await extract(text, { pooling: 'mean', normalize: true })
+    return Array.from(output.data as Float32Array)
+  }
+}
+
+/** The icon whose words are nearest the label's, and how near, or undefined when there is no model or no word. */
 export async function nearest(label: string, embed: Embed | null = null): Promise<{ icon: string; score: number } | undefined> {
+  const said = words(label)
+  if (!said.length) return undefined
   const model = embed ?? (await embedder())
   if (!model) return undefined
-  const query = await model(words(label).join(' '))
+  const query = await model(said.join(' '))
   return nearestTo(query, iconVectors())
 }
 

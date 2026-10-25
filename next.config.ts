@@ -13,9 +13,10 @@ const config: NextConfig = {
   outputFileTracingIncludes: {
     '/api/icons/**': ['./src/server/icons/icon-vectors.*', './node_modules/lucide-static/icons/*.svg', './node_modules/lucide-static/tags.json'],
   },
-  // Lucide's fonts, sprite and scripts, which tracing takes with the rest of the package, and nothing reads.
+  // Lucide's fonts, sprite and scripts, which tracing takes with the rest of the package, and nothing reads; and the
+  // icons' sources and tests, which it takes with the vectors beside them.
   outputFileTracingExcludes: {
-    '/api/icons/**': ['./node_modules/lucide-static/font/**', './node_modules/lucide-static/dist/**', './node_modules/lucide-static/sprite.svg', './node_modules/lucide-static/icon-nodes.json'],
+    '/api/icons/**': ['./src/server/icons/*.ts', './node_modules/lucide-static/font/**', './node_modules/lucide-static/dist/**', './node_modules/lucide-static/sprite.svg', './node_modules/lucide-static/icon-nodes.json'],
   },
 }
 

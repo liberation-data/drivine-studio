@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { json, read } from './fetching'
 
+/** A label's icon, and how the server found it: as LabelIcon in src/server/icons/labels.ts says. */
 export interface LabelIcon {
   icon: string | null
   source: 'chosen' | 'common' | 'nearest' | 'none'
@@ -10,6 +11,7 @@ export interface LabelIcon {
 
 const API = '/api/icons'
 
+/** The icon of each label given, found by the server. */
 export const iconsOf = (labels: string[]): Promise<Record<string, LabelIcon>> =>
   fetch(API, json('POST', { labels })).then(r => read<Record<string, LabelIcon>>(r))
 
@@ -21,6 +23,7 @@ export const chooseIcon = (label: string, icon: string | null | undefined): Prom
 export const iconCatalog = (): Promise<Record<string, string[]>> =>
   fetch(`${API}/catalog`).then(r => read<Record<string, string[]>>(r))
 
+/** Where an icon's SVG is, in the colour of the text around it. */
 export const iconUrl = (name: string): string => `${API}/svg/${encodeURIComponent(name)}`
 
 // Icons found, and drawn, once a page: a label's is found again when it is chosen.
@@ -73,7 +76,11 @@ export function useLabelIcons(labels: readonly string[]): { images: Record<strin
     const wanted = key ? key.split('\n') : []
     const missing = wanted.filter(it => !found.has(it))
     const ready = missing.length
-      ? iconsOf(missing).then(icons => Object.entries(icons).forEach(([label, icon]) => found.set(label, icon)), () => undefined)
+      ? iconsOf(missing).then(
+          // An icon chosen while these were being found is newer than what was found.
+          icons => Object.entries(icons).forEach(([label, icon]) => found.has(label) || found.set(label, icon)),
+          () => undefined,
+        )
       : Promise.resolve()
     void ready.then(async () => {
       const pairs = await Promise.all(
