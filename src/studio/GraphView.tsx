@@ -19,6 +19,13 @@ export function captionOf(node: GraphNode): string {
   return typeof text === 'string' ? text : node.fragment
 }
 
+/**
+ * The label a fragment's icon is: its nodes' first label, the one it is told by, the same in every window. Nodes with
+ * no label have none, and are drawn plain.
+ */
+export const iconLabelOf = (nodes: readonly GraphNode[], fragment: string): string | undefined =>
+  nodes.find(n => n.fragment === fragment)?.labels[0]
+
 const isUuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(value)
 const short = (text: string) => (text.length > 26 ? `${text.slice(0, 25)}…` : text)
 
@@ -125,9 +132,8 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
   }, [graph, fragments])
 
   const present = fragments.filter(f => graph.nodes.some(n => n.fragment === f))
-  // An icon is a label's, the same in every window: a fragment's is its nodes' first label, the one it is told by.
-  const labelOf = (fragment: string): string => graph.nodes.find(n => n.fragment === fragment)?.labels[0] ?? fragment
-  const { images, icons } = useLabelIcons(present.map(labelOf))
+  const labelOf = (fragment: string) => iconLabelOf(graph.nodes, fragment)
+  const { images, icons } = useLabelIcons(present.flatMap(fragment => labelOf(fragment) ?? []))
   const [choosing, setChoosing] = useState<string | null>(null)
 
   // Icons arrive after the graph is drawn, and change when one is chosen: set on the nodes, with no new layout.
@@ -135,7 +141,8 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
     const core = cy.current
     if (!core) return
     core.nodes().forEach(node => {
-      const image = images[(node.data('node') as GraphNode).labels[0] ?? '']
+      const label = (node.data('node') as GraphNode).labels[0]
+      const image = label === undefined ? undefined : images[label]
       if (image) node.data('icon', image)
       else node.removeData('icon')
     })
@@ -145,14 +152,24 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
     <div className="studio-graph">
       <div ref={container} className="studio-graph-canvas" role="img" aria-label={`Graph of ${graph.nodes.length} nodes and ${graph.edges.length} relationships`} />
       <ul className="studio-legend desk-text-caption" aria-label="Fragments">
-        {present.map(fragment => (
-          <li key={fragment}>
-            <button type="button" className="studio-legend-entry" title={`Choose the icon of ${labelOf(fragment)}`} onClick={() => setChoosing(labelOf(fragment))}>
-              <Swatch colour={colourOf(fragments, fragment)} icon={icons[labelOf(fragment)]?.icon ?? null} />
-              {fragment}
-            </button>
-          </li>
-        ))}
+        {present.map(fragment => {
+          const label = labelOf(fragment)
+          return (
+            <li key={fragment}>
+              {label === undefined ? (
+                <>
+                  <Swatch colour={colourOf(fragments, fragment)} icon={null} />
+                  {fragment}
+                </>
+              ) : (
+                <button type="button" className="studio-legend-entry" title={`Choose the icon of ${label}`} onClick={() => setChoosing(label)}>
+                  <Swatch colour={colourOf(fragments, fragment)} icon={icons[label]?.icon ?? null} />
+                  {fragment}
+                </button>
+              )}
+            </li>
+          )
+        })}
       </ul>
       {choosing && <IconPicker label={choosing} current={icons[choosing]} onDone={() => setChoosing(null)} />}
     </div>

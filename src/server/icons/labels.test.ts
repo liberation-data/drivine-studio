@@ -3,8 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { choose, chosen, common, embedder, iconsOf, NEAREST, nearestTo, RETRY, words } from './labels'
+import { choose, chosen, COMMON, common, embedder, iconsOf, NEAREST, nearestTo, RETRY, words } from './labels'
 import type { Embed } from './labels'
+import { isIcon } from './lucide'
 
 let home: string
 const saved = { ...process.env }
@@ -47,6 +48,10 @@ describe('common', () => {
     expect(common('IssueCore')).toBe('circle-dot')
     expect(common('PurchaseOrder')).toBe('shopping-cart')
     expect(common('Address2')).toBe('map-pinned')
+  })
+
+  it("gives only Lucide's icons, as an upgrade of Lucide may rename one", () => {
+    expect(Object.values(COMMON).filter(icon => !isIcon(icon))).toEqual([])
   })
 
   it('has nothing for a word it does not know', () => {

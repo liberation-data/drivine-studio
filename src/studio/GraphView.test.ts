@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GraphNode } from './api'
-import { captionOf, colourOf } from './GraphView'
+import { captionOf, colourOf, iconLabelOf } from './GraphView'
 
 const node = (properties: Record<string, unknown>): GraphNode =>
   ({ id: '1', fragment: 'Person', labels: ['Person'], properties, aggregates: {} })
@@ -29,5 +29,13 @@ describe('colourOf', () => {
 
   it('gives a fragment missing from the catalogue the first colour rather than none', () => {
     expect(colourOf(['A'], 'Z')).toEqual(colourOf(['A'], 'A'))
+  })
+})
+
+describe('iconLabelOf', () => {
+  it("takes a fragment's nodes' first label, and none for nodes with no label, as its nodes have no icon", () => {
+    const nodes = [node({}), { ...node({}), fragment: 'No label', labels: [] }]
+    expect(iconLabelOf(nodes, 'Person')).toBe('Person')
+    expect(iconLabelOf(nodes, 'No label')).toBeUndefined()
   })
 })

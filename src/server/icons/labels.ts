@@ -25,7 +25,7 @@ const NOISE = new Set(['node', 'fragment', 'view', 'sample', 'core', 'element', 
  * Common words and their icons, which a general model gets wrong: Order is a sort order to it, Note a note in music,
  * Project a projector. A label's whole words are looked up first, then each from the last.
  */
-const COMMON: Record<string, string> = {
+export const COMMON: Record<string, string> = {
   person: 'user', user: 'user', people: 'users', customer: 'user', member: 'user', account: 'user',
   author: 'user-pen', actor: 'user-round', team: 'users', group: 'users', membership: 'users', role: 'shield-user',
   permission: 'key-round', organization: 'building', organisation: 'building', company: 'building',
