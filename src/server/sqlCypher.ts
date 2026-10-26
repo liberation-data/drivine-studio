@@ -53,8 +53,19 @@ export function compileWhole(type: 'POSTGRES' | 'ORACLE', graph: string, query: 
   return { ...internals(compiler).withFunctions({ sql, parameters: writer.parameters.values, setup: [] }), columns: writer.columns }
 }
 
-const compilerFor = (type: 'POSTGRES' | 'ORACLE', graph: string): SqlCypherCompiler =>
+/** Drivine's own compiler for the store, as a PersistenceManager compiles a Cypher statement with there. */
+export const compilerFor = (type: 'POSTGRES' | 'ORACLE', graph: string): SqlCypherCompiler =>
   type === 'ORACLE' ? new OracleCypherCompiler(graph) : new PostgresCypherCompiler(graph)
+
+/**
+ * The names of what a statement's `RETURN` gives back, as Drivine gives it: none without one. A star's variables are
+ * not named here, so a `RETURN *` is one value, `*`, the row as Drivine gives it.
+ */
+export function returnedNames(query: Query): string[] {
+  const last = query.clauses.at(-1)
+  if (last?.kind !== 'Return') return []
+  return last.projection.star ? ['*'] : last.projection.items.map(item => item.name)
+}
 
 /** What the studio reads of the compiler that is not its API. */
 interface CompilerInternals {

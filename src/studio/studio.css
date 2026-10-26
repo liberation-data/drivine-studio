@@ -117,6 +117,12 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-form { display: flex; flex-direction: column; gap: var(--desk-space-3); }
 .studio-form p { margin: 0; }
 .studio-bad { color: var(--desk-bad); margin: 0; }
+/* A connection that allows writes: the warning colour, darkened toward the ink to be read as text. */
+.studio-warn { color: color-mix(in srgb, var(--desk-warn) 75%, var(--desk-ink)); margin: 0; }
+.studio-writes {
+  margin: 0; padding: var(--desk-space-1) var(--desk-space-4); border-bottom: 1px solid var(--desk-rule);
+  font-size: var(--desk-text-small); background: color-mix(in srgb, var(--desk-warn) 10%, transparent);
+}
 
 /* Cypher */
 .studio-editor { min-height: 0; resize: vertical; font-family: var(--desk-font-mono); font-size: var(--desk-text-small); line-height: 1.5; padding-block: var(--desk-space-2); }

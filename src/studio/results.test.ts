@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { CypherNode } from './database'
-import { cellText, graphOf, NO_LABEL, parametersOf } from './results'
+import { cellText, graphOf, NO_LABEL, parametersOf, writtenText } from './results'
+
+describe('writtenText', () => {
+  it('says each change that is not none, in order, one or more', () => {
+    expect(writtenText({ counts: { propertiesSet: 2, nodesCreated: 1, labelsAdded: 1, relationshipsDeleted: 0 } }))
+      .toBe('1 node created, 2 properties set, 1 label added')
+    expect(writtenText({ counts: { nodesDeleted: 3, relationshipsDeleted: 1 } })).toBe('3 nodes deleted, 1 relationship deleted')
+  })
+
+  it('says nothing changed, or, where the database counts nothing, that it ran', () => {
+    expect(writtenText({ counts: { nodesCreated: 0 } })).toBe('nothing changed')
+    expect(writtenText({ counts: {} })).toBe('nothing changed')
+    expect(writtenText({ counts: null })).toBe('ran, and committed')
+  })
+})
 
 const ada: CypherNode = { id: 'n0', labels: ['Person', 'Author'], properties: { name: 'Ada' } }
 const bare: CypherNode = { id: 'n1', labels: [], properties: { born: 1815 } }

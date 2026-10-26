@@ -20,7 +20,9 @@ export async function POST(request: Request) {
   }
   try {
     const connection = await findConnection(asked.connection)
-    return Response.json(await run(connection, asked.statement, parameters as Record<string, unknown>, limit))
+    // The Cypher window is the one place a statement may write, and only on a connection that allows it.
+    const writes = connection.allowWrites === true
+    return Response.json(await run(connection, asked.statement, parameters as Record<string, unknown>, limit, { writes }))
   } catch (e) {
     return failure(e)
   }

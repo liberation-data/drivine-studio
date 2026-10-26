@@ -2,12 +2,12 @@ import { Button, PopUpButton, Spinner, Table, Tabs, TextField } from '@liberatio
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useStudio } from './App'
-import { DATABASE_NAMES, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
+import { ALLOWS_WRITES, DATABASE_NAMES, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
 import type { Cell, CypherResult } from './database'
 import { GraphView } from './GraphView'
 import type { Selection } from './GraphView'
 import { Inspector } from './Inspector'
-import { cellText, graphOf, parametersOf } from './results'
+import { cellText, graphOf, parametersOf, writtenText } from './results'
 
 type Run = { state: 'idle' } | { state: 'running' } | { state: 'failed'; message: string }
 type View = 'graph' | 'rows'
@@ -152,6 +152,7 @@ export function Cypher() {
           </>
         )}
       </form>
+      {connection?.allowWrites && <p className="studio-writes studio-warn" role="note">{ALLOWS_WRITES}</p>}
       {run.state === 'failed' && <p className="studio-failure" role="alert">{run.message}</p>}
       {!connection && (
         <div className="studio-hint">
@@ -192,6 +193,7 @@ function Status({ run, result }: { run: Run; result: CypherResult | null }) {
     <span className="desk-text-small desk-text-muted" role="status">
       {rows} {rows === 1 ? 'row' : 'rows'} in {result.milliseconds} ms
       {result.truncated && ` · stopped at ${result.limit}`}
+      {result.written && ` · ${writtenText(result.written)}`}
     </span>
   )
 }

@@ -45,6 +45,20 @@ describe('the connections endpoints', () => {
     expect(JSON.parse(listed)).toMatchObject([{ id: 'environment', hasPassword: true }, { id, hasPassword: true }])
   })
 
+  it('say whether a connection allows writes, and still never answer with its password', async () => {
+    const added = await POST(request('POST', '', { ...neo4j, allowWrites: true }))
+    const text = await added.text()
+    expect(text).not.toContain('secret')
+    const { id } = JSON.parse(text) as { id: string }
+    expect(JSON.parse(text)).toMatchObject({ allowWrites: true, hasPassword: true })
+    const listed = await (await GET(request('GET', ''))).text()
+    expect(listed).not.toContain('secret')
+    expect(JSON.parse(listed)).toMatchObject([{ id, allowWrites: true }])
+    const off = await (await PUT(request('PUT', `/${id}`, { ...neo4j, password: undefined }), context(id))).json()
+    expect(off).not.toHaveProperty('allowWrites')
+    expect(off).not.toHaveProperty('password')
+  })
+
   it('remove a connection, which is then not listed', async () => {
     const { id } = (await (await POST(request('POST', '', neo4j))).json()) as { id: string }
     const removed = await DELETE(request('DELETE', `/${id}`), context(id))

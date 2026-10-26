@@ -5,11 +5,11 @@ import {
 import type { Connection as DrivineConnection, ConnectionProvider } from '@liberation-data/drivine'
 import neo4j from 'neo4j-driver'
 import type { Driver } from 'neo4j-driver'
-import { DATABASE_NAMES, DEFAULT_LIMIT, READS_ONLY, RUNS_CYPHER } from '../studio/database'
-import type { CypherResult } from '../studio/database'
+import { CHANGES, DATABASE_NAMES, DEFAULT_LIMIT, READS_ONLY, RUNS_CYPHER } from '../studio/database'
+import type { Change, CypherResult } from '../studio/database'
 import { ConnectionError } from './connections'
 import type { Connection } from './connections'
-import { compileWhole, readCypher, statementWrites } from './sqlCypher'
+import { compilerFor, compileWhole, readCypher, returnedNames, statementWrites } from './sqlCypher'
 import { Cells } from './values'
 
 /**
@@ -26,7 +26,9 @@ const cache = (shared.drivineStudioProviders ??= { providers: new Map(), built: 
 const providers = cache.providers
 
 async function providerFor(connection: Connection): Promise<ConnectionProvider> {
-  const settings = JSON.stringify(connection)
+  // Whether it allows writes is the studio's, not the provider's: a change to it keeps the provider.
+  const { allowWrites: _, ...connects } = connection
+  const settings = JSON.stringify(connects)
   const known = providers.get(connection.id)
   if (known?.settings === settings) return known.provider
   // Closed without waiting for it, so that a second call meanwhile finds the new provider rather than building another.
@@ -61,26 +63,43 @@ export async function forget(id: string): Promise<void> {
 /** A statement the studio will not run, or one the database turned down: the person can fix it, so it is a 400. */
 export class StatementError extends Error {}
 
+/** How a statement is run. */
+export interface RunOptions {
+  /**
+   * The statement may write, and what it does is committed: only the Cypher window asks for this, and only on a
+   * connection that allows writes. Off, it runs where it cannot write.
+   */
+  writes?: boolean
+}
+
 /**
- * Runs a statement and reads at most `limit` rows of what it gives back. The studio reads and never writes, so the
- * statement runs where what it does cannot last. Over Bolt, in a read session, whose transaction the database will
- * not let write, and which is rolled back all the same. On FalkorDB, which has no transactions, as a read-only query,
- * which FalkorDB will not let write. A procedure that opens transactions of its own, as some of APOC's do, is beyond
- * either: a user that may only read is the whole guarantee. On Postgres and Oracle, Drivine compiles the Cypher to
- * SQL: a statement that writes is refused before it is compiled, and the SQL runs in a read-only transaction, which
- * is rolled back all the same.
+ * Runs a statement and reads at most `limit` rows of what it gives back. Unless told it `writes`, the studio reads and
+ * never writes, so the statement runs where what it does cannot last. Over Bolt, in a read session, whose transaction
+ * the database will not let write, and which is rolled back all the same. On FalkorDB, which has no transactions, as
+ * a read-only query, which FalkorDB will not let write. A procedure that opens transactions of its own, as some of
+ * APOC's do, is beyond either: a user that may only read is the whole guarantee. On Postgres and Oracle, Drivine
+ * compiles the Cypher to SQL: a statement that writes is refused before it is compiled, and the SQL runs in a
+ * read-only transaction, which is rolled back all the same.
+ *
+ * Told it `writes`, it runs in a transaction that may write, which is committed: a write session over Bolt, FalkorDB's
+ * query that may write, and on Postgres and Oracle a statement that writes as Drivine compiles and runs it. What it
+ * changed is `written`.
  */
 export async function run(
   connection: Connection,
   statement: string,
   parameters: Record<string, unknown> = {},
   limit: number = DEFAULT_LIMIT,
+  options: RunOptions = {},
 ): Promise<CypherResult> {
   const cells = new Cells(connection.type === 'FALKORDB' ? 'falkordb' : SQL_STORES.includes(connection.type) ? 'sql' : 'bolt')
   const started = performance.now()
-  const read = await readRows(connection, statement, parameters, limit, value => cells.cell(value))
+  const read = await readRows(connection, statement, parameters, limit, value => cells.cell(value), options)
   return { ...read, graph: cells.graph(), limit, milliseconds: Math.round(performance.now() - started) }
 }
+
+/** What a statement run where it may write changed: see CypherResult. */
+export type Written = NonNullable<CypherResult['written']>
 
 /** The stores Drivine compiles Cypher to SQL on. */
 export const SQL_STORES: readonly string[] = ['POSTGRES', 'ORACLE']
@@ -100,6 +119,8 @@ export interface Rows<T> {
   rows: T[][]
   /** More rows came back than the limit, and the rest were not read. */
   truncated: boolean
+  /** Given only where the statement ran where it may write, and was committed: what it changed. */
+  written?: Written
 }
 
 /** Runs a statement as `run` does, and gives each value to `read` as the database's client gave it back. */
@@ -109,29 +130,34 @@ export async function readRows<T>(
   parameters: Record<string, unknown>,
   limit: number,
   read: (value: unknown) => T,
+  { writes = false }: RunOptions = {},
 ): Promise<Rows<T>> {
   runsCypher(connection)
   if (statement.trim() === '') throw new StatementError('There is no statement to run.')
   if (connection.type === 'POSTGRES' || connection.type === 'ORACLE') {
-    // Read, and refused if it writes, before anything is connected to.
-    const query = sqlStatement(connection.type, statement)
-    return sql(connection.type, await providerFor(connection), query, parameters, limit, read)
+    // Read, and refused if it writes where it may not, before anything is connected to.
+    const query = sqlStatement(connection.type, statement, writes)
+    const provider = await providerFor(connection)
+    // A statement that only reads is compiled whole and run read-only, as ever: there is nothing of it to commit.
+    return writes && statementWrites(query)
+      ? sqlWrite(connection.type, provider, query, statement, parameters, limit, read)
+      : sql(connection.type, provider, query, parameters, limit, read)
   }
   const provider = await providerFor(connection)
   return connection.type === 'FALKORDB'
-    ? falkor(provider, statement, parameters, limit, read)
-    : bolt(provider, statement, parameters, limit, read)
+    ? falkor(provider, statement, parameters, limit, read, writes)
+    : bolt(provider, statement, parameters, limit, read, writes)
 }
 
-/** The statement, read as Cypher, and refused if it writes. */
-function sqlStatement(type: 'POSTGRES' | 'ORACLE', statement: string): ReturnType<typeof readCypher> {
+/** The statement, read as Cypher, and refused if it writes where it may not. */
+function sqlStatement(type: 'POSTGRES' | 'ORACLE', statement: string, writes: boolean): ReturnType<typeof readCypher> {
   let query: ReturnType<typeof readCypher>
   try {
     query = readCypher(statement)
   } catch (e) {
     throw new StatementError(e instanceof Error ? e.message : String(e))
   }
-  if (statementWrites(query)) {
+  if (!writes && statementWrites(query)) {
     throw new StatementError(
       `${READS_ONLY} On ${DATABASE_NAMES[type]}, a statement that writes (CREATE, MERGE, SET, REMOVE, DELETE or FOREACH) is not sent.`,
     )
@@ -162,7 +188,7 @@ async function sql<T>(
     if (e instanceof DrivineError) throw new StatementError(e.message)
     throw e
   }
-  const session = type === 'ORACLE' ? await oracleSession(provider) : await provider.connect()
+  const session = await sqlSession(type, provider)
   try {
     await session.startTransaction()
     await session.query(new QuerySpecification().withStatement({ text: 'SET TRANSACTION READ ONLY', language: 'SQL' }))
@@ -195,8 +221,58 @@ async function sql<T>(
 }
 
 /**
+ * Postgres and Oracle, on a connection that allows writes: a statement that writes runs as Drivine compiles and runs
+ * it, as a PersistenceManager does, in a transaction that is committed. What it returns is as Drivine gives it back,
+ * a node as its properties alone, and each row's values are named by its `RETURN`'s items. Drivine gives back every
+ * row, with no cursor, so all of them are held before the rows past `limit` are left out. Drivine says nothing of
+ * what was changed, so `written` has no counts.
+ */
+async function sqlWrite<T>(
+  type: 'POSTGRES' | 'ORACLE',
+  provider: ConnectionProvider,
+  query: ReturnType<typeof readCypher>,
+  statement: string,
+  parameters: Record<string, unknown>,
+  limit: number,
+  read: (value: unknown) => T,
+): Promise<Rows<T>> {
+  const graph = provider.graphName ?? 'drivine'
+  try {
+    // Compiled first, so Cypher the compiler does not take is said to be, before anything is connected to.
+    compilerFor(type, graph).compileQuery(query, parameters)
+  } catch (e) {
+    if (e instanceof DrivineError) throw new StatementError(e.message)
+    throw e
+  }
+  const columns = returnedNames(query)
+  const session = await sqlSession(type, provider)
+  let committed = false
+  try {
+    await session.startTransaction()
+    const got = await session.query<unknown>(
+      new QuerySpecification<unknown>().withStatement({ text: statement, language: 'CYPHER' }).bind(parameters),
+    )
+    await session.commitTransaction()
+    committed = true
+    // Drivine gives a row of one item as its value, and of more as a list of them.
+    const rows = got.slice(0, limit).map(value => (columns.length > 1 && Array.isArray(value) ? value : [value]).map(item => read(item)))
+    return { columns, rows, truncated: got.length > limit, written: { counts: null } }
+  } catch (e) {
+    throw sqlRefused(e, type, graph, true)
+  } finally {
+    if (!committed) await session.rollbackTransaction().catch(() => undefined)
+    await session.release().catch(() => undefined)
+  }
+}
+
+/** One of Drivine's connections for Postgres, or one on the Oracle provider's own pool: see oracleSession. */
+const sqlSession = (type: 'POSTGRES' | 'ORACLE', provider: ConnectionProvider): Promise<DrivineConnection> =>
+  type === 'ORACLE' ? oracleSession(provider) : provider.connect()
+
+/**
  * A connection from the Oracle provider's own pool. Drivine's provider makes the graph's tables on its first
- * connection, where they are not there, and the studio never writes: so it takes the pool's connection itself.
+ * connection, where they are not there, and the studio never makes them, even on a connection that allows writes: so
+ * it takes the pool's connection itself.
  */
 async function oracleSession(provider: ConnectionProvider): Promise<DrivineConnection> {
   const pool = (provider as unknown as { poolOf?: () => Promise<{ getConnection(): Promise<unknown> }> }).poolOf
@@ -210,14 +286,16 @@ const ORACLE_DATA_ERRORS = [1476, 1722, 12722, 12725, 12726, 12727, 12728, 12729
 
 /**
  * What Postgres or Oracle said, as a StatementError where it is the person's to fix: a refusal to write, a graph whose
- * tables are not there, or a value the statement could not take. Anything else is as it came.
+ * tables are not there, or a value the statement could not take. Anything else is as it came. Where the statement
+ * `writes`, a refusal to write is the database's, as a standby's or a read-only user's is, so it is not said to be the
+ * studio's.
  */
-function sqlRefused(e: unknown, type: 'POSTGRES' | 'ORACLE', graph: string): unknown {
+function sqlRefused(e: unknown, type: 'POSTGRES' | 'ORACLE', graph: string, writes = false): unknown {
   if (e instanceof StatementError || !(e instanceof Error)) return e
   const code = String((e as { code?: unknown }).code ?? '')
   const oracle = (e as { errorNum?: unknown }).errorNum
   // Postgres's read_only_sql_transaction; Oracle's ORA-01456, a write in a READ ONLY transaction.
-  if (code === '25006' || oracle === 1456) return new StatementError(`${READS_ONLY} ${e.message}`)
+  if (code === '25006' || oracle === 1456) return new StatementError(writes ? e.message : `${READS_ONLY} ${e.message}`)
   // Postgres's undefined_table; Oracle's ORA-00942, a table or view that does not exist.
   if (code === '42P01' || oracle === 942) {
     return new StatementError(`${DATABASE_NAMES[type]} has no graph ${graph} here: the tables ${graph}_node and ${graph}_edge are not there. (${e.message})`)
@@ -231,7 +309,8 @@ function sqlRefused(e: unknown, type: 'POSTGRES' | 'ORACLE', graph: string): unk
 
 /**
  * Neo4j, Memgraph and Neptune: a session of the provider's own driver, rather than one of Drivine's connections,
- * which opens it to write and gives nodes back as their properties alone.
+ * which opens it to write and gives nodes back as their properties alone. Where the statement may write, a write
+ * session, whose transaction is committed, and what the database counts it changed.
  */
 async function bolt<T>(
   provider: ConnectionProvider,
@@ -239,11 +318,14 @@ async function bolt<T>(
   parameters: Record<string, unknown>,
   limit: number,
   read: (value: unknown) => T,
+  writes: boolean,
 ): Promise<Rows<T>> {
   const { driver, database } = provider as unknown as { driver?: Driver; database?: string }
   if (!driver) throw new StatementError('This version of Drivine keeps its Bolt driver where the studio cannot find it.')
-  const session = driver.session({ defaultAccessMode: neo4j.session.READ, ...(database ? { database } : {}) })
+  const mode = writes ? neo4j.session.WRITE : neo4j.session.READ
+  const session = driver.session({ defaultAccessMode: mode, ...(database ? { database } : {}) })
   const transaction = session.beginTransaction()
+  let committed = false
   try {
     const result = transaction.run(statement, boltParameters(parameters))
     const columns = [...(await result.keys())]
@@ -256,9 +338,16 @@ async function bolt<T>(
       }
       rows.push(columns.map((_, i) => read(record.get(i))))
     }
-    return { columns, rows, truncated }
+    if (!writes) return { columns, rows, truncated }
+    // The statement runs to its end, past the rows not read, before it is committed.
+    const { counters } = await result.summary()
+    await transaction.commit()
+    committed = true
+    const updates = counters.updates() as Partial<Record<Change, number>>
+    const counts = Object.fromEntries(CHANGES.map(change => [change, Number(updates[change] ?? 0)]))
+    return { columns, rows, truncated, written: { counts } }
   } finally {
-    await transaction.rollback().catch(() => undefined)
+    if (!committed) await transaction.rollback().catch(() => undefined)
     await session.close().catch(() => undefined)
   }
 }
@@ -277,13 +366,44 @@ export function boltParameters(value: unknown): any {
   return value
 }
 
+type FalkorQuery = (query: string, options?: { params?: Record<string, unknown> }) => Promise<FalkorReply>
+interface FalkorReply {
+  data?: Record<string, unknown>[]
+  /** What FalkorDB says of the query, each a line: `Nodes created: 1`, and its time. */
+  metadata?: string[]
+}
 interface FalkorGraph {
-  roQuery(query: string, options?: { params?: Record<string, unknown> }): Promise<{ data?: Record<string, unknown>[] }>
+  query: FalkorQuery
+  roQuery: FalkorQuery
+}
+
+/** FalkorDB's names for what a query changed, in the lines it says them in. It leaves out what is none. */
+const FALKOR_CHANGES: Record<string, Change> = {
+  'Nodes created': 'nodesCreated',
+  'Nodes deleted': 'nodesDeleted',
+  'Relationships created': 'relationshipsCreated',
+  'Relationships deleted': 'relationshipsDeleted',
+  'Properties set': 'propertiesSet',
+  'Labels added': 'labelsAdded',
+  'Labels removed': 'labelsRemoved',
+}
+
+/** What FalkorDB's lines of a query say it changed. */
+export function falkorCounts(metadata: readonly string[]): Partial<Record<Change, number>> {
+  const counts: Partial<Record<Change, number>> = {}
+  for (const line of metadata) {
+    const [, name, count] = /^([^:]+):\s*(\d+)/.exec(line) ?? []
+    const change = name ? FALKOR_CHANGES[name.trim()] : undefined
+    if (change) counts[change] = Number(count)
+  }
+  return counts
 }
 
 /**
- * FalkorDB: its client's read-only query, which keeps the nodes it gives back. The client writes the parameters into
- * the statement as text, so they go as Drivine prepares them, which refuses a name that would change the statement.
+ * FalkorDB: its client's read-only query, which keeps the nodes it gives back, or, where the statement may write, its
+ * query that may, and what FalkorDB says it changed. FalkorDB has no transactions: what a write does, it has done.
+ * The client writes the parameters into the statement as text, so they go as Drivine prepares them, which refuses a
+ * name that would change the statement.
  */
 async function falkor<T>(
   provider: ConnectionProvider,
@@ -291,6 +411,7 @@ async function falkor<T>(
   parameters: Record<string, unknown>,
   limit: number,
   read: (value: unknown) => T,
+  writes: boolean,
 ): Promise<Rows<T>> {
   let params: Record<string, unknown>
   try {
@@ -301,13 +422,15 @@ async function falkor<T>(
   const session = await provider.connect()
   try {
     const graph = (session as unknown as { graph: FalkorGraph }).graph
-    const reply = await graph.roQuery(statement, Object.keys(params).length ? { params } : undefined).catch((e: unknown) => {
+    const options = Object.keys(params).length ? { params } : undefined
+    const reply = await (writes ? graph.query(statement, options) : graph.roQuery(statement, options)).catch((e: unknown) => {
       throw refused(e, provider.graphName)
     })
     const data = reply.data ?? []
     const columns = data.length ? Object.keys(data[0]!) : []
     const rows = data.slice(0, limit).map(row => columns.map(column => read(row[column])))
-    return { columns, rows, truncated: data.length > limit }
+    const got = { columns, rows, truncated: data.length > limit }
+    return writes ? { ...got, written: { counts: falkorCounts(reply.metadata ?? []) } } : got
   } finally {
     await session.release().catch(() => undefined)
   }

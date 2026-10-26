@@ -3,6 +3,7 @@ import { inputOf } from './Connections'
 
 const draft = {
   name: 'Local', type: 'NEO4J' as const, host: 'localhost', port: '', user: '', password: '', clearPassword: false, database: '', graph: '',
+  allowWrites: false,
 }
 
 describe('inputOf', () => {
@@ -23,5 +24,10 @@ describe('inputOf', () => {
   it('forgets the password only when no new one is typed', () => {
     expect(inputOf({ ...draft, clearPassword: true })).toMatchObject({ clearPassword: true })
     expect(inputOf({ ...draft, clearPassword: true, password: 'new' })).not.toHaveProperty('clearPassword')
+  })
+
+  it('allows writes only when the box is ticked, and says nothing of it otherwise', () => {
+    expect(inputOf(draft)).not.toHaveProperty('allowWrites')
+    expect(inputOf({ ...draft, allowWrites: true })).toMatchObject({ allowWrites: true })
   })
 })

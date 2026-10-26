@@ -10,6 +10,9 @@ import { check, forget, run, StatementError } from './datasources'
 
 // Against real databases, in Docker: `npm run test:db`. Each on :latest, so a change in one shows here first.
 
+/** As the Cypher window runs a statement on a connection that allows writes. */
+const WRITES = { writes: true }
+
 describe('on Neo4j', () => {
   let container: StartedTestContainer
   let connection: Connection
@@ -73,6 +76,22 @@ describe('on Neo4j', () => {
     await expect(run({ ...connection, password: 'wrong-password' }, 'RETURN 1')).rejects.toThrow()
     expect((await run(connection, 'RETURN 1')).rows).toEqual([[{ kind: 'value', value: 1 }]])
   })
+
+  it('writes where it may, commits, and says what changed, past the rows it reads', async () => {
+    const created = await run(connection, "CREATE (w:Written {name: 'w'})-[:TO]->(:Written) RETURN w.name AS name", {}, 10, WRITES)
+    expect(created.rows).toEqual([[{ kind: 'value', value: 'w' }]])
+    expect(created.written?.counts).toEqual({
+      nodesCreated: 2, nodesDeleted: 0, relationshipsCreated: 1, relationshipsDeleted: 0, propertiesSet: 1, labelsAdded: 2, labelsRemoved: 0,
+    })
+    expect((await run(connection, 'MATCH (:Written)-[r:TO]->(:Written) RETURN count(r) AS n')).rows).toEqual([[{ kind: 'value', value: 1 }]])
+    // Two rows read, and all five written.
+    const counted = await run(connection, 'UNWIND range(1, 5) AS i CREATE (:Written {i: i}) RETURN i', {}, 2, WRITES)
+    expect(counted.truncated).toBe(true)
+    expect(counted.written?.counts?.nodesCreated).toBe(5)
+    const deleted = await run(connection, 'MATCH (n:Written) DETACH DELETE n', {}, 10, WRITES)
+    expect(deleted.written?.counts).toMatchObject({ nodesDeleted: 7, relationshipsDeleted: 1 })
+    expect((await run(connection, 'MATCH (n:Written) RETURN count(n) AS n')).rows).toEqual([[{ kind: 'value', value: 0 }]])
+  })
 })
 
 describe('on FalkorDB', () => {
@@ -124,6 +143,16 @@ describe('on FalkorDB', () => {
     await expect(check(missing)).rejects.toThrow(StatementError)
     await expect(check(missing)).rejects.toThrow(/no graph nothing-here/)
     await forget('falkor-missing')
+  })
+
+  it('writes where it may, and says what FalkorDB says changed', async () => {
+    const created = await run(connection, "CREATE (w:Written {name: 'w'})-[:TO]->(:Written) RETURN w.name AS name", {}, 10, WRITES)
+    expect(created.rows).toEqual([[{ kind: 'value', value: 'w' }]])
+    expect(created.written?.counts).toMatchObject({ nodesCreated: 2, relationshipsCreated: 1, propertiesSet: 1 })
+    expect((await run(connection, 'MATCH (:Written)-[r:TO]->(:Written) RETURN count(r) AS n')).rows).toEqual([[{ kind: 'value', value: 1 }]])
+    const deleted = await run(connection, 'MATCH (n:Written) DETACH DELETE n', {}, 10, WRITES)
+    expect(deleted.written?.counts).toMatchObject({ nodesDeleted: 2, relationshipsDeleted: 1 })
+    expect((await run(connection, 'MATCH (n:Written) RETURN count(n) AS n')).rows).toEqual([[{ kind: 'value', value: 0 }]])
   })
 })
 
@@ -268,6 +297,27 @@ function onSqlStore(
       } finally {
         vi.restoreAllMocks()
       }
+    })
+
+    it('writes where it may, as Drivine compiles the statement, and commits it, for a later read to find', async () => {
+      const before = await counts()
+      const created = await run(
+        connection, 'CREATE (w:Written {name: $name})-[:TO]->(:Written) RETURN w, w.name AS name', { name: 'w' }, 10, WRITES,
+      )
+      expect(created.columns).toEqual(['w', 'name'])
+      // As Drivine gives it back: a node as its properties alone.
+      expect(created.rows).toEqual([[
+        { kind: 'map', entries: [{ key: 'name', value: { kind: 'value', value: 'w' } }] }, { kind: 'value', value: 'w' },
+      ]])
+      expect(created.written).toEqual({ counts: null })
+      const found = await run(connection, 'MATCH (a:Written)-[r:TO]->(b:Written) RETURN a, r, b')
+      expect(found.rows).toMatchObject([[
+        { kind: 'node', node: { labels: ['Written'], properties: { name: 'w' } } },
+        { kind: 'relationship', relationship: { type: 'TO' } },
+        { kind: 'node', node: { labels: ['Written'] } },
+      ]])
+      expect((await run(connection, 'MATCH (n:Written) DETACH DELETE n', {}, 10, WRITES)).written).toEqual({ counts: null })
+      expect(await counts()).toEqual(before)
     })
 
     it('says what is wrong with a statement, and that a graph is not there, without making it', async () => {
