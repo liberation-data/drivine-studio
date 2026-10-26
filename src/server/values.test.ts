@@ -1,5 +1,6 @@
 import neo4j from 'neo4j-driver'
 import { describe, expect, it } from 'vitest'
+import { WHOLE } from './sqlCypher'
 import { Cells, plain } from './values'
 
 const { Node, Relationship, Path, PathSegment } = neo4j.types
@@ -83,5 +84,30 @@ describe('Cells over FalkorDB', () => {
 
   it('takes a map that only looks a little like a node for a map', () => {
     expect(new Cells('falkordb').cell({ labels: ['x'] })).toMatchObject({ kind: 'map' })
+  })
+})
+
+describe('Cells over SQL', () => {
+  const keanu = { [WHOLE]: 'node', id: 1, labels: ['Person'], properties: { name: 'Keanu' } }
+  const matrix = { [WHOLE]: 'node', id: 7, labels: ['Movie'], properties: { title: 'The Matrix' } }
+  const actedIn = { [WHOLE]: 'relationship', id: 3, type: 'ACTED_IN', start: 1, end: 7, properties: { role: 'Neo' } }
+
+  it('reads a node, a relationship and a path the compiled SQL gave whole, and gathers them into a graph', () => {
+    const cells = new Cells('sql')
+    expect(cells.cell(keanu)).toEqual({ kind: 'node', node: { id: '1', labels: ['Person'], properties: { name: 'Keanu' } } })
+    expect(cells.cell(actedIn)).toEqual({
+      kind: 'relationship',
+      relationship: { id: '3', type: 'ACTED_IN', from: '1', to: '7', properties: { role: 'Neo' } },
+    })
+    expect(cells.cell({ [WHOLE]: 'path', nodes: [keanu, matrix], relationships: [actedIn] })).toMatchObject({
+      kind: 'path', nodes: [{ id: '1' }, { id: '7' }], relationships: [{ id: '3', from: '1', to: '7' }],
+    })
+    expect(cells.graph().nodes.map(n => n.id)).toEqual(['1', '7'])
+    expect(cells.graph().relationships.map(r => r.id)).toEqual(['3'])
+  })
+
+  it('reads a map the statement built as a map, and a node as JSON alone on a graph engine', () => {
+    expect(new Cells('sql').cell({ name: 'Keanu', id: 1, labels: ['x'] })).toMatchObject({ kind: 'map' })
+    expect(new Cells('falkordb').cell({ [WHOLE]: 'node', name: 'x' })).toMatchObject({ kind: 'map' })
   })
 })

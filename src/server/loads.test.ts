@@ -102,9 +102,10 @@ describe('loadCypher', () => {
     expect(() => loadCypher(neo, shapes, asked)).toThrow(message)
   })
 
-  it('refuses a connection that runs SQL, as the Cypher window does, before Drivine writes anything for it', () => {
+  it('refuses Postgres and Oracle, where Drivine loads with SQL of its own, before Drivine writes anything for it', () => {
     expect(() => loadCypher({ ...neo, type: 'POSTGRES' }, catalog, query({}))).toThrow(StatementError)
-    expect(() => loadCypher({ ...neo, type: 'POSTGRES' }, catalog, query({}))).toThrow('On Postgres, Drivine (TypeScript) runs SQL')
+    expect(() => loadCypher({ ...neo, type: 'POSTGRES' }, catalog, query({}))).toThrow('On Postgres, run Cypher in the Cypher window')
+    expect(() => loadCypher({ ...neo, type: 'ORACLE' }, catalog, query({}))).toThrow('On Oracle, run Cypher in the Cypher window')
   })
 })
 

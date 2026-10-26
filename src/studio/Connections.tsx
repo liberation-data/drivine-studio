@@ -2,7 +2,7 @@ import { Alert, Button, Checkbox, Loading, Pane, PopUpButton, Section, Sheet, Te
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useStudio } from './App'
-import { addConnection, DATABASE_NAMES, DATABASE_TYPES, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
+import { addConnection, DATABASE_NAMES, DATABASE_TYPES, READS_ONLY, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
 
 type Test = { state: 'testing' } | { state: 'passed'; milliseconds: number } | { state: 'failed'; message: string }
@@ -71,7 +71,6 @@ export function Connections() {
                   {active?.id === c.id
                     ? <span className="desk-text-caption desk-text-muted">In use</span>
                     : <Button size="small" onClick={() => chooseConnection(c.id)}>Use</Button>}
-                  {/* A test runs Cypher, which the studio does not run on Oracle and Postgres; connecting to Oracle writes. */}
                   {RUNS_CYPHER.includes(c.type) && (
                     <Button size="small" intent="quiet" onClick={() => test(c)} disabled={result?.state === 'testing'}>Test</Button>
                   )}
@@ -163,7 +162,7 @@ export function inputOf(draft: Draft): ConnectionInput {
     ...(draft.password ? { password: draft.password } : {}),
     ...(draft.clearPassword && !draft.password ? { clearPassword: true } : {}),
     ...(draft.database && DATABASE_FIELD[draft.type] ? { database: draft.database } : {}),
-    ...(draft.graph && draft.type === 'ORACLE' ? { graph: draft.graph } : {}),
+    ...(draft.graph && (draft.type === 'ORACLE' || draft.type === 'POSTGRES') ? { graph: draft.graph } : {}),
   }
 }
 
@@ -223,13 +222,14 @@ function ConnectionSheet({ editing, onDone }: { editing: StudioConnection | 'new
           <Checkbox label="Forget the password" checked={draft.clearPassword} onChange={clearPassword => set({ clearPassword })} />
         )}
         {field && <TextField label={field.label} help={field.help} value={draft.database} onChange={e => set({ database: e.target.value })} />}
-        {draft.type === 'ORACLE' && (
-          <TextField label="Property graph" help="drivine when empty." value={draft.graph} onChange={e => set({ graph: e.target.value })} />
-        )}
         {(draft.type === 'ORACLE' || draft.type === 'POSTGRES') && (
-          <p className="desk-text-small desk-text-muted">
-            The Cypher window runs on Neo4j, Memgraph, Neptune and FalkorDB. Drivine (TypeScript) runs SQL on {DATABASE_NAMES[draft.type]}, not Cypher.
-          </p>
+          <>
+            <TextField label="Graph" help="Names the graph's tables, graph_node and graph_edge: drivine when empty." value={draft.graph} onChange={e => set({ graph: e.target.value })} />
+            <p className="desk-text-small desk-text-muted">
+              On {DATABASE_NAMES[draft.type]}, Drivine (TypeScript) compiles the Cypher window's Cypher to SQL over the graph's tables. {READS_ONLY} A
+              statement that writes is not sent, and the rest runs in a read-only transaction, which is rolled back.
+            </p>
+          </>
         )}
         {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
         {/* Enter submits from any field. */}

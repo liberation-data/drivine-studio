@@ -17,6 +17,7 @@ describe('inputOf', () => {
     expect(inputOf({ ...draft, type: 'FALKORDB', database: 'social', graph: 'g' })).toMatchObject({ database: 'social' })
     expect(inputOf({ ...draft, type: 'FALKORDB', graph: 'g' })).not.toHaveProperty('graph')
     expect(inputOf({ ...draft, type: 'ORACLE', database: 'FREEPDB1', graph: 'g' })).toMatchObject({ database: 'FREEPDB1', graph: 'g' })
+    expect(inputOf({ ...draft, type: 'POSTGRES', database: 'studio', graph: 'g' })).toMatchObject({ database: 'studio', graph: 'g' })
   })
 
   it('forgets the password only when no new one is typed', () => {

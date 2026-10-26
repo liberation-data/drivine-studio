@@ -58,14 +58,15 @@ describe('the connections endpoints', () => {
     expect((await DELETE(request('DELETE', '/environment'), context('environment'))).status).toBe(400)
   })
 
-  it('answer a test of a connection that is not there, or one Cypher does not run on, as a 400', async () => {
+  it('answer a test of a connection that is not there, or one Drivine will not build, as a 400', async () => {
     const missing = await TEST(request('POST', '/missing/test'), context('missing'))
     expect(missing.status).toBe(400)
     expect(await missing.json()).toEqual({ error: 'There is no connection missing.' })
-    const { id } = (await (await POST(request('POST', '', { ...neo4j, type: 'POSTGRES', database: 'app' }))).json()) as { id: string }
+    // A graph's name names its tables, so Drivine refuses one that cannot, before connecting.
+    const { id } = (await (await POST(request('POST', '', { ...neo4j, type: 'POSTGRES', database: 'app', graph: 'not a name' }))).json()) as { id: string }
     const postgres = await TEST(request('POST', `/${id}/test`), context(id))
     expect(postgres.status).toBe(400)
-    expect(((await postgres.json()) as { error: string }).error).toContain('runs SQL, not Cypher')
+    expect(((await postgres.json()) as { error: string }).error).toContain('not a name')
   })
 
   it('refuse a page of another site', async () => {

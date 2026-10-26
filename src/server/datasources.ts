@@ -1,11 +1,15 @@
-import { DatabaseRegistry, DatabaseType, FalkorDbParameterCoercer } from '@liberation-data/drivine'
-import type { ConnectionProvider } from '@liberation-data/drivine'
+import {
+  CursorSpecification, DatabaseRegistry, DatabaseType, DrivineError, FalkorDbParameterCoercer, OracleConnection,
+  OracleResultMapper, QuerySpecification,
+} from '@liberation-data/drivine'
+import type { Connection as DrivineConnection, ConnectionProvider } from '@liberation-data/drivine'
 import neo4j from 'neo4j-driver'
 import type { Driver } from 'neo4j-driver'
-import { DEFAULT_LIMIT, RUNS_CYPHER } from '../studio/database'
+import { DATABASE_NAMES, DEFAULT_LIMIT, READS_ONLY, RUNS_CYPHER } from '../studio/database'
 import type { CypherResult } from '../studio/database'
 import { ConnectionError } from './connections'
 import type { Connection } from './connections'
+import { compileWhole, readCypher, statementWrites } from './sqlCypher'
 import { Cells } from './values'
 
 /**
@@ -57,15 +61,14 @@ export async function forget(id: string): Promise<void> {
 /** A statement the studio will not run, or one the database turned down: the person can fix it, so it is a 400. */
 export class StatementError extends Error {}
 
-/** Said before a database's refusal to write, so the person knows the refusal is the studio's doing. */
-export const READS_ONLY = 'The studio reads and never writes, and runs each statement where it cannot.'
-
 /**
  * Runs a statement and reads at most `limit` rows of what it gives back. The studio reads and never writes, so the
  * statement runs where what it does cannot last. Over Bolt, in a read session, whose transaction the database will
  * not let write, and which is rolled back all the same. On FalkorDB, which has no transactions, as a read-only query,
  * which FalkorDB will not let write. A procedure that opens transactions of its own, as some of APOC's do, is beyond
- * either: a user that may only read is the whole guarantee.
+ * either: a user that may only read is the whole guarantee. On Postgres and Oracle, Drivine compiles the Cypher to
+ * SQL: a statement that writes is refused before it is compiled, and the SQL runs in a read-only transaction, which
+ * is rolled back all the same.
  */
 export async function run(
   connection: Connection,
@@ -73,19 +76,21 @@ export async function run(
   parameters: Record<string, unknown> = {},
   limit: number = DEFAULT_LIMIT,
 ): Promise<CypherResult> {
-  const cells = new Cells(connection.type === 'FALKORDB' ? 'falkordb' : 'bolt')
+  const cells = new Cells(connection.type === 'FALKORDB' ? 'falkordb' : SQL_STORES.includes(connection.type) ? 'sql' : 'bolt')
   const started = performance.now()
   const read = await readRows(connection, statement, parameters, limit, value => cells.cell(value))
   return { ...read, graph: cells.graph(), limit, milliseconds: Math.round(performance.now() - started) }
 }
 
+/** The stores Drivine compiles Cypher to SQL on. */
+export const SQL_STORES: readonly string[] = ['POSTGRES', 'ORACLE']
+
 /** Refuses a connection the studio cannot run Cypher on, before anything is written for it. */
 export function runsCypher(connection: Connection): void {
   if (RUNS_CYPHER.includes(connection.type)) return
   // The environment's DATABASE_TYPE is taken as it is, so it may name no type at all.
-  const sql = connection.type === 'ORACLE' ? 'Oracle' : connection.type === 'POSTGRES' ? 'Postgres' : undefined
   throw new StatementError(
-    `The studio runs Cypher on Neo4j, Memgraph, Neptune and FalkorDB. ${sql ? `On ${sql}, Drivine (TypeScript) runs SQL, not Cypher.` : `It does not know the database type ${connection.type}.`}`,
+    `The studio does not know the database type ${connection.type}.`,
   )
 }
 
@@ -107,10 +112,121 @@ export async function readRows<T>(
 ): Promise<Rows<T>> {
   runsCypher(connection)
   if (statement.trim() === '') throw new StatementError('There is no statement to run.')
+  if (connection.type === 'POSTGRES' || connection.type === 'ORACLE') {
+    // Read, and refused if it writes, before anything is connected to.
+    const query = sqlStatement(connection.type, statement)
+    return sql(connection.type, await providerFor(connection), query, parameters, limit, read)
+  }
   const provider = await providerFor(connection)
   return connection.type === 'FALKORDB'
     ? falkor(provider, statement, parameters, limit, read)
     : bolt(provider, statement, parameters, limit, read)
+}
+
+/** The statement, read as Cypher, and refused if it writes. */
+function sqlStatement(type: 'POSTGRES' | 'ORACLE', statement: string): ReturnType<typeof readCypher> {
+  let query: ReturnType<typeof readCypher>
+  try {
+    query = readCypher(statement)
+  } catch (e) {
+    throw new StatementError(e instanceof Error ? e.message : String(e))
+  }
+  if (statementWrites(query)) {
+    throw new StatementError(
+      `${READS_ONLY} On ${DATABASE_NAMES[type]}, a statement that writes (CREATE, MERGE, SET, REMOVE, DELETE or FOREACH) is not sent.`,
+    )
+  }
+  return query
+}
+
+/**
+ * Postgres and Oracle: the Cypher compiled to SQL over the graph's tables by Drivine's own compiler, as a
+ * PersistenceManager compiles it, but with each node and relationship whole (see sqlCypher). It runs on one of Drivine's
+ * connections, in a transaction made read-only before anything else runs in it, which is rolled back all the same,
+ * and only as many rows as are wanted are read, through a cursor.
+ */
+async function sql<T>(
+  type: 'POSTGRES' | 'ORACLE',
+  provider: ConnectionProvider,
+  query: ReturnType<typeof readCypher>,
+  parameters: Record<string, unknown>,
+  limit: number,
+  read: (value: unknown) => T,
+): Promise<Rows<T>> {
+  const graph = provider.graphName ?? 'drivine'
+  let compiled: ReturnType<typeof compileWhole>
+  try {
+    compiled = compileWhole(type, graph, query, parameters)
+  } catch (e) {
+    // Cypher the compiler does not take, which it names.
+    if (e instanceof DrivineError) throw new StatementError(e.message)
+    throw e
+  }
+  const session = type === 'ORACLE' ? await oracleSession(provider) : await provider.connect()
+  try {
+    await session.startTransaction()
+    await session.query(new QuerySpecification().withStatement({ text: 'SET TRANSACTION READ ONLY', language: 'SQL' }))
+    const cursor = await session.openCursor(
+      new CursorSpecification<unknown>()
+        .withStatement({ text: compiled.sql, language: 'SQL' })
+        .bind(compiled.parameters)
+        .batchSize(limit + 1),
+    )
+    const got: unknown[] = []
+    try {
+      // One more than the limit, in one batch, to know whether there were more.
+      for await (const row of cursor) {
+        got.push(row)
+        if (got.length > limit) break
+      }
+    } finally {
+      await cursor.close().catch(() => undefined)
+    }
+    // Postgres gives the row, of its one column; Oracle's mapper gives that column's value.
+    const values = got.map(row => (type === 'POSTGRES' ? (row as { result: unknown }).result : row) as unknown[])
+    const rows = values.slice(0, limit).map(items => items.map(item => read(item)))
+    return { columns: compiled.columns, rows, truncated: got.length > limit }
+  } catch (e) {
+    throw sqlRefused(e, type, graph)
+  } finally {
+    await session.rollbackTransaction().catch(() => undefined)
+    await session.release().catch(() => undefined)
+  }
+}
+
+/**
+ * A connection from the Oracle provider's own pool. Drivine's provider makes the graph's tables on its first
+ * connection, where they are not there, and the studio never writes: so it takes the pool's connection itself.
+ */
+async function oracleSession(provider: ConnectionProvider): Promise<DrivineConnection> {
+  const pool = (provider as unknown as { poolOf?: () => Promise<{ getConnection(): Promise<unknown> }> }).poolOf
+  if (!pool) throw new StatementError('This version of Drivine keeps its Oracle pool where the studio cannot find it.')
+  const connection = await (await pool.call(provider)).getConnection()
+  return new OracleConnection(connection as never, new OracleResultMapper(), 'drivine-studio', provider.graphName)
+}
+
+/** Oracle's errors of a value the statement could not take: ORA-01476, ORA-01722, and the regular expression's. */
+const ORACLE_DATA_ERRORS = [1476, 1722, 12722, 12725, 12726, 12727, 12728, 12729, 12730, 12731, 12732, 12733]
+
+/**
+ * What Postgres or Oracle said, as a StatementError where it is the person's to fix: a refusal to write, a graph whose
+ * tables are not there, or a value the statement could not take. Anything else is as it came.
+ */
+function sqlRefused(e: unknown, type: 'POSTGRES' | 'ORACLE', graph: string): unknown {
+  if (e instanceof StatementError || !(e instanceof Error)) return e
+  const code = String((e as { code?: unknown }).code ?? '')
+  const oracle = (e as { errorNum?: unknown }).errorNum
+  // Postgres's read_only_sql_transaction; Oracle's ORA-01456, a write in a READ ONLY transaction.
+  if (code === '25006' || oracle === 1456) return new StatementError(`${READS_ONLY} ${e.message}`)
+  // Postgres's undefined_table; Oracle's ORA-00942, a table or view that does not exist.
+  if (code === '42P01' || oracle === 942) {
+    return new StatementError(`${DATABASE_NAMES[type]} has no graph ${graph} here: the tables ${graph}_node and ${graph}_edge are not there. (${e.message})`)
+  }
+  // Postgres's data exceptions: a value the statement could not take, as a regular expression that is not one.
+  if (type === 'POSTGRES' && code.startsWith('22')) return new StatementError(e.message)
+  // Oracle's, as it numbers them: a division by zero, a text that is not a number, a regular expression that is not one.
+  if (typeof oracle === 'number' && ORACLE_DATA_ERRORS.includes(oracle)) return new StatementError(e.message)
+  return e
 }
 
 /**
@@ -214,8 +330,12 @@ function refused(e: unknown, graphName: string | undefined): unknown {
   return new StatementError(message)
 }
 
-/** Connects and runs the smallest read there is, to say whether the connection works. */
+/**
+ * Connects and runs the smallest read there is, to say whether the connection works. On Postgres and Oracle, one that
+ * reads the graph's nodes, so a graph whose tables are not there is said not to be.
+ */
 export async function check(connection: Connection): Promise<{ milliseconds: number }> {
-  const result = await run(connection, 'RETURN 1 AS one', {}, 1)
+  const statement = SQL_STORES.includes(connection.type) ? 'MATCH (n) RETURN 1 AS one LIMIT 1' : 'RETURN 1 AS one'
+  const result = await run(connection, statement, {}, 1)
   return { milliseconds: result.milliseconds }
 }

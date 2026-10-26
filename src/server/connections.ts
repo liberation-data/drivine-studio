@@ -15,7 +15,7 @@ export interface Connection {
   password?: string
   /** The database to use: Neo4j's database, Postgres's and Oracle's service. */
   database?: string
-  /** Oracle's property graph, `drivine` unless named. */
+  /** The graph on Postgres and Oracle, which names its tables: `drivine` unless named. */
   graph?: string
   /** 'environment' for the one Drivine's environment variables describe, which the studio cannot change. */
   source: 'studio' | 'environment'

@@ -15,8 +15,11 @@ export const DATABASE_NAMES: Record<DatabaseType, string> = {
   ORACLE: 'Oracle',
 }
 
-/** The databases the studio runs Cypher on. Drivine (TypeScript) runs SQL on Oracle and Postgres, not Cypher. */
-export const RUNS_CYPHER: readonly DatabaseType[] = ['NEO4J', 'MEMGRAPH', 'NEPTUNE', 'FALKORDB']
+/** The databases the studio runs Cypher on: on Postgres and Oracle, Drivine (TypeScript) compiles it to SQL. */
+export const RUNS_CYPHER: readonly DatabaseType[] = ['NEO4J', 'MEMGRAPH', 'NEPTUNE', 'FALKORDB', 'POSTGRES', 'ORACLE']
+
+/** Said before a database's refusal to write, so the person knows the refusal is the studio's doing. */
+export const READS_ONLY = 'The studio reads and never writes, and runs each statement where it cannot.'
 
 /** The rows a statement reads unless told otherwise, and the most it may read: the browser holds every one. */
 export const DEFAULT_LIMIT = 1000

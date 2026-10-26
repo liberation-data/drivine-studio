@@ -193,5 +193,7 @@ function fieldMapping(properties: Property[]) {
     emptyWhenAbsent: new Map<string, 'array' | 'object'>(
       properties.filter(p => p.whenAbsent === 'empty').map(p => [p.name, p.type === 'map' ? 'object' : 'array']),
     ),
+    // The model files name no set: a store holds one as a list, and the studio reads what is stored.
+    sets: new Set<string>(),
   }
 }
