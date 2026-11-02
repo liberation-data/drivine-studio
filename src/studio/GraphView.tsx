@@ -90,6 +90,10 @@ function separate(core: Core) {
  * Past this many nodes it starts off, as the motion is noise and the simulation costs more than it shows.
  */
 const LIVE_UP_TO = 300
+/** How far out the view zooms past the zoom that frames the graph: to where it fills half as much. */
+const ZOOM_OUT = 0.5
+/** The furthest out any graph is drawn, however large. */
+const FURTHEST = 0.02
 /** How long the graph keeps moving after a node is let go of. */
 const SETTLE_MS = 1500
 
@@ -135,7 +139,7 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
   useEffect(() => {
     const element = container.current
     if (!element) return
-    const core = cytoscape({ container: element, wheelSensitivity: 0.3, minZoom: 0.2, maxZoom: 3 })
+    const core = cytoscape({ container: element, wheelSensitivity: 0.3, minZoom: FURTHEST, maxZoom: 3 })
     cy.current = core
     core.on('tap', event => {
       if (event.target === core) select.current(null)
@@ -279,12 +283,16 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
       })),
     ])
     const frame = () => {
+      // However large the graph, it can be framed whole: the limit is set again from the zoom that frames it.
+      core.minZoom(FURTHEST)
       core.fit(undefined, 40)
       // A handful of nodes would otherwise be blown up to fill the window, names and all.
       if (core.zoom() > 1) {
         core.zoom(1)
         core.center()
       }
+      // Out to where the whole graph fills a fraction of the view and no further, rather than to a speck.
+      core.minZoom(Math.max(FURTHEST, core.zoom() * ZOOM_OUT))
     }
     const cose = () =>
       core.layout({ name: 'cose', animate: false, randomize: true, nodeDimensionsIncludeLabels: true, padding: 40, nodeRepulsion: () => 12000, idealEdgeLength: () => 150 }).run()
