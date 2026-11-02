@@ -53,7 +53,16 @@ export function Connections() {
           {connections.map(c => {
             const result = tests[c.id]
             return (
-              <li key={c.id} className="studio-connection" aria-current={active?.id === c.id ? 'true' : undefined}>
+              <li
+                key={c.id}
+                className="studio-connection"
+                aria-current={active?.id === c.id ? 'true' : undefined}
+                // A double-click opens it to edit, as Edit does; not on its buttons, which do their own thing.
+                onDoubleClick={event => {
+                  if (c.source === 'studio' && !(event.target as Element).closest('button')) setEditing(c)
+                }}
+                data-editable={c.source === 'studio' ? '' : undefined}
+              >
                 <div className="studio-connection-text">
                   <span className="studio-entry-name">{c.name}</span>
                   <span className="desk-text-caption desk-text-muted">
