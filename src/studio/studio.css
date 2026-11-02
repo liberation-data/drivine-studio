@@ -12,6 +12,7 @@ html, body, #root { height: 100%; margin: 0; }
 }
 .studio-hint h2 { margin: 0; font-size: var(--desk-text-title); color: var(--desk-ink); font-weight: 600; }
 .studio-hint p { margin: 0; max-width: 46ch; font-size: var(--desk-text-body); }
+.studio-hint-actions { display: flex; gap: var(--desk-space-2); margin-top: var(--desk-space-2); }
 
 /* Catalogue */
 /* Rows run to the pane's padded edge, so the names line up with the section titles. */
