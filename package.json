@@ -28,7 +28,7 @@
   "dependencies": {
     "@huggingface/transformers": "^4.3.1",
     "@liberation-data/desk": "^0.35.2",
-    "@liberation-data/drivine": "^3.3.0",
+    "@liberation-data/drivine": "^3.4.1",
     "cytoscape": "^3.30.0",
     "lucide-static": "^1.61.0",
     "neo4j-driver": "^5.28.3",

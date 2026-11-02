@@ -54,6 +54,9 @@ export class DrivineModels {
     const model: FragmentModel = {
       type: classNamed(fragment.name),
       labels: fragment.labels,
+      // The lowercased copies @CaseInsensitive writes. A model file does not say which properties have one, and the
+      // studio's loads read only the properties themselves, so none is named here.
+      lowerCopied: [],
       ...(fragment.nodeId ? { nodeIdField: fragment.nodeId, nodeIdProperty: stored(fragment.nodeId) } : {}),
       ...(fragment.labelSet
         ? {
