@@ -135,6 +135,13 @@ html, body, #root { height: 100%; margin: 0; }
 
 /* Cypher */
 .studio-editor { min-height: 0; resize: vertical; font-family: var(--desk-font-mono); font-size: var(--desk-text-small); line-height: 1.5; padding-block: var(--desk-space-2); }
+/* The editor above its results: it fills the panel the edge leaves it, and the panel scrolls if the parameters need more. */
+.studio-cypher-split { flex: 1; height: auto; }
+.studio-query-fill { flex: 1; min-height: 0; overflow: auto; border-bottom: 0; }
+.studio-statement { flex: 1; min-height: 4.5em; resize: none; }
+/* Expanded: the editor has the window, and the edge and results wait out of sight. */
+.desk-split.studio-expanded[data-orientation] { grid-template-rows: minmax(0, 1fr); }
+.desk-split.studio-expanded > .desk-split-edge, .desk-split.studio-expanded > .desk-split-panel:last-child { display: none; }
 .studio-tabs { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .studio-tabs [role='tabpanel'] { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 /* What came back and how long it took, at the end of the strip, clear of the window's edge as the tabs are of its start. */
