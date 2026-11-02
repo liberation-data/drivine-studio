@@ -1,0 +1,85 @@
+/*
+ * Drivine's colours, from drivine.org: the deep water of its hero photo, teal, paper and coral, in place of the desk's
+ * own. Light and dark follow the system, as the desk's do, or the page's `data-theme` when it is set. The selectors are
+ * the desk's, so this sheet, loaded after it, wins without raising anything's specificity.
+ */
+:root {
+  --studio-abyss: #021c26;
+  --studio-coral: #f08a5d;
+
+  --desk-ground: #cfdfe2;
+  --desk-surface: #ffffff;
+  --desk-titlebar: #eef5f6;
+  --desk-page: #f6f9f9;
+  --desk-ink: #0b2530;
+  --desk-muted: #3e5a64;
+  --desk-rule: #d5e3e6;
+  --desk-accent: #0f6e7a;
+  --desk-on-accent: #ffffff;
+  --desk-field-bg: #ffffff;
+  --desk-badge: var(--studio-coral);
+  --desk-badge-ink: #0b2530;
+  --desk-dock-glass: rgb(246 249 249 / 72%);
+  --desk-dock-icon: linear-gradient(160deg, #ffffff, #e6f0f2);
+  --desk-shadow: 0 1px 2px rgb(2 28 38 / 8%), 0 12px 32px rgb(2 28 38 / 16%);
+  --desk-shadow-floating: 0 2px 4px rgb(2 28 38 / 10%), 0 24px 60px rgb(2 28 38 / 32%);
+
+  /* The water behind the windows: the photo under the site's teal, deeper in the dark. */
+  --studio-water: rgb(1 65 78 / 45%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --desk-ground: var(--studio-abyss);
+    --desk-surface: #072a35;
+    --desk-titlebar: #04212b;
+    --desk-page: #0a2f3a;
+    --desk-ink: #e6f2f4;
+    --desk-muted: #9dbac1;
+    --desk-rule: #154552;
+    /* The site's teal lifted to be seen on the deep water; the deep water is the text on it. */
+    --desk-accent: #4fb4c0;
+    --desk-on-accent: #021c26;
+    --desk-field-bg: rgb(0 0 0 / 28%);
+    --desk-dock-glass: rgb(2 28 38 / 62%);
+    --desk-dock-icon: linear-gradient(160deg, #0d3b49, #052530);
+    --desk-shadow: 0 12px 32px rgb(0 8 12 / 50%);
+    --desk-shadow-floating: 0 30px 80px rgb(0 8 12 / 72%);
+    --studio-water: rgb(2 28 38 / 72%);
+  }
+}
+
+:root[data-theme="dark"] {
+  --desk-ground: var(--studio-abyss);
+  --desk-surface: #072a35;
+  --desk-titlebar: #04212b;
+  --desk-page: #0a2f3a;
+  --desk-ink: #e6f2f4;
+  --desk-muted: #9dbac1;
+  --desk-rule: #154552;
+  --desk-accent: #4fb4c0;
+  --desk-on-accent: #021c26;
+  --desk-field-bg: rgb(0 0 0 / 28%);
+  --desk-dock-glass: rgb(2 28 38 / 62%);
+  --desk-dock-icon: linear-gradient(160deg, #0d3b49, #052530);
+  --desk-shadow: 0 12px 32px rgb(0 8 12 / 50%);
+  --desk-shadow-floating: 0 30px 80px rgb(0 8 12 / 72%);
+  --studio-water: rgb(2 28 38 / 72%);
+}
+
+/*
+ * The desk itself, behind the dock as well as the windows: the hero photo, tinted, with the site's fine lines over it
+ * (drawn at 40%, as the site draws them at 55% over a lighter tint).
+ */
+.studio-screen .desk-stage { background: none; }
+.studio-screen {
+  background:
+    url('/desk/lines.png'),
+    linear-gradient(var(--studio-water), var(--studio-water)),
+    url('/desk/ocean.jpg') center 38% / cover,
+    var(--desk-ground);
+}
+
+/* What is said on the empty desk is on the water, so it is drawn in the water's colours. */
+.studio-screen .desk-stage > .studio-hint { color: rgb(255 255 255 / 82%); text-shadow: 0 1px 12px rgb(2 28 38 / 60%); }
+.studio-screen .desk-stage > .studio-hint h2 { color: #ffffff; }
