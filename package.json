@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.1",
-    "@liberation-data/desk": "^0.35.2",
+    "@liberation-data/desk": "^0.38.0",
     "@liberation-data/drivine": "^3.2.0",
     "cytoscape": "^3.30.0",
     "lucide-static": "^1.61.0",
