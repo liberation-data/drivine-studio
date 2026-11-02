@@ -1,6 +1,6 @@
 import { createDesk, DeskCommands } from '@liberation-data/desk'
 import {
-  DeskShell, Desktop, Dock, MenuBar, Split, dockItem, menuAction, menuCommand, menuSeparator, windowMenuItems,
+  Button, DeskShell, Desktop, Dock, MenuBar, Split, dockItem, menuAction, menuCommand, menuSeparator, windowMenuItems,
 } from '@liberation-data/desk/react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -140,11 +140,6 @@ export function App() {
     if (next) desk.open('explore')
   }, [])
 
-  // Explore fills the desk to start with: the catalogue and the canvas are both in it.
-  useEffect(() => {
-    if (desk.getState().windows.length === 0) desk.open('explore')
-  }, [])
-
   const studio = useMemo(
     () => ({
       catalog, problem, reload, subject, show, connections, connectionProblem, reloadConnections, connection, chooseConnection,
@@ -161,6 +156,7 @@ export function App() {
         menuAction('Reload Catalogue', reload),
         menuAction('Reload Connections', reloadConnections),
         menuSeparator(),
+        menuAction('Explore', () => desk.open('explore')),
         menuAction('Cypher', () => desk.open('cypher')),
         menuAction('Connections', () => desk.open('connections')),
       ] },
@@ -185,7 +181,17 @@ export function App() {
               title={title}
               renderWindow={renderWindow}
               note={id => (id === 'explore' ? 'read-only' : null)}
-              empty={<div className="studio-hint"><h2>Nothing open</h2><p>Open Explore from the dock.</p></div>}
+              // The studio opens on nothing: one person came to explore the model, another to run a statement.
+              empty={
+                <div className="studio-hint">
+                  <h2>Drivine Studio</h2>
+                  <p>Explore the views and fragments your code declares, or write Cypher of your own.</p>
+                  <div className="studio-hint-actions">
+                    <Button onClick={() => desk.open('explore')}>Explore</Button>
+                    <Button onClick={() => desk.open('cypher')}>Cypher</Button>
+                  </div>
+                </div>
+              }
             />
             <Dock entries={DOCK} label="Studio dock" />
           </main>
