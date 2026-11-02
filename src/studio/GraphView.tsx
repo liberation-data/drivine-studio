@@ -30,6 +30,60 @@ export const iconLabelOf = (nodes: readonly GraphNode[], fragment: string): stri
 
 cytoscape.use(cola)
 
+export interface Part { readonly width: number; readonly height: number }
+export interface Place { readonly x: number; readonly y: number }
+
+/**
+ * Where to put each part of a graph that shares no relationship with the rest: the top left corner of each, in rows of
+ * about the shape of the window (`aspect`, its width over its height), the tallest first, each row centred and each
+ * part centred in its row. A layout lays the parts out apart from one another, and would otherwise draw them over each
+ * other.
+ */
+export function pack(parts: readonly Part[], aspect: number, gap: number): Place[] {
+  const order = parts.map((_, i) => i).sort((a, b) => parts[b]!.height - parts[a]!.height)
+  const area = parts.reduce((sum, p) => sum + (p.width + gap) * (p.height + gap), 0)
+  const widest = Math.max(0, ...parts.map(p => p.width))
+  const across = Math.max(widest, Math.sqrt(area * (aspect > 0 ? aspect : 1)))
+  const rows: number[][] = []
+  let used = Infinity
+  for (const i of order) {
+    const width = parts[i]!.width
+    if (used + gap + width > across) {
+      rows.push([i])
+      used = width
+    } else {
+      rows[rows.length - 1]!.push(i)
+      used += gap + width
+    }
+  }
+  const places: Place[] = new Array(parts.length)
+  let y = 0
+  for (const row of rows) {
+    const width = row.reduce((sum, i) => sum + parts[i]!.width, 0) + gap * (row.length - 1)
+    const height = Math.max(...row.map(i => parts[i]!.height))
+    let x = (across - width) / 2
+    for (const i of row) {
+      places[i] = { x, y: y + (height - parts[i]!.height) / 2 }
+      x += parts[i]!.width + gap
+    }
+    y += height + gap
+  }
+  return places
+}
+
+/** Moves the graph's parts that share no relationship apart, so none is drawn over another. */
+function separate(core: Core) {
+  const parts = core.elements().components()
+  if (parts.length < 2) return
+  const boxes = parts.map(part => part.boundingBox({ includeLabels: true }))
+  const places = pack(boxes.map(b => ({ width: b.w, height: b.h })), core.width() / Math.max(1, core.height()), 60)
+  parts.forEach((part, i) => {
+    const dx = places[i]!.x - boxes[i]!.x1
+    const dy = places[i]!.y - boxes[i]!.y1
+    part.nodes().positions(node => ({ x: node.position('x') + dx, y: node.position('y') + dy }))
+  })
+}
+
 /*
  * A live layout, as Neo4j Browser's: drag a node and its neighbours follow and the rest make room, then it all settles
  * and stops, so nothing moves while it is read. A node let go of stays where it was put; a double-click lets it go.
@@ -252,6 +306,8 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
       // Stopped for a new graph: that one shows itself.
       if (running.current !== layout || core.destroyed()) return
       running.current = null
+      // Cola lays out each part that shares no relationship on its own; set side by side, none is drawn over another.
+      separate(core)
       frame()
       if (element) element.style.opacity = ''
     })
@@ -294,7 +350,7 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
           onChange={setLive}
         />
       </div>
-      <ul className="studio-legend desk-text-caption" aria-label="Fragments">
+      <ul className="studio-legend" aria-label="Fragments">
         {present.map(fragment => {
           const label = labelOf(fragment)
           return (
