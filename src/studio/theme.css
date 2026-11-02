@@ -26,6 +26,8 @@
 
   /* The water behind the windows: the photo under the site's teal, deeper in the dark. */
   --studio-water: rgb(1 65 78 / 45%);
+  /* The menu bar: frosted glass over the water, the water showing through. */
+  --studio-frost: rgb(246 249 249 / 58%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -46,6 +48,7 @@
     --desk-shadow: 0 12px 32px rgb(0 8 12 / 50%);
     --desk-shadow-floating: 0 30px 80px rgb(0 8 12 / 72%);
     --studio-water: rgb(2 28 38 / 72%);
+    --studio-frost: rgb(2 28 38 / 42%);
   }
 }
 
@@ -65,14 +68,15 @@
   --desk-shadow: 0 12px 32px rgb(0 8 12 / 50%);
   --desk-shadow-floating: 0 30px 80px rgb(0 8 12 / 72%);
   --studio-water: rgb(2 28 38 / 72%);
+  --studio-frost: rgb(2 28 38 / 42%);
 }
 
 /*
- * The desk itself, behind the dock as well as the windows: the hero photo, tinted, with the site's fine lines over it
+ * The water, behind the menu bar, the dock and the windows: the hero photo, tinted, with the site's fine lines over it
  * (drawn at 40%, as the site draws them at 55% over a lighter tint).
  */
 .studio-screen .desk-stage { background: none; }
-.studio-screen {
+.studio {
   background:
     url('/desk/lines.png'),
     linear-gradient(var(--studio-water), var(--studio-water)),
@@ -83,3 +87,10 @@
 /* What is said on the empty desk is on the water, so it is drawn in the water's colours. */
 .studio-screen .desk-stage > .studio-hint { color: rgb(255 255 255 / 82%); text-shadow: 0 1px 12px rgb(2 28 38 / 60%); }
 .studio-screen .desk-stage > .studio-hint h2 { color: #ffffff; }
+
+/* The menu bar is a strip of frosted glass over the water, and Drivine's cow stands before the studio's menu. */
+.studio > .desk-menubar { background: var(--studio-frost); backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%); border-bottom-color: rgb(255 255 255 / 14%); }
+.studio-mark {
+  display: block; width: 20px; height: 20px; margin-inline-end: 2px; background: var(--desk-ink);
+  mask: url('/desk/cow.png') center / contain no-repeat; -webkit-mask: url('/desk/cow.png') center / contain no-repeat;
+}

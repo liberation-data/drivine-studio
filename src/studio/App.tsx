@@ -179,7 +179,7 @@ export function App() {
     <DeskShell desk={desk}>
       <StudioContext.Provider value={studio}>
         <div className="studio">
-          <MenuBar menus={menus} />
+          <MenuBar menus={menus} leading={<span className="studio-mark" role="img" aria-label="Drivine" />} />
           <main className="studio-screen">
             <Desktop
               title={title}
