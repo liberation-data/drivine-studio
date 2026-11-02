@@ -128,6 +128,8 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-editor { min-height: 0; resize: vertical; font-family: var(--desk-font-mono); font-size: var(--desk-text-small); line-height: 1.5; padding-block: var(--desk-space-2); }
 .studio-tabs { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .studio-tabs [role='tabpanel'] { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* What came back and how long it took, at the end of the strip, clear of the window's edge as the tabs are of its start. */
+.studio-tabs .desk-tabs-actions { padding-inline-end: var(--desk-space-4); }
 .studio-rows { flex: 1; min-height: 0; overflow: auto; }
 .studio-cell { display: block; max-width: 48ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--desk-font-mono); font-size: var(--desk-text-small); }
 

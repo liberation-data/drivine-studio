@@ -115,7 +115,7 @@ export function Cypher() {
             options={(connections ?? []).map(c => ({ value: c.id, label: `${c.name} · ${DATABASE_NAMES[c.type]}` }))}
           />
           <span className="desk-grow" />
-          <Status run={run} result={result} />
+          {run.state === 'running' && <Spinner label="Running" size="small" />}
           <Button type="button" size="small" intent="quiet" onClick={() => setShowParameters(!showParameters)} aria-expanded={showParameters}>
             Parameters
           </Button>
@@ -166,6 +166,8 @@ export function Cypher() {
           value={view}
           onChange={setView}
           className="studio-tabs"
+          // What came back, and how long it took, heads what came back rather than the controls that asked.
+          actions={<Summary result={result} />}
           tabs={[
             { value: 'graph', label: 'Graph', badge: drawn.graph.nodes.length || undefined, disabled: drawn.graph.nodes.length === 0 },
             { value: 'rows', label: 'Rows', badge: result.rows.length },
@@ -185,9 +187,7 @@ export function Cypher() {
   )
 }
 
-function Status({ run, result }: { run: Run; result: CypherResult | null }) {
-  if (run.state === 'running') return <Spinner label="Running" size="small" />
-  if (!result) return null
+function Summary({ result }: { result: CypherResult }) {
   const rows = result.rows.length
   return (
     <span className="desk-text-small desk-text-muted" role="status">
