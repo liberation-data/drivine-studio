@@ -1,4 +1,4 @@
-import { Button, PopUpButton, Spinner, Table, Tabs, TextField } from '@liberation-data/desk/react'
+import { Button, PopUpButton, Spinner, Split, Table, Tabs, TextField } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useStudio } from './App'
@@ -41,6 +41,8 @@ export function Cypher() {
   const [run, setRun] = useState<Run>({ state: 'idle' })
   const [view, setView] = useState<View>('graph')
   const [selection, setSelection] = useState<Selection>(null)
+  // The editor given the whole window, for a long statement; running it brings the results back.
+  const [expanded, setExpanded] = useState(false)
   const inFlight = useRef<AbortController | null>(null)
 
   useEffect(() => remember(STATEMENT, statement), [statement])
@@ -65,6 +67,7 @@ export function Cypher() {
       setRun({ state: 'failed', message: parsed.problem })
       return
     }
+    setExpanded(false)
     const rows = Number.parseInt(limit, 10)
     inFlight.current?.abort()
     const controller = new AbortController()
@@ -102,65 +105,69 @@ export function Cypher() {
 
   const drawn = useMemo(() => (result ? graphOf(result.graph) : null), [result])
 
-  return (
-    <div className="studio-canvas">
-      <form className="studio-query" onSubmit={submit} aria-label="Cypher">
-        <div className="studio-query-row">
-          <PopUpButton
-            label="Connection" labelHidden size="small"
-            value={connection?.id ?? null}
-            placeholder={connections?.length ? 'Choose a connection' : 'No connections yet'}
-            disabled={!connections?.length}
-            onChange={chooseConnection}
-            options={(connections ?? []).map(c => ({ value: c.id, label: `${c.name} · ${DATABASE_NAMES[c.type]}` }))}
-          />
-          <span className="desk-grow" />
-          {run.state === 'running' && <Spinner label="Running" size="small" />}
-          <Button type="button" size="small" intent="quiet" onClick={() => setShowParameters(!showParameters)} aria-expanded={showParameters}>
-            Parameters
-          </Button>
-          <span className="studio-query-word desk-text-small desk-text-muted">at most</span>
-          <span className="studio-limit">
-            <TextField label="Rows to read, at most" labelHidden type="number" min={1} max={MAX_LIMIT} value={limit} onChange={e => setLimit(e.target.value)} />
-          </span>
-          <span className="desk-text-small desk-text-muted">rows</span>
-          <Button type="submit" intent="default" disabled={!connection || run.state === 'running'} title="⌘↵">Run</Button>
-        </div>
-        <label className="desk-label" htmlFor="studio-statement" data-hidden>Statement</label>
-        <textarea
-          id="studio-statement"
-          className="desk-input studio-editor"
-          spellCheck={false}
-          value={statement}
-          onChange={e => setStatement(e.target.value)}
-          onKeyDown={keys}
-          rows={5}
+  const editor = (
+    <form className="studio-query studio-query-fill" onSubmit={submit} aria-label="Cypher">
+      <div className="studio-query-row">
+        <PopUpButton
+          label="Connection" labelHidden size="small"
+          value={connection?.id ?? null}
+          placeholder={connections?.length ? 'Choose a connection' : 'No connections yet'}
+          disabled={!connections?.length}
+          onChange={chooseConnection}
+          options={(connections ?? []).map(c => ({ value: c.id, label: `${c.name} · ${DATABASE_NAMES[c.type]}` }))}
         />
-        {showParameters && (
-          <>
-            <label className="desk-label desk-text-small" htmlFor="studio-parameters">Parameters, as a JSON object</label>
-            <textarea
-              id="studio-parameters"
-              className="desk-input studio-editor"
-              spellCheck={false}
-              placeholder='{"name": "Ada"}'
-              value={parameters}
-              onChange={e => setParameters(e.target.value)}
-              onKeyDown={keys}
-              rows={3}
-            />
-          </>
-        )}
-      </form>
-      {connection?.allowWrites && <p className="studio-writes studio-warn" role="note">{ALLOWS_WRITES}</p>}
+        <span className="desk-grow" />
+        {run.state === 'running' && <Spinner label="Running" size="small" />}
+        <Button type="button" size="small" intent="quiet" onClick={() => setExpanded(!expanded)} aria-pressed={expanded}>
+          {expanded ? 'Show Results' : 'Expand Editor'}
+        </Button>
+        <Button type="button" size="small" intent="quiet" onClick={() => setShowParameters(!showParameters)} aria-expanded={showParameters}>
+          Parameters
+        </Button>
+        <span className="studio-query-word desk-text-small desk-text-muted">at most</span>
+        <span className="studio-limit">
+          <TextField label="Rows to read, at most" labelHidden type="number" min={1} max={MAX_LIMIT} value={limit} onChange={e => setLimit(e.target.value)} />
+        </span>
+        <span className="desk-text-small desk-text-muted">rows</span>
+        <Button type="submit" intent="default" disabled={!connection || run.state === 'running'} title="⌘↵">Run</Button>
+      </div>
+      <label className="desk-label" htmlFor="studio-statement" data-hidden>Statement</label>
+      {/* The editor fills what the edge below leaves it, so it is sized by dragging the edge, not by a corner of its own. */}
+      <textarea
+        id="studio-statement"
+        className="desk-input studio-editor studio-statement"
+        spellCheck={false}
+        value={statement}
+        onChange={e => setStatement(e.target.value)}
+        onKeyDown={keys}
+      />
+      {showParameters && (
+        <>
+          <label className="desk-label desk-text-small" htmlFor="studio-parameters">Parameters, as a JSON object</label>
+          <textarea
+            id="studio-parameters"
+            className="desk-input studio-editor"
+            spellCheck={false}
+            placeholder='{"name": "Ada"}'
+            value={parameters}
+            onChange={e => setParameters(e.target.value)}
+            onKeyDown={keys}
+            rows={3}
+          />
+        </>
+      )}
+    </form>
+  )
+
+  const results = (
+    <div className="studio-canvas">
       {run.state === 'failed' && <p className="studio-failure" role="alert">{run.message}</p>}
-      {!connection && (
+      {!connection ? (
         <div className="studio-hint">
           <h2>No connection in use</h2>
           <p>Add one in Connections, or choose one above. The studio runs each statement where it cannot write.</p>
         </div>
-      )}
-      {connection && result && drawn && (
+      ) : result && drawn ? (
         <Tabs
           label="Result"
           value={view}
@@ -182,7 +189,31 @@ export function Cypher() {
             <Rows result={result} />
           )}
         </Tabs>
+      ) : (
+        run.state !== 'failed' && <div className="studio-hint"><p>Run a statement to see what it gives.</p></div>
       )}
+    </div>
+  )
+
+  return (
+    <div className="studio-canvas">
+      {connection?.allowWrites && <p className="studio-writes studio-warn" role="note">{ALLOWS_WRITES}</p>}
+      {/*
+        The editor above, what it gave below, and the edge between them remembered. Expanded, the results are
+        hidden rather than taken away, so the editor keeps its place and the results come back as they were.
+      */}
+      <Split
+        orientation="vertical"
+        side={editor}
+        size={220}
+        min={120}
+        max="80%"
+        remember="drivine-studio.cypher"
+        label="Resize the editor"
+        className={expanded ? 'studio-cypher-split studio-expanded' : 'studio-cypher-split'}
+      >
+        {results}
+      </Split>
     </div>
   )
 }
