@@ -79,6 +79,7 @@
       ".next/static/**/*",
       "public/**/*",
       "main.cjs",
+      "preload.cjs",
       "server-start.cjs",
       "package.json",
       "!node_modules/**/*"

@@ -1,6 +1,6 @@
 // main.cjs: the desktop app. It runs the studio's standalone Next.js server in Electron's own Node and
 // opens a window on it, so the browser app talks to the same server here as it does from npm start.
-const { app, BrowserWindow, Menu, dialog, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, utilityProcess } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -92,7 +92,7 @@ function createWindow() {
 
   const win = new BrowserWindow({
     show: false,
-    webPreferences: { contextIsolation: true, sandbox: true },
+    webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
 
   // Only the studio's own server; in dev, eval too, for Next.js hot reload.
@@ -128,14 +128,33 @@ function createWindow() {
   }
 }
 
-function setMenu() {
+/*
+ * The studio's own menus, as its page describes them (src/studio/nativeMenu.ts): on a Mac the page has no menu bar of
+ * its own, and these are drawn in the Mac's. The app's menu joins the one named for the app; the rest stand after View,
+ * and a Window menu of the studio's leads the Mac's own Window menu.
+ */
+function studioItems(win, items) {
+  return items.map(item => item.type === 'separator' ? { type: 'separator' } : {
+    label: String(item.label),
+    enabled: item.enabled !== false,
+    ...(typeof item.checked === 'boolean' ? { type: 'checkbox', checked: item.checked } : {}),
+    ...(item.accelerator ? { accelerator: String(item.accelerator) } : {}),
+    click: () => { if (!win.isDestroyed()) win.webContents.send('studio:menu', String(item.id)); },
+  });
+}
+
+function setMenu(win = null, studioMenus = []) {
   const isMac = process.platform === 'darwin';
+  const appMenu = studioMenus.find(menu => menu.app);
+  const studioWindow = studioMenus.find(menu => !menu.app && menu.label === 'Window');
+  const others = studioMenus.filter(menu => menu !== appMenu && menu !== studioWindow);
   const template = [
     ...(isMac ? [{
       label: app.getName(),
       submenu: [
         { role: 'about' },
         { type: 'separator' },
+        ...(appMenu ? [...studioItems(win, appMenu.items), { type: 'separator' }] : []),
         { label: 'Open Log File', click: () => shell.showItemInFolder(logPath) },
         { type: 'separator' },
         { role: 'services' },
@@ -175,9 +194,11 @@ function setMenu() {
         { role: 'togglefullscreen' },
       ],
     },
+    ...others.map(menu => ({ label: String(menu.label), submenu: studioItems(win, menu.items) })),
     {
       label: 'Window',
       submenu: [
+        ...(studioWindow ? [...studioItems(win, studioWindow.items), { type: 'separator' }] : []),
         { role: 'minimize' },
         { role: 'zoom' },
         ...(isMac
@@ -188,6 +209,13 @@ function setMenu() {
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+// Only from the studio's own page, and only on a Mac, where the page draws no menu bar of its own.
+ipcMain.on('studio:menus', (event, menus) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (process.platform !== 'darwin' || !win || !event.senderFrame?.url.startsWith(URL) || !Array.isArray(menus)) return;
+  setMenu(win, menus);
+});
 
 app.whenReady().then(async () => {
   log('[Electron] App ready');

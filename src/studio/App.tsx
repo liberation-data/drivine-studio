@@ -13,9 +13,12 @@ import { Cypher } from './Cypher'
 import { listConnections } from './database'
 import type { StudioConnection } from './database'
 import { inCatalog, nextSubject } from './model'
+import { nativeMenus, useNativeMenus } from './nativeMenu'
 import type { Subject } from './model'
 
 const desk = createDesk()
+// In the desktop app on a Mac, the menus are the Mac's own, at the top of the screen.
+const native = nativeMenus()
 
 const TITLES: Record<string, string> = { explore: 'Explore', cypher: 'Cypher', connections: 'Connections' }
 const title = (id: string) => TITLES[id] ?? id
@@ -174,12 +177,13 @@ export function App() {
       ],
     },
   ], [reload, reloadConnections])
+  useNativeMenus(native, menus, desk)
 
   return (
     <DeskShell desk={desk}>
       <StudioContext.Provider value={studio}>
         <div className="studio">
-          <MenuBar menus={menus} />
+          {!native && <MenuBar menus={menus} />}
           <main className="studio-screen">
             <Desktop
               title={title}
