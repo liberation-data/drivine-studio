@@ -1,6 +1,6 @@
 import { createDesk, DeskCommands } from '@liberation-data/desk'
 import {
-  DeskShell, Desktop, Dock, MenuBar, dockItem, menuAction, menuCommand, menuSeparator, windowMenuItems,
+  DeskShell, Desktop, Dock, MenuBar, Split, dockItem, menuAction, menuCommand, menuSeparator, windowMenuItems,
 } from '@liberation-data/desk/react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -17,7 +17,7 @@ import type { Subject } from './model'
 
 const desk = createDesk()
 
-const TITLES: Record<string, string> = { catalogue: 'Catalogue', canvas: 'Canvas', cypher: 'Cypher', connections: 'Connections' }
+const TITLES: Record<string, string> = { explore: 'Explore', cypher: 'Cypher', connections: 'Connections' }
 const title = (id: string) => TITLES[id] ?? id
 
 interface Studio {
@@ -26,7 +26,7 @@ interface Studio {
   problem: string | null
   reload: () => void
   subject: Subject | null
-  /** Puts a view or fragment on the canvas, unless it is there already, and brings the canvas forward. */
+  /** Puts a view or fragment on the canvas, unless it is there already, and brings Explore forward. */
   show: (subject: Subject | null) => void
   connections: StudioConnection[] | null
   /** Why the connections could not be read, when they could not. */
@@ -53,8 +53,14 @@ export function useStudio(): Studio {
 
 // Module scope, so the desk's memoisation of window content holds.
 function renderWindow(id: string): ReactNode {
-  if (id === 'catalogue') return <Catalogue />
-  if (id === 'canvas') return <Canvas />
+  // The catalogue and the canvas it fills are one app, so one window: only the edge between them moves.
+  if (id === 'explore') {
+    return (
+      <Split side={<Catalogue />} size={300} remember="drivine-studio.explore" label="Resize the catalogue">
+        <Canvas />
+      </Split>
+    )
+  }
   if (id === 'cypher') return <Cypher />
   if (id === 'connections') return <Connections />
   return null
@@ -76,10 +82,9 @@ const rememberedConnection = (): string | null => {
 }
 
 const DOCK = [
-  dockItem({ id: 'catalogue', label: 'Catalogue', description: 'Views and fragments', icon: icon('M4 6h16M4 12h16M4 18h10') }),
+  dockItem({ id: 'explore', label: 'Explore', description: 'Views and fragments, loaded and seen as a graph', icon: icon('M6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7.7 7l8.5 2.4M16.6 11.5l-7.2 5.3M6.4 8l1.2 8') }),
   dockItem({ id: 'cypher', label: 'Cypher', description: 'Run Cypher, see a graph or rows', icon: icon('M8 6l-5 6 5 6M16 6l5 6-5 6M14 4l-4 16') }),
   dockItem({ id: 'connections', label: 'Connections', description: 'The databases to read', icon: icon('M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2zM4 6v12c0 1.1 3.6 2 8 2s8-.9 8-2V6M4 12c0 1.1 3.6 2 8 2s8-.9 8-2') }),
-  dockItem({ id: 'canvas', label: 'Canvas', description: 'Load and see the graph', icon: icon('M6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7.7 7l8.5 2.4M16.6 11.5l-7.2 5.3M6.4 8l1.2 8') }),
 ]
 
 export function App() {
@@ -132,23 +137,12 @@ export function App() {
 
   const show = useCallback((next: Subject | null) => {
     setSubject(current => nextSubject(current, next))
-    if (next) desk.open('canvas')
+    if (next) desk.open('explore')
   }, [])
 
-  // The catalogue beside the canvas; on a narrow screen, the desk shows one window at a time anyway.
+  // Explore fills the desk to start with: the catalogue and the canvas are both in it.
   useEffect(() => {
-    if (desk.getState().windows.length > 0) return
-    const stage = document.querySelector('[data-desk-stage]')?.getBoundingClientRect()
-    if (!stage || stage.width < 760) {
-      desk.open('catalogue')
-      desk.open('canvas')
-      return
-    }
-    const gap = 12
-    const side = 300
-    const height = stage.height - gap * 2
-    desk.open('catalogue', { frame: { x: gap, y: gap, width: side, height } })
-    desk.open('canvas', { frame: { x: side + gap * 2, y: gap, width: stage.width - side - gap * 3, height } })
+    if (desk.getState().windows.length === 0) desk.open('explore')
   }, [])
 
   const studio = useMemo(
@@ -190,8 +184,8 @@ export function App() {
             <Desktop
               title={title}
               renderWindow={renderWindow}
-              note={id => (id === 'canvas' ? 'read-only' : null)}
-              empty={<div className="studio-hint"><h2>Nothing open</h2><p>Open the Catalogue from the dock.</p></div>}
+              note={id => (id === 'explore' ? 'read-only' : null)}
+              empty={<div className="studio-hint"><h2>Nothing open</h2><p>Open Explore from the dock.</p></div>}
             />
             <Dock entries={DOCK} label="Studio dock" />
           </main>
