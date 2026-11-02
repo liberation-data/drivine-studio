@@ -120,6 +120,8 @@ html, body, #root { height: 100%; margin: 0; }
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--desk-space-2);
   padding: var(--desk-space-2) var(--desk-space-3); border-radius: var(--desk-control-radius);
 }
+.studio-connection[data-editable] { cursor: default; user-select: none; }
+.studio-connection[data-editable]:hover { background: color-mix(in srgb, var(--desk-ink) 5%, transparent); }
 .studio-connection[aria-current] { background: color-mix(in srgb, var(--desk-accent) 16%, transparent); }
 .studio-connection-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 18ch; overflow-wrap: anywhere; }
 .studio-connection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--desk-space-1); }
