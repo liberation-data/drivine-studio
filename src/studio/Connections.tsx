@@ -1,7 +1,8 @@
-import { Alert, Button, Checkbox, Loading, Pane, PopUpButton, Section, Sheet, TextField } from '@liberation-data/desk/react'
+import { Alert, Button, Checkbox, CodeBlock, Disclosure, Loading, Pane, PopUpButton, Section, Sheet, TextField } from '@liberation-data/desk/react'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useStudio } from './App'
+import { dockerCommand } from './docker'
 import { addConnection, DATABASE_NAMES, DATABASE_TYPES, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
 
@@ -235,6 +236,34 @@ function ConnectionSheet({ editing, onDone }: { editing: StudioConnection | 'new
         {/* Enter submits from any field. */}
         <button type="submit" hidden />
       </form>
+      <RunInDocker draft={draft} onFill={fill => set(Object.fromEntries(Object.entries(fill).filter(([key]) => !draft[key as keyof Draft])))} />
     </Sheet>
+  )
+}
+
+/**
+ * No database yet: the command that runs one of this kind here, in Docker, as Drivine's own tests do, to copy into a
+ * terminal. The studio does not run it; what it starts is the person's to see first.
+ */
+function RunInDocker({ draft, onFill }: { draft: Draft; onFill: (fill: Partial<Draft>) => void }) {
+  const [open, setOpen] = useState(false)
+  const made = dockerCommand(draft)
+  return (
+    <Disclosure label="Run it in Docker" open={open} onOpenChange={setOpen}>
+      {made.kind === 'none' ? (
+        <p className="desk-text-small desk-text-muted">{made.why}</p>
+      ) : (
+        <div className="studio-form">
+          <p className="desk-text-small desk-text-muted">
+            No {DATABASE_NAMES[draft.type]} to connect to? This runs one here, as Drivine&apos;s own tests do. Paste it into a terminal.
+          </p>
+          <CodeBlock code={made.command} language="shell" />
+          {made.note && <p className="desk-text-small desk-text-muted">{made.note}</p>}
+          <div>
+            <Button size="small" onClick={() => onFill(made.fill)}>Use These Settings</Button>
+          </div>
+        </div>
+      )}
+    </Disclosure>
   )
 }
