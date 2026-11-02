@@ -30,6 +30,7 @@
     "@liberation-data/desk": "^0.38.0",
     "@liberation-data/drivine": "^3.2.0",
     "cytoscape": "^3.30.0",
+    "cytoscape-cola": "^2.5.1",
     "lucide-static": "^1.61.0",
     "neo4j-driver": "^5.28.3",
     "next": "^16.4.3",

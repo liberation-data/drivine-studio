@@ -1,5 +1,7 @@
+import { Toggle } from '@liberation-data/desk/react'
 import cytoscape from 'cytoscape'
-import type { Core } from 'cytoscape'
+import type { Core, Layouts, LayoutOptions, NodeSingular } from 'cytoscape'
+import cola from 'cytoscape-cola'
 import { useEffect, useRef, useState } from 'react'
 import type { GraphEdge, GraphNode, Result } from './api'
 import { IconPicker, Swatch } from './IconPicker'
@@ -26,6 +28,31 @@ export function captionOf(node: GraphNode): string {
 export const iconLabelOf = (nodes: readonly GraphNode[], fragment: string): string | undefined =>
   nodes.find(n => n.fragment === fragment)?.labels[0]
 
+cytoscape.use(cola)
+
+/*
+ * A live layout, as Neo4j Browser's: drag a node and its neighbours follow and the rest make room, then it all settles
+ * and stops, so nothing moves while it is read. A node let go of stays where it was put; a double-click lets it go.
+ * Past this many nodes it starts off, as the motion is noise and the simulation costs more than it shows.
+ */
+const LIVE_UP_TO = 300
+/** How long the graph keeps moving after a node is let go of. */
+const SETTLE_MS = 1500
+
+/** Cola, which runs a force simulation that a dragged node takes part in; its options are not in cytoscape's types. */
+const colaOptions = (more: Record<string, unknown>): LayoutOptions =>
+  ({
+    name: 'cola', animate: true, fit: false, nodeDimensionsIncludeLabels: true, nodeSpacing: 14,
+    // The length cose laid the graph out at, so a drag carries on from that layout rather than pulling it to another.
+    edgeLength: 150,
+    // Carry on from where the nodes are: no layout from scratch first, and no repacking of the parts not joined up.
+    unconstrIter: 0, userConstIter: 0, allConstIter: 0, handleDisconnected: false,
+    ...more,
+  }) as unknown as LayoutOptions
+
+/** The node cola simulates for this one: setting bit 1 of `fixed` holds it, and a drag clears only bits 2 and 4. */
+const simulated = (node: NodeSingular) => node.scratch('cola') as { fixed?: number } | undefined
+
 const isUuid = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(value)
 const short = (text: string) => (text.length > 26 ? `${text.slice(0, 25)}…` : text)
 
@@ -43,6 +70,13 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
   const cy = useRef<Core | null>(null)
   const select = useRef(onSelect)
   select.current = onSelect
+  const [live, setLive] = useState(graph.nodes.length <= LIVE_UP_TO)
+  const liveNow = useRef(live)
+  liveNow.current = live
+  // The simulation running now, if any; the nodes put down by hand, which it holds where they are.
+  const running = useRef<Layouts | null>(null)
+  const pinned = useRef(new Set<string>())
+  const settling = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
     const element = container.current
@@ -54,6 +88,64 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
     })
     core.on('tap', 'node', event => select.current({ kind: 'node', node: event.target.data('node') as GraphNode }))
     core.on('tap', 'edge', event => select.current({ kind: 'edge', edge: event.target.data('edge') as GraphEdge }))
+
+    const stop = () => {
+      clearTimeout(settling.current)
+      running.current?.stop()
+      running.current = null
+    }
+    // Every run starts from where the nodes are, holding the pinned ones, and runs until it is stopped.
+    const simulate = () => {
+      clearTimeout(settling.current)
+      if (running.current) return
+      const layout = core.layout(colaOptions({ infinite: true, randomize: false }))
+      layout.run()
+      core.nodes().forEach(node => {
+        const held = simulated(node)
+        if (held && pinned.current.has(node.id())) held.fixed = (held.fixed ?? 0) | 1
+      })
+      running.current = layout
+    }
+    const settle = () => {
+      clearTimeout(settling.current)
+      settling.current = setTimeout(stop, SETTLE_MS)
+    }
+    /*
+     * Only a node that actually moves wakes the graph: a click is a grab and a free with no drag between, and shakes
+     * nothing. Cola takes part in a drag from its grab, so the grab it missed is given to it once it is running.
+     */
+    let dragging: NodeSingular | null = null
+    core.on('drag', 'node', event => {
+      const node = event.target as NodeSingular
+      if (!liveNow.current || dragging === node) return
+      dragging = node
+      const started = !running.current
+      simulate()
+      if (started) node.emit('grab')
+    })
+    // After cola's own handler on the node has let the drag go: put down by hand, it stays.
+    core.on('free', 'node', event => {
+      const node = event.target as NodeSingular
+      if (dragging !== node) return
+      dragging = null
+      pinned.current.add(node.id())
+      const held = simulated(node)
+      if (held) held.fixed = (held.fixed ?? 0) | 1
+      node.addClass('pinned')
+      settle()
+    })
+    core.on('dbltap', 'node', event => {
+      const node = event.target as NodeSingular
+      if (!pinned.current.delete(node.id())) return
+      node.removeClass('pinned')
+      const held = simulated(node)
+      if (held) held.fixed = (held.fixed ?? 0) & ~1
+      // Let go of, it finds its own place again.
+      if (liveNow.current) {
+        simulate()
+        settle()
+      }
+    })
 
     // A canvas cannot read CSS variables, so the desk's colours are read once and again when the scheme changes.
     const paint = () => {
@@ -89,7 +181,13 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
           },
         },
         { selector: 'edge[?directed]', style: { 'target-arrow-shape': 'triangle' } },
-        { selector: 'node:selected', style: { 'border-width': 4, 'border-color': accent } },
+        // Put down by hand, and held there while the rest move: a dashed ring says so.
+        { selector: 'node.pinned', style: { 'border-width': 2, 'border-style': 'dashed', 'border-color': muted } },
+        // Chosen: a ring of the accent outside a gap of the ground, so it never sits against the node's own colour.
+        {
+          selector: 'node:selected',
+          style: { 'border-width': 2, 'border-style': 'solid', 'border-color': surface, 'outline-width': 3, 'outline-color': accent, 'outline-offset': 0 },
+        },
         { selector: 'edge:selected', style: { width: 3, 'line-color': accent, 'target-arrow-color': accent, color: ink } },
       ])
     }
@@ -99,6 +197,7 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
     const resized = new ResizeObserver(() => core.resize())
     resized.observe(element)
     return () => {
+      stop()
       scheme.removeEventListener('change', paint)
       resized.disconnect()
       core.destroy()
@@ -110,6 +209,10 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
     const core = cy.current
     if (!core) return
     const roots = new Set(graph.roots)
+    clearTimeout(settling.current)
+    running.current?.stop()
+    running.current = null
+    pinned.current.clear()
     core.elements().remove()
     core.add([
       ...graph.nodes.map(node => ({
@@ -121,20 +224,53 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
         data: { id: edge.id, source: edge.from, target: edge.to, type: edge.type, directed: edge.directed, edge },
       })),
     ])
-    // Randomised: new nodes all start at the origin, and the layout cannot pull apart what begins stacked.
-    core.layout({ name: 'cose', animate: false, randomize: true, nodeDimensionsIncludeLabels: true, padding: 40, nodeRepulsion: () => 12000, idealEdgeLength: () => 150 }).run()
-    core.fit(undefined, 40)
-    // A handful of nodes would otherwise be blown up to fill the window, names and all.
-    if (core.zoom() > 1) {
-      core.zoom(1)
-      core.center()
+    const frame = () => {
+      core.fit(undefined, 40)
+      // A handful of nodes would otherwise be blown up to fill the window, names and all.
+      if (core.zoom() > 1) {
+        core.zoom(1)
+        core.center()
+      }
     }
+    const cose = () =>
+      core.layout({ name: 'cose', animate: false, randomize: true, nodeDimensionsIncludeLabels: true, padding: 40, nodeRepulsion: () => 12000, idealEdgeLength: () => 150 }).run()
+    // Randomised: new nodes all start at the origin, and no layout can pull apart what begins stacked.
+    if (graph.nodes.length > LIVE_UP_TO) {
+      cose()
+      frame()
+      return
+    }
+    /*
+     * A graph small enough to drag live is laid out by the simulation a drag runs, so a drag carries on from where the
+     * nodes are rather than pulling them toward another layout's idea of them. It settles out of sight and is framed
+     * once, then shown: the view never zooms while anything moves.
+     */
+    const element = container.current
+    if (element) element.style.opacity = '0'
+    const layout = core.layout(colaOptions({ animate: false, randomize: true, maxSimulationTime: 3000, unconstrIter: 10, allConstIter: 10 }))
+    layout.one('layoutstop', () => {
+      // Stopped for a new graph: that one shows itself.
+      if (running.current !== layout || core.destroyed()) return
+      running.current = null
+      frame()
+      if (element) element.style.opacity = ''
+    })
+    running.current = layout
+    layout.run()
   }, [graph, fragments])
 
   const present = fragments.filter(f => graph.nodes.some(n => n.fragment === f))
   const labelOf = (fragment: string) => iconLabelOf(graph.nodes, fragment)
   const { images, icons } = useLabelIcons(present.flatMap(fragment => labelOf(fragment) ?? []))
   const [choosing, setChoosing] = useState<string | null>(null)
+
+  // Turned off, nothing moves but what is dragged.
+  useEffect(() => {
+    if (live) return
+    clearTimeout(settling.current)
+    running.current?.stop()
+    running.current = null
+  }, [live])
 
   // Icons arrive after the graph is drawn, and change when one is chosen: set on the nodes, with no new layout.
   useEffect(() => {
@@ -151,6 +287,13 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
   return (
     <div className="studio-graph">
       <div ref={container} className="studio-graph-canvas" role="img" aria-label={`Graph of ${graph.nodes.length} nodes and ${graph.edges.length} relationships`} />
+      <div className="studio-graph-controls desk-text-small">
+        <Toggle
+          label="Live layout"
+          checked={live}
+          onChange={setLive}
+        />
+      </div>
       <ul className="studio-legend desk-text-caption" aria-label="Fragments">
         {present.map(fragment => {
           const label = labelOf(fragment)
