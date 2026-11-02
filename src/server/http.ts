@@ -1,6 +1,7 @@
+import { READS_ONLY } from '../studio/database'
 import { ConnectionError } from './connections'
 import type { Env } from './connections'
-import { READS_ONLY, StatementError } from './datasources'
+import { StatementError } from './datasources'
 import { ModelError } from './drivineModels'
 import { ModelPathError } from './models'
 

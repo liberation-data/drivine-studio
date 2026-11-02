@@ -30,6 +30,12 @@ describe('validate', () => {
     })
   })
 
+  it('keeps allowWrites only when it is true', () => {
+    expect(validate({ ...neo4j, allowWrites: true })).toMatchObject({ allowWrites: true })
+    expect(validate({ ...neo4j, allowWrites: false })).not.toHaveProperty('allowWrites')
+    expect(validate(neo4j)).not.toHaveProperty('allowWrites')
+  })
+
   it('keeps a password as typed, spaces and all', () => {
     expect(validate({ ...neo4j, password: ' pass ' }).password).toBe(' pass ')
   })
@@ -43,6 +49,7 @@ describe('validate', () => {
     [{ ...neo4j, type: 'POSTGRES' }, 'Give the Postgres database name.'],
     [{ ...neo4j, type: 'ORACLE' }, 'Give the Oracle service name.'],
     [{ ...neo4j, user: 7 }, 'user must be text.'],
+    [{ ...neo4j, allowWrites: 'yes' }, 'allowWrites must be true or false.'],
     [null, 'A connection is an object.'],
   ])('refuses %j', (input, message) => {
     expect(() => validate(input)).toThrow(ConnectionError)
@@ -80,6 +87,31 @@ describe('the connections file', () => {
     await updateConnection(id, validate({ ...neo4j, password: 'newer' }))
     expect((await findConnection(id)).password).toBe('newer')
     await expect(updateConnection('missing', validate(neo4j))).rejects.toThrow(ConnectionError)
+  })
+
+  it('keeps whether a connection allows writes, off unless set, and off again when a change does not set it', async () => {
+    const added = await addConnection(validate(neo4j))
+    expect(added).not.toHaveProperty('allowWrites')
+    await updateConnection(added.id, validate({ ...neo4j, allowWrites: true }))
+    expect(await findConnection(added.id)).toMatchObject({ allowWrites: true })
+    const file = join(home, 'studio', 'connections.json')
+    expect(JSON.parse(await readFile(file, 'utf8')).connections[0]).toMatchObject({ allowWrites: true, password: 'secret' })
+    await updateConnection(added.id, validate({ ...neo4j, allowWrites: false }))
+    expect(await findConnection(added.id)).not.toHaveProperty('allowWrites')
+    await updateConnection(added.id, validate({ ...neo4j, allowWrites: true }))
+    await updateConnection(added.id, validate(neo4j))
+    expect(await findConnection(added.id)).not.toHaveProperty('allowWrites')
+  })
+
+  it('allows writes only where the file says true, as a hand-edited file may say otherwise', async () => {
+    const { mkdir, writeFile } = await import('node:fs/promises')
+    await mkdir(join(home, 'studio'), { recursive: true })
+    await writeFile(join(home, 'studio', 'connections.json'), JSON.stringify({
+      connections: [{ ...neo4j, id: 'a', name: 'A', allowWrites: 'true' }, { ...neo4j, id: 'b', name: 'B', allowWrites: true }],
+    }))
+    const [a, b] = await listConnections()
+    expect(a).not.toHaveProperty('allowWrites')
+    expect(b).toMatchObject({ allowWrites: true })
   })
 
   it('lists by name, and removes', async () => {

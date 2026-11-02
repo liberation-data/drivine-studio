@@ -54,6 +54,9 @@ export class DrivineModels {
     const model: FragmentModel = {
       type: classNamed(fragment.name),
       labels: fragment.labels,
+      // The lowercased copies @CaseInsensitive writes. A model file does not say which properties have one, and the
+      // studio's loads read only the properties themselves, so none is named here.
+      lowerCopied: [],
       ...(fragment.nodeId ? { nodeIdField: fragment.nodeId, nodeIdProperty: stored(fragment.nodeId) } : {}),
       ...(fragment.labelSet
         ? {
@@ -193,5 +196,7 @@ function fieldMapping(properties: Property[]) {
     emptyWhenAbsent: new Map<string, 'array' | 'object'>(
       properties.filter(p => p.whenAbsent === 'empty').map(p => [p.name, p.type === 'map' ? 'object' : 'array']),
     ),
+    // The model files name no set: a store holds one as a list, and the studio reads what is stored.
+    sets: new Set<string>(),
   }
 }

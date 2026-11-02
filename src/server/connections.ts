@@ -15,8 +15,13 @@ export interface Connection {
   password?: string
   /** The database to use: Neo4j's database, Postgres's and Oracle's service. */
   database?: string
-  /** Oracle's property graph, `drivine` unless named. */
+  /** The graph on Postgres and Oracle, which names its tables: `drivine` unless named. */
   graph?: string
+  /**
+   * A statement run in the Cypher window may write, and is committed. Kept only when true: off unless set. The
+   * Canvas's loads and a connection's test only ever read.
+   */
+  allowWrites?: boolean
   /** 'environment' for the one Drivine's environment variables describe, which the studio cannot change. */
   source: 'studio' | 'environment'
 }
@@ -40,7 +45,12 @@ const FILE = 'connections.json'
 
 async function readStored(): Promise<Connection[]> {
   const parsed = await readHomeFile<{ connections?: Connection[] }>(FILE)
-  return (parsed?.connections ?? []).map(c => ({ ...c, source: 'studio' as const }))
+  // A connection allows writes only where the file says true, so the browser is told what the server does.
+  return (parsed?.connections ?? []).map(({ allowWrites, ...c }) => ({
+    ...c,
+    ...(allowWrites === true ? { allowWrites } : {}),
+    source: 'studio' as const,
+  }))
 }
 
 async function writeStored(connections: Connection[]): Promise<void> {
@@ -113,6 +123,9 @@ export function validate(input: unknown): ConnectionInput {
   const user = text('user')
   const password = text('password')
   const graph = text('graph')
+  if (raw.allowWrites !== undefined && raw.allowWrites !== null && typeof raw.allowWrites !== 'boolean') {
+    throw new ConnectionError('allowWrites must be true or false.')
+  }
   return {
     name,
     type: type as DatabaseType,
@@ -122,6 +135,7 @@ export function validate(input: unknown): ConnectionInput {
     ...(password ? { password } : {}),
     ...(database ? { database } : {}),
     ...(graph ? { graph } : {}),
+    ...(raw.allowWrites === true ? { allowWrites: true } : {}),
     ...(raw.clearPassword === true ? { clearPassword: true } : {}),
   }
 }

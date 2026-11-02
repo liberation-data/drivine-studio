@@ -15,8 +15,20 @@ export const DATABASE_NAMES: Record<DatabaseType, string> = {
   ORACLE: 'Oracle',
 }
 
-/** The databases the studio runs Cypher on. Drivine (TypeScript) runs SQL on Oracle and Postgres, not Cypher. */
-export const RUNS_CYPHER: readonly DatabaseType[] = ['NEO4J', 'MEMGRAPH', 'NEPTUNE', 'FALKORDB']
+/** The databases the studio runs Cypher on: on Postgres and Oracle, Drivine (TypeScript) compiles it to SQL. */
+export const RUNS_CYPHER: readonly DatabaseType[] = ['NEO4J', 'MEMGRAPH', 'NEPTUNE', 'FALKORDB', 'POSTGRES', 'ORACLE']
+
+/** Said before a database's refusal to write, so the person knows the refusal is the studio's doing. */
+export const READS_ONLY = 'The studio reads and never writes, and runs each statement where it cannot.'
+
+/** Said where a connection allows writes, as the Cypher window says before each statement is run. */
+export const ALLOWS_WRITES = 'This connection allows writes: a statement run in the Cypher window changes the database, and is committed.'
+
+/** What a statement that may write changed, as the databases count it, in the order the studio shows them. */
+export const CHANGES = [
+  'nodesCreated', 'nodesDeleted', 'relationshipsCreated', 'relationshipsDeleted', 'propertiesSet', 'labelsAdded', 'labelsRemoved',
+] as const
+export type Change = (typeof CHANGES)[number]
 
 /** The rows a statement reads unless told otherwise, and the most it may read: the browser holds every one. */
 export const DEFAULT_LIMIT = 1000
@@ -33,6 +45,8 @@ export interface StudioConnection {
   hasPassword: boolean
   database?: string
   graph?: string
+  /** A statement run in the Cypher window may write, and is committed. Off unless set; the Canvas only ever reads. */
+  allowWrites?: boolean
   /** 'environment' for the one Drivine's environment variables describe, which the studio cannot change. */
   source: 'studio' | 'environment'
 }
@@ -47,6 +61,7 @@ export interface ConnectionInput {
   password?: string
   database?: string
   graph?: string
+  allowWrites?: boolean
   clearPassword?: boolean
 }
 
@@ -91,6 +106,11 @@ export interface CypherResult {
   truncated: boolean
   limit: number
   milliseconds: number
+  /**
+   * Given only where the statement ran where it may write, and was committed: what it changed, each count as its
+   * database gave it, or null where the database gives none, as Postgres and Oracle do.
+   */
+  written?: { counts: Partial<Record<Change, number>> | null }
 }
 
 export interface CypherRequest {

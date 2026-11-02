@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useStudio } from './App'
 import { dockerCommand } from './docker'
-import { addConnection, DATABASE_NAMES, DATABASE_TYPES, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
+import { addConnection, DATABASE_NAMES, DATABASE_TYPES, READS_ONLY, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
 
 type Test = { state: 'testing' } | { state: 'passed'; milliseconds: number } | { state: 'failed'; message: string }
@@ -60,6 +60,7 @@ export function Connections() {
                     {DATABASE_NAMES[c.type]} · {c.host}{c.port ? `:${c.port}` : ''}{c.database ? ` · ${c.database}` : ''}
                     {c.source === 'environment' && ' · from the environment'}
                   </span>
+                  {c.allowWrites && <span className="desk-text-caption studio-warn">Allows writes in the Cypher window</span>}
                   {result && (
                     <span className={`desk-text-caption ${result.state === 'failed' ? 'studio-bad' : 'desk-text-muted'}`} role="status">
                       {result.state === 'testing' && 'Testing…'}
@@ -72,7 +73,6 @@ export function Connections() {
                   {active?.id === c.id
                     ? <span className="desk-text-caption desk-text-muted">In use</span>
                     : <Button size="small" onClick={() => chooseConnection(c.id)}>Use</Button>}
-                  {/* A test runs Cypher, which the studio does not run on Oracle and Postgres; connecting to Oracle writes. */}
                   {RUNS_CYPHER.includes(c.type) && (
                     <Button size="small" intent="quiet" onClick={() => test(c)} disabled={result?.state === 'testing'}>Test</Button>
                   )}
@@ -142,14 +142,16 @@ interface Draft {
   clearPassword: boolean
   database: string
   graph: string
+  allowWrites: boolean
 }
 
 const draftOf = (editing: StudioConnection | 'new'): Draft =>
   editing === 'new'
-    ? { name: '', type: 'NEO4J', host: 'localhost', port: '', user: '', password: '', clearPassword: false, database: '', graph: '' }
+    ? { name: '', type: 'NEO4J', host: 'localhost', port: '', user: '', password: '', clearPassword: false, database: '', graph: '', allowWrites: false }
     : {
         name: editing.name, type: editing.type, host: editing.host, port: editing.port ? String(editing.port) : '',
         user: editing.user ?? '', password: '', clearPassword: false, database: editing.database ?? '', graph: editing.graph ?? '',
+        allowWrites: editing.allowWrites === true,
       }
 
 /** The draft as the server takes it. An empty field is left out, so the server's defaults apply. */
@@ -164,7 +166,8 @@ export function inputOf(draft: Draft): ConnectionInput {
     ...(draft.password ? { password: draft.password } : {}),
     ...(draft.clearPassword && !draft.password ? { clearPassword: true } : {}),
     ...(draft.database && DATABASE_FIELD[draft.type] ? { database: draft.database } : {}),
-    ...(draft.graph && draft.type === 'ORACLE' ? { graph: draft.graph } : {}),
+    ...(draft.graph && (draft.type === 'ORACLE' || draft.type === 'POSTGRES') ? { graph: draft.graph } : {}),
+    ...(draft.allowWrites ? { allowWrites: true } : {}),
   }
 }
 
@@ -224,12 +227,27 @@ function ConnectionSheet({ editing, onDone }: { editing: StudioConnection | 'new
           <Checkbox label="Forget the password" checked={draft.clearPassword} onChange={clearPassword => set({ clearPassword })} />
         )}
         {field && <TextField label={field.label} help={field.help} value={draft.database} onChange={e => set({ database: e.target.value })} />}
-        {draft.type === 'ORACLE' && (
-          <TextField label="Property graph" help="drivine when empty." value={draft.graph} onChange={e => set({ graph: e.target.value })} />
-        )}
         {(draft.type === 'ORACLE' || draft.type === 'POSTGRES') && (
-          <p className="desk-text-small desk-text-muted">
-            The Cypher window runs on Neo4j, Memgraph, Neptune and FalkorDB. Drivine (TypeScript) runs SQL on {DATABASE_NAMES[draft.type]}, not Cypher.
+          <>
+            <TextField label="Graph" help="Names the graph's tables, graph_node and graph_edge: drivine when empty." value={draft.graph} onChange={e => set({ graph: e.target.value })} />
+            <p className="desk-text-small desk-text-muted">
+              On {DATABASE_NAMES[draft.type]}, Drivine (TypeScript) compiles the Cypher window's Cypher to SQL over the graph's tables.
+              {draft.allowWrites
+                ? ' A statement that writes runs as Drivine compiles it, and is committed; the rest runs in a read-only transaction, which is rolled back.'
+                : ` ${READS_ONLY} A statement that writes is not sent, and the rest runs in a read-only transaction, which is rolled back.`}
+            </p>
+          </>
+        )}
+        <Checkbox
+          label="Allow writes"
+          description="Off unless you turn it on. The Canvas and its loads only ever read."
+          checked={draft.allowWrites}
+          onChange={allowWrites => set({ allowWrites })}
+        />
+        {draft.allowWrites && (
+          <p className="studio-warn desk-text-small" role="note">
+            Statements run in the Cypher window on this connection will change the database. Each is committed as it runs, and
+            there is no undo.
           </p>
         )}
         {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}

@@ -1,8 +1,18 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { addConnection, validate } from '../../../server/connections'
+import { run } from '../../../server/datasources'
 import { POST } from './route'
+
+// The statement is not run here: what the route asks of `run` is what is tested.
+vi.mock('../../../server/datasources', async original => ({
+  ...(await original<typeof import('../../../server/datasources')>()),
+  run: vi.fn(async (_connection: unknown, _statement: string, _parameters: unknown, limit: number) => ({
+    columns: [], rows: [], graph: { nodes: [], relationships: [] }, truncated: false, limit, milliseconds: 0,
+  })),
+}))
 
 let home: string
 const saved = { ...process.env }
@@ -46,6 +56,22 @@ describe('POST /api/cypher', () => {
     const refused = await answer(await post(body))
     expect(refused.status).toBe(400)
     expect(refused.error).toContain(error)
+  })
+
+  it('lets a statement write only on a connection that allows writes', async () => {
+    const neo4j = { name: 'Local', type: 'NEO4J', host: 'localhost', user: 'neo4j', password: 'secret' }
+    const reads = await addConnection(validate(neo4j))
+    const writes = await addConnection(validate({ ...neo4j, name: 'Writes', allowWrites: true }))
+    vi.mocked(run).mockClear()
+    expect((await post({ connection: reads.id, statement: 'CREATE (n)' })).status).toBe(200)
+    expect((await post({ connection: writes.id, statement: 'CREATE (n)', limit: 5 })).status).toBe(200)
+    // What the browser sends cannot ask for writes: only the connection's own setting can.
+    expect((await post({ connection: reads.id, statement: 'CREATE (n)', writes: true, allowWrites: true })).status).toBe(200)
+    expect(vi.mocked(run).mock.calls.map(([connection, , , limit, options]) => [connection.id, limit, options])).toEqual([
+      [reads.id, 1000, { writes: false }],
+      [writes.id, 5, { writes: true }],
+      [reads.id, 1000, { writes: false }],
+    ])
   })
 
   it('says there is no such connection', async () => {

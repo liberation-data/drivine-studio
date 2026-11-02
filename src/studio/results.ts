@@ -1,5 +1,6 @@
 import type { GraphNode, Result } from './api'
-import type { Cell, CypherGraph, CypherNode } from './database'
+import { CHANGES } from './database'
+import type { Cell, Change, CypherGraph, CypherNode, CypherResult } from './database'
 import { captionOf } from './GraphView'
 
 /** What a node with no labels is coloured and listed as. */
@@ -69,4 +70,28 @@ export function parametersOf(text: string): { parameters: Record<string, unknown
     return { problem: 'The parameters are a JSON object, of each name and its value: {"name": "Ada"}.' }
   }
   return { parameters: parsed as Record<string, unknown> }
+}
+
+/** Each change as it is said of one, and of more. */
+const CHANGE_WORDS: Record<Change, [string, string]> = {
+  nodesCreated: ['node created', 'nodes created'],
+  nodesDeleted: ['node deleted', 'nodes deleted'],
+  relationshipsCreated: ['relationship created', 'relationships created'],
+  relationshipsDeleted: ['relationship deleted', 'relationships deleted'],
+  propertiesSet: ['property set', 'properties set'],
+  labelsAdded: ['label added', 'labels added'],
+  labelsRemoved: ['label removed', 'labels removed'],
+}
+
+/**
+ * What a statement run where it may write changed, as the Cypher window says it: each count that is not none, in
+ * order, or that nothing changed. Where the database counts nothing, that it ran, and was committed.
+ */
+export function writtenText(written: NonNullable<CypherResult['written']>): string {
+  if (!written.counts) return 'ran, and committed'
+  const said = CHANGES.flatMap(change => {
+    const count = written.counts?.[change] ?? 0
+    return count > 0 ? [`${count} ${CHANGE_WORDS[change][count === 1 ? 0 : 1]}`] : []
+  })
+  return said.length ? said.join(', ') : 'nothing changed'
 }

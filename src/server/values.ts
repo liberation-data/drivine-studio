@@ -1,16 +1,18 @@
 import neo4j from 'neo4j-driver'
 import type { Cell, CypherGraph, CypherNode, CypherRelationship } from '../studio/database'
+import { WHOLE } from './sqlCypher'
 
 /**
  * Turns what a database gives back into cells the browser can show, and gathers the nodes and relationships among
  * them into a graph. Neo4j, Memgraph and Neptune answer over Bolt, with the driver's own types; FalkorDB's client
- * gives plain objects of its own shapes.
+ * gives plain objects of its own shapes. On Postgres and Oracle, the Cypher compiled to SQL gives JSON, a node, a
+ * relationship or a path marked as one: see sqlCypher.
  */
 export class Cells {
   private readonly nodes = new Map<string, CypherNode>()
   private readonly relationships = new Map<string, CypherRelationship>()
 
-  constructor(private readonly engine: 'bolt' | 'falkordb') {}
+  constructor(private readonly engine: 'bolt' | 'falkordb' | 'sql') {}
 
   cell(value: unknown): Cell {
     if (value === null || value === undefined) return { kind: 'null' }
@@ -51,6 +53,22 @@ export class Cells {
       if (Array.isArray(shaped.nodes) && Array.isArray(shaped.edges)) {
         const nodes = shaped.nodes.map(n => this.cell(n)).flatMap(c => (c.kind === 'node' ? [c.node] : []))
         const relationships = shaped.edges.map(e => this.cell(e)).flatMap(c => (c.kind === 'relationship' ? [c.relationship] : []))
+        return { kind: 'path', nodes, relationships }
+      }
+    }
+    if (this.engine === 'sql' && typeof value === 'object' && WHOLE in value) {
+      const whole = value as Record<string, unknown>
+      const properties = (whole.properties ?? {}) as Record<string, unknown>
+      if (whole[WHOLE] === 'node') return { kind: 'node', node: this.node(String(whole.id), whole.labels as string[], properties) }
+      if (whole[WHOLE] === 'relationship') {
+        return {
+          kind: 'relationship',
+          relationship: this.relationship(String(whole.id), String(whole.type), String(whole.start), String(whole.end), properties),
+        }
+      }
+      if (whole[WHOLE] === 'path') {
+        const nodes = (whole.nodes as unknown[]).map(n => this.cell(n)).flatMap(c => (c.kind === 'node' ? [c.node] : []))
+        const relationships = (whole.relationships as unknown[]).map(r => this.cell(r)).flatMap(c => (c.kind === 'relationship' ? [c.relationship] : []))
         return { kind: 'path', nodes, relationships }
       }
     }
