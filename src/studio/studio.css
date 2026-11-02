@@ -4,7 +4,7 @@ html, body, #root { height: 100%; margin: 0; }
 
 .studio { display: flex; flex-direction: column; height: 100%; }
 
-.studio-screen { position: relative; flex: 1; min-height: 0; background: var(--desk-ground); }
+.studio-screen { position: relative; flex: 1; min-height: 0; }
 
 .studio-hint {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--desk-space-2);
