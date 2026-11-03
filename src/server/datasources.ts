@@ -462,3 +462,29 @@ export async function check(connection: Connection): Promise<{ milliseconds: num
   const result = await run(connection, statement, {}, 1)
   return { milliseconds: result.milliseconds }
 }
+
+/** How many relationships connecting a result's nodes are drawn at most, as Neo4j Browser caps its own. */
+export const CONNECT_UP_TO = 1000
+
+/**
+ * The relationships among a result's nodes, as Neo4j Browser draws them beside what a query gave back ("Connect result
+ * nodes"): one more read, never a write. Each store knows its nodes by its own id: Neo4j by elementId, the others by
+ * id(), as a number but on Neptune.
+ */
+export function connecting(type: Connection['type'], ids: readonly string[]): { statement: string; parameters: Record<string, unknown> } {
+  const byElement = type === 'NEO4J'
+  const numeric = !byElement && type !== 'NEPTUNE'
+  const of = (v: string) => (byElement ? `elementId(${v})` : `id(${v})`)
+  const given = numeric ? ids.map(Number).filter(Number.isFinite) : [...ids]
+  return {
+    statement: `MATCH (a)-[r]->(b) WHERE ${of('a')} IN $ids AND ${of('b')} IN $ids RETURN r`,
+    parameters: { ids: given },
+  }
+}
+
+export async function connect(connection: Connection, ids: readonly string[]): Promise<{ relationships: CypherResult['graph']['relationships']; truncated: boolean }> {
+  if (ids.length < 2) return { relationships: [], truncated: false }
+  const { statement, parameters } = connecting(connection.type, ids)
+  const result = await run(connection, statement, parameters, CONNECT_UP_TO)
+  return { relationships: result.graph.relationships, truncated: result.truncated }
+}

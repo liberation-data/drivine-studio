@@ -263,6 +263,8 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
           },
         },
         { selector: 'edge[?directed]', style: { 'target-arrow-shape': 'triangle' } },
+        // Not given back by the query, only connecting what was: drawn, but lighter, so it's told apart.
+        { selector: 'edge[?added]', style: { 'line-style': 'dashed', 'line-dash-pattern': [6, 4], opacity: 0.55 } },
         // Put down by hand, and held there while the rest move: a dashed ring says so.
         { selector: 'node.pinned', style: { 'border-width': 2, 'border-style': 'dashed', 'border-color': muted } },
         // Chosen: a ring of the accent outside a gap of the ground, so it never sits against the node's own colour.
@@ -303,7 +305,7 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
       })),
       ...graph.edges.map(edge => ({
         group: 'edges' as const,
-        data: { id: edge.id, source: edge.from, target: edge.to, type: edge.type, directed: edge.directed, edge },
+        data: { id: edge.id, source: edge.from, target: edge.to, type: edge.type, directed: edge.directed, added: edge.added === true, edge },
       })),
     ])
     const frame = () => {

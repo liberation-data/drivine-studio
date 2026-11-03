@@ -1,6 +1,6 @@
-import type { GraphNode, Result } from './api'
+import type { GraphEdge, GraphNode, Result } from './api'
 import { CHANGES } from './database'
-import type { Cell, Change, CypherGraph, CypherNode, CypherResult } from './database'
+import type { Cell, Change, CypherGraph, CypherNode, CypherResult, CypherRelationship } from './database'
 import { captionOf } from './GraphView'
 
 /** What a node with no labels is coloured and listed as. */
@@ -10,7 +10,7 @@ export const NO_LABEL = 'No label'
  * A Cypher result's nodes and relationships as the graph view draws them, and the labels it colours them by: each node
  * by its first label, the labels sorted, so a label keeps its colour from one run to the next.
  */
-export function graphOf(graph: CypherGraph): { graph: Result['graph']; labels: string[] } {
+export function graphOf(graph: CypherGraph, connecting: readonly CypherRelationship[] = []): { graph: Result['graph']; labels: string[] } {
   // The graph view keeps nodes and relationships under one set of ids, and FalkorDB numbers each from 0.
   const nodeId = (id: string) => `node:${id}`
   const nodes: GraphNode[] = graph.nodes.map(node => ({
@@ -20,7 +20,15 @@ export function graphOf(graph: CypherGraph): { graph: Result['graph']; labels: s
     properties: node.properties,
     aggregates: {},
   }))
-  const edges = graph.relationships.map(r => ({ id: `relationship:${r.id}`, from: nodeId(r.from), to: nodeId(r.to), type: r.type, directed: true, properties: r.properties }))
+  const edges: GraphEdge[] = graph.relationships.map(r => ({ id: `relationship:${r.id}`, from: nodeId(r.from), to: nodeId(r.to), type: r.type, directed: true, properties: r.properties }))
+  // Those connecting the nodes that the query didn't give back itself, marked so they're drawn as such.
+  const given = new Set(graph.relationships.map(r => r.id))
+  const present = new Set(graph.nodes.map(n => n.id))
+  for (const r of connecting) {
+    if (given.has(r.id) || !present.has(r.from) || !present.has(r.to)) continue
+    edges.push({ id: `relationship:${r.id}`, from: nodeId(r.from), to: nodeId(r.to), type: r.type, directed: true, properties: r.properties, added: true })
+    given.add(r.id)
+  }
   const labels = [...new Set(nodes.map(n => n.fragment))].sort((a, b) => a.localeCompare(b))
   return { graph: { nodes, edges, roots: [] }, labels }
 }

@@ -14,6 +14,7 @@ export function Inspector({ selection, nodes, fragments }: { selection: NonNulla
       <aside className="studio-inspector" aria-label="Selected relationship">
         <h3>{edge.type}</h3>
         <p className="desk-text-small desk-text-muted">{end(edge.from)} {edge.directed ? '→' : '—'} {end(edge.to)}</p>
+        {edge.added && <p className="desk-text-small studio-added-note">Not in the result: drawn because it connects two nodes that are.</p>}
         <Properties values={edge.properties} empty="This relationship carries no properties in this view." />
       </aside>
     )
