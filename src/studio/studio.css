@@ -50,27 +50,36 @@ html, body, #root { height: 100%; margin: 0; }
 }
 
 .studio-result { display: flex; flex: 1; min-height: 0; }
-.studio-graph {
-  /* What floats over the graph: a step lighter than the graph it sits on in the dark, a step darker in the light. */
+.studio-result {
+  /* What stands off the graph, over it or beside it: a step lighter than the graph in the dark, a step darker in the light. */
   --studio-float: color-mix(in srgb, var(--desk-ink) 8%, var(--desk-surface));
+}
+.studio-graph {
   position: relative; flex: 1; min-width: 0; }
 .studio-graph-canvas { position: absolute; inset: 0; }
-.studio-graph-controls {
-  position: absolute; top: var(--desk-space-3); right: var(--desk-space-3); padding: var(--desk-space-1) var(--desk-space-3);
-  border: 1px solid var(--desk-rule); border-radius: var(--desk-control-radius);
-  background: var(--studio-float); box-shadow: var(--desk-shadow);
-}
+.studio-live { display: inline-flex; align-items: center; }
+.studio-tabs-actions { display: inline-flex; align-items: center; gap: var(--desk-space-4); }
+/* The legend: never taller than the graph it explains; past that, its list scrolls, and it folds to its count. */
 .studio-legend {
-  position: absolute; top: var(--desk-space-3); left: var(--desk-space-3); margin: 0; padding: var(--desk-space-2) var(--desk-space-3);
-  list-style: none; display: flex; flex-direction: column; gap: var(--desk-space-2); font-size: var(--desk-text-body);
+  position: absolute; top: var(--desk-space-3); left: var(--desk-space-3); max-height: calc(100% - 2 * var(--desk-space-3));
+  display: flex; flex-direction: column; padding: var(--desk-space-1) var(--desk-space-3) var(--desk-space-2);
   border: 1px solid var(--desk-rule); border-radius: var(--desk-control-radius);
-  background: var(--studio-float); box-shadow: var(--desk-shadow); color: var(--desk-ink); pointer-events: none;
+  background: var(--studio-float); box-shadow: var(--desk-shadow); color: var(--desk-ink);
+}
+.studio-legend:has(.studio-legend-head[aria-expanded='false']) { padding-bottom: var(--desk-space-1); }
+.studio-legend-head {
+  display: flex; align-items: center; gap: var(--desk-space-1); padding: var(--desk-space-1) 0; border: 0; background: none;
+  font-family: inherit; cursor: pointer; text-align: start;
+}
+.studio-legend-chevron { width: 1em; }
+.studio-legend-list {
+  margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--desk-space-2);
+  font-size: var(--desk-text-body); overflow-y: auto; min-height: 0;
 }
 .studio-legend li, .studio-inspector h3 { display: flex; align-items: center; gap: var(--desk-space-2); }
 .studio-swatch { flex: none; display: inline-grid; place-items: center; width: 10px; height: 10px; border-radius: 50%; }
 
 /* Icons: Lucide's SVGs as masks over a colour, so they follow the page's scheme. */
-.studio-legend { pointer-events: auto; }
 .studio-legend-entry {
   display: flex; align-items: center; gap: var(--desk-space-2); padding: 0; border: 0; background: none;
   color: inherit; font: inherit; cursor: pointer; text-align: start;
@@ -93,6 +102,8 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-inspector {
   flex: none; width: min(300px, 45%); overflow-y: auto; padding: var(--desk-space-4);
   border-left: 1px solid var(--desk-rule); display: flex; flex-direction: column; gap: var(--desk-space-2);
+  /* The tone the legend stands off the graph in: details of the graph, not part of it. */
+  background: var(--studio-float);
 }
 .studio-inspector h3 { margin: 0; font-size: var(--desk-text-lead); font-weight: 600; overflow-wrap: anywhere; }
 .studio-inspector h4 { margin: var(--desk-space-2) 0 0; font-weight: 500; }
