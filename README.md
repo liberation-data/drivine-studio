@@ -138,6 +138,30 @@ npm run package:mac         # an unpacked app in dist/; package:mac:dmg, package
 
 The packages are unsigned, and use Electron's default icon for now.
 
+### Install it yourself
+
+There are no downloads to install yet: build the app on the machine that will run it. A downloaded app is marked by
+the browser that fetched it, and macOS's Gatekeeper and Windows's SmartScreen stop an unsigned one; an app built here
+was never downloaded, so it opens like any other.
+
+You need git and Node.js 22 or later. Then:
+
+```sh
+git clone https://github.com/liberation-data/drivine-studio.git
+cd drivine-studio
+npm ci
+```
+
+- **macOS:** `npm run package:mac` makes `dist/mac-arm64/Drivine Studio.app` on Apple silicon (`dist/mac/` on Intel).
+  Drag it to Applications. It is signed for this Mac alone, which is all a Mac needs to run what it built.
+- **Windows:** `npm run package:win` makes `dist\win-unpacked\Drivine Studio.exe`, to run where it is;
+  `npm run package:win:installer` makes an installer in `dist\` as well. Build it on Windows.
+- **Linux:** `npm run package:linux:appimage` makes an AppImage in `dist/`. Run `chmod +x` on it, then run it. Build it
+  on Linux.
+
+The app serves the studio on port 5187, as `npm run dev` does, so stop a dev server before opening it, or open it from
+a terminal with `PORT` set to another port. To update, `git pull`, `npm ci` and package again.
+
 ## Where it is going
 
 - Model files read straight from GitHub, with nothing built.
