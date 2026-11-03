@@ -264,7 +264,43 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-bench-mono { font-family: var(--desk-font-mono); }
 .studio-bench-workload { max-width: 32ch; }
 /* The best of a row: the accent's tint behind it. */
-.studio-bench-table td[data-best] { background: color-mix(in srgb, var(--desk-accent) 14%, transparent); font-weight: 600; }
-.studio-bench-faster, .studio-bench-slower { display: block; font-size: var(--desk-text-caption); }
-.studio-bench-faster { color: color-mix(in srgb, var(--desk-ok) 70%, var(--desk-ink)); }
-.studio-bench-slower { color: var(--desk-bad); }
+/*
+ * The engines' colours, in a fixed order (neo4j, falkordb, oracle, postgres): blue, orange, aqua, yellow, each stepped
+ * for the scheme and checked for colour blindness against the studio's own surfaces. Text stays in ink; the colour is on
+ * the chip, the bar and the tile beside it.
+ */
+.studio-bench-report { --bench-1: #2a78d6; --bench-2: #eb6834; --bench-3: #1baf7a; --bench-4: #eda100; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .studio-bench-report { --bench-1: #3987e5; --bench-2: #d95926; --bench-3: #199e70; --bench-4: #c98500; }
+}
+:root[data-theme="dark"] .studio-bench-report { --bench-1: #3987e5; --bench-2: #d95926; --bench-3: #199e70; --bench-4: #c98500; }
+
+.studio-bench-engine { display: inline-flex; align-items: center; gap: 6px; }
+.studio-bench-chip { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.studio-bench-report h3 { display: flex; align-items: baseline; gap: var(--desk-space-2); }
+.studio-bench-report h3::before {
+  content: ""; align-self: stretch; width: 4px; border-radius: 2px; background: linear-gradient(var(--desk-accent), #f08a5d);
+}
+
+/* The scoreboard: one tile an engine, its colour along the top, the leader lit. */
+.studio-bench-scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--desk-space-3); margin-bottom: var(--desk-space-4); }
+.studio-bench-score {
+  display: flex; flex-direction: column; gap: 2px; padding: var(--desk-space-3); border-radius: 10px;
+  border: 1px solid var(--desk-rule); border-top: 4px solid var(--bench-colour, var(--desk-accent));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bench-colour, var(--desk-accent)) 16%, transparent), transparent 70%);
+}
+.studio-bench-score[data-leader] { box-shadow: 0 0 0 1px var(--bench-colour), 0 6px 24px color-mix(in srgb, var(--bench-colour) 35%, transparent); }
+.studio-bench-score-number { font-size: 34px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.studio-bench-score-of { font-size: 18px; color: var(--desk-muted); font-weight: 500; }
+.studio-bench-score-agree { --bench-colour: var(--desk-ok); }
+
+/* A bar under each figure, the engine's colour, its length within the row. */
+.studio-bench-bar { display: block; height: 6px; margin-top: 4px; border-radius: 3px; background: color-mix(in srgb, var(--desk-ink) 7%, transparent); }
+.studio-bench-bar > span { display: block; height: 100%; margin-left: auto; border-radius: 3px; background: var(--bench-colour); }
+.studio-bench-table td[data-best] { background: color-mix(in srgb, var(--bench-colour) 20%, transparent); font-weight: 600; }
+.studio-bench-crown { color: var(--bench-colour); }
+
+/* Faster, slower, agreed, differ: pills, with their arrow or mark, never colour alone. */
+.studio-bench-pill { display: inline-block; margin-top: 3px; padding: 0 6px; border-radius: 999px; font-size: var(--desk-text-caption); font-weight: 600; white-space: nowrap; }
+.studio-bench-pill-good { color: color-mix(in srgb, var(--desk-ok) 80%, var(--desk-ink)); background: color-mix(in srgb, var(--desk-ok) 18%, transparent); }
+.studio-bench-pill-bad { color: color-mix(in srgb, var(--desk-bad) 85%, var(--desk-ink)); background: color-mix(in srgb, var(--desk-bad) 18%, transparent); }

@@ -112,6 +112,19 @@ export function Bench() {
   )
 }
 
+/** An engine's colour: its slot in the bench's fixed order, so a colour always means the same engine. */
+const SLOT: Record<string, number> = { neo4j: 1, falkordb: 2, oracle: 3, postgres: 4 }
+const colourOf = (engine: string) => `var(--bench-${SLOT[engine] ?? 1})`
+
+function EngineName({ engine }: { engine: string }) {
+  return (
+    <span className="studio-bench-engine">
+      <span className="studio-bench-chip" style={{ background: colourOf(engine) }} aria-hidden="true" />
+      {engine}
+    </span>
+  )
+}
+
 function Report({ results, base, baseName }: { results: EngineResults[]; base: EngineResults[] | null; baseName: string | null }) {
   if (!results.length) return <p className="desk-text-small desk-text-muted">No results at this scale.</p>
   const engines = results.map(r => r.engine)
@@ -125,6 +138,7 @@ function Report({ results, base, baseName }: { results: EngineResults[]; base: E
 
   return (
     <div className="studio-bench-report">
+      <Scoreboard results={results} keys={keys} find={find} />
       {base && baseName && <p className="desk-text-small">Each figure beside the one in <strong>{baseName}</strong>: green faster, red slower, by more than 10%.</p>}
       <h3>Runs</h3>
       <table className="studio-bench-table">
@@ -132,7 +146,7 @@ function Report({ results, base, baseName }: { results: EngineResults[]; base: E
         <tbody>
           {runRows.map(({ r, from }) => (
             <tr key={`${from ?? ''}|${r.engine}`}>
-              <th>{r.engine}{from && <span className="desk-text-muted"> · {from}</span>}</th>
+              <th><EngineName engine={r.engine} />{from && <span className="desk-text-muted"> · {from}</span>}</th>
               <td>{r.run?.at ? new Date(r.run.at).toLocaleString() : '—'}</td>
               <td>{r.run?.machine ?? '—'}</td>
               <td className="studio-bench-mono">{r.run?.image ?? '—'}</td>
@@ -147,7 +161,7 @@ function Report({ results, base, baseName }: { results: EngineResults[]; base: E
 
       <h3>Load</h3>
       <table className="studio-bench-table">
-        <thead><tr><th />{engines.map(e => <th key={e} className="studio-bench-number">{e}</th>)}</tr></thead>
+        <thead><tr><th />{engines.map(e => <th key={e} className="studio-bench-number"><EngineName engine={e} /></th>)}</tr></thead>
         <tbody>
           <tr><th>nodes</th>{results.map(r => <td key={r.engine} className="studio-bench-number">{r.load ? r.load.nodes.toLocaleString() : '—'}</td>)}</tr>
           <tr><th>relationships</th>{results.map(r => <td key={r.engine} className="studio-bench-number">{r.load ? r.load.edges.toLocaleString() : '—'}</td>)}</tr>
@@ -163,13 +177,15 @@ function Report({ results, base, baseName }: { results: EngineResults[]; base: E
           <Fragment key={group}>
             <h3>{group} <span className="desk-text-small desk-text-muted">{concurrent ? 'calls a second' : 'ms, middle and (slowest 5%)'}</span></h3>
             <table className="studio-bench-table">
-              <thead><tr><th>workload</th>{engines.map(e => <th key={e} className="studio-bench-number">{e}</th>)}<th>same answer</th></tr></thead>
+              <thead><tr><th>workload</th>{engines.map(e => <th key={e} className="studio-bench-number"><EngineName engine={e} /></th>)}<th>same answer</th></tr></thead>
               <tbody>
                 {rows.map(o => {
                   const found = engines.map(e => find(results, e, o))
                   const values = found.map(f => (f ? (concurrent ? f.throughput ?? 0 : f.p50) : null))
                   const present = values.filter((v): v is number => v !== null)
                   const best = present.length > 1 ? (concurrent ? Math.max(...present) : Math.min(...present)) : null
+                  // Bars within the row: the longest is the row's most, so the spread between engines shows at a glance.
+                  const most = present.length ? Math.max(...present) : 0
                   const digests = found.map(f => f?.digest).filter(Boolean)
                   // One engine has nothing to agree with.
                   const same = digests.length === 0 || found.length < 2 ? '' : digests.length === found.length && new Set(digests).size === 1 ? '✓' : '⚠ differ'
@@ -186,17 +202,27 @@ function Report({ results, base, baseName }: { results: EngineResults[]; base: E
                         const ratio = then ? (concurrent ? then / value : value / then) : null
                         const change = ratio !== null && Math.abs(ratio - 1) > NOTICE ? ratio : null
                         return (
-                          <td key={e} className="studio-bench-number" data-best={value === best ? '' : undefined}>
+                          <td
+                            key={e}
+                            className="studio-bench-number"
+                            data-best={value === best ? '' : undefined}
+                            style={{ '--bench-colour': colourOf(e) } as React.CSSProperties}
+                            title={concurrent
+                              ? `${e}: ${Math.round(value).toLocaleString()} calls a second, middle ${f.p50.toFixed(2)} ms`
+                              : `${e}: middle ${f.p50.toFixed(2)} ms, slowest 5% ${f.p95.toFixed(2)} ms, fastest ${f.min.toFixed(2)} ms, over ${f.calls} calls`}
+                          >
+                            {value === best && <span className="studio-bench-crown" aria-label="best">★ </span>}
                             {concurrent ? `${Math.round(value).toLocaleString()}/s` : <>{value.toFixed(2)} <span className="desk-text-muted">({f.p95.toFixed(2)})</span></>}
+                            <span className="studio-bench-bar" aria-hidden="true"><span style={{ width: `${most ? Math.max(4, (value / most) * 100) : 0}%` }} /></span>
                             {change !== null && (
-                              <span className={change > 1 ? 'studio-bench-slower' : 'studio-bench-faster'}>
+                              <span className={change > 1 ? 'studio-bench-pill studio-bench-pill-bad' : 'studio-bench-pill studio-bench-pill-good'}>
                                 {change > 1 ? `▲ ${Math.round((change - 1) * 100)}% slower` : `▼ ${Math.round((1 - change) * 100)}% faster`}
                               </span>
                             )}
                           </td>
                         )
                       })}
-                      <td className={same.startsWith('⚠') ? 'studio-warn' : 'studio-ok'}>{same}</td>
+                      <td>{same && <span className={same.startsWith('⚠') ? 'studio-bench-pill studio-bench-pill-bad' : 'studio-bench-pill studio-bench-pill-good'}>{same}</span>}</td>
                     </tr>
                   )
                 })}
@@ -227,5 +253,54 @@ function LinkBench({ onDone }: { onDone: (linked: boolean) => void }) {
         {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
       </form>
     </Sheet>
+  )
+}
+
+/**
+ * The headline: for each engine, how many workloads it was the fastest on, in its colour, and how many answers every
+ * engine agreed on. What's under it says how far apart they were.
+ */
+function Scoreboard({ results, keys, find }: {
+  results: EngineResults[]
+  keys: Outcome[]
+  find: (rs: EngineResults[] | null, engine: string, o: Outcome) => Outcome | undefined
+}) {
+  if (results.length < 2) return null
+  const wins = new Map<string, number>(results.map(r => [r.engine, 0]))
+  let agreed = 0
+  let compared = 0
+  for (const o of keys) {
+    const concurrent = o.group.endsWith('threads')
+    const values = results.map(r => {
+      const f = find(results, r.engine, o)
+      return f ? { engine: r.engine, value: concurrent ? f.throughput ?? 0 : f.p50, digest: f.digest } : null
+    }).filter((v): v is { engine: string; value: number; digest: string | null } => v !== null)
+    if (values.length < 2) continue
+    const best = values.reduce((a, b) => (concurrent ? (b.value > a.value ? b : a) : (b.value < a.value ? b : a)))
+    wins.set(best.engine, (wins.get(best.engine) ?? 0) + 1)
+    const digests = values.map(v => v.digest).filter(Boolean)
+    if (digests.length === results.length) {
+      compared += 1
+      if (new Set(digests).size === 1) agreed += 1
+    }
+  }
+  const leader = Math.max(...wins.values())
+  return (
+    <div className="studio-bench-scores" role="list" aria-label="Fastest, by engine">
+      {results.map(r => (
+        <div key={r.engine} className="studio-bench-score" role="listitem" style={{ '--bench-colour': colourOf(r.engine) } as React.CSSProperties} data-leader={wins.get(r.engine) === leader ? '' : undefined}>
+          <span className="studio-bench-score-number">{wins.get(r.engine)}</span>
+          <EngineName engine={r.engine} />
+          <span className="desk-text-caption desk-text-muted">fastest of {keys.length} workloads</span>
+        </div>
+      ))}
+      {compared > 0 && (
+        <div className="studio-bench-score studio-bench-score-agree" role="listitem">
+          <span className="studio-bench-score-number">{agreed}<span className="studio-bench-score-of">/{compared}</span></span>
+          <span className="studio-bench-engine">{agreed === compared ? '✓ same answers' : '⚠ answers differ'}</span>
+          <span className="desk-text-caption desk-text-muted">every engine agreed</span>
+        </div>
+      )}
+    </div>
   )
 }
