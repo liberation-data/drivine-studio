@@ -41,4 +41,14 @@ describe('describeMenus', () => {
     expect(item?.type === 'action' && item.label).toBe('Cypher')
     expect(chosen.has('1.0')).toBe(false)
   })
+
+  it('marks the status menus, which a Mac shows as a menu bar extra', () => {
+    const { menus } = describeMenus(
+      [{ id: 'file', label: 'File', items: [menuAction('New Query', () => {})] }],
+      () => true,
+      [{ id: 'connection', label: 'Matrix (Postgres)', items: [menuHeader('Connection'), menuAction('Matrix (Postgres)', () => {}, { checked: true })] }],
+    )
+    expect(menus.map(m => [m.label, m.status ?? false])).toEqual([['File', false], ['Matrix (Postgres)', true]])
+    expect(menus[1]!.items[1]).toMatchObject({ id: '1.1', checked: true })
+  })
 })

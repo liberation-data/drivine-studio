@@ -297,7 +297,7 @@ export function App() {
       </span>
     ),
     items: () => [
-      menuHeader('Use'),
+      menuHeader('Connection'),
       ...(connections ?? []).map(c =>
         menuAction(c.name, () => chooseConnection(c.id), { checked: c.id === connection?.id, detail: DATABASE_NAMES[c.type] }),
       ),
@@ -305,8 +305,7 @@ export function App() {
       menuAction('Connections…', () => desk.open('connections')),
     ],
   }], [connections, connection, chooseConnection])
-  const nativeAll = useMemo(() => [...menus, ...status], [menus, status])
-  useNativeMenus(native, nativeAll, desk)
+  useNativeMenus(native, menus, desk, status)
 
   return (
     <DeskShell desk={desk}>

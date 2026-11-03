@@ -18,6 +18,11 @@ export interface NativeMenu {
   readonly label: string
   /** The app's own menu, whose items join the one the Mac names for the app. */
   readonly app: boolean
+  /**
+   * A status menu, at the trailing end of the page's menu bar: on a Mac, a menu bar extra, at the right of the menu
+   * bar as the page has it, titled with its label.
+   */
+  readonly status?: boolean
   readonly items: readonly NativeItem[]
 }
 
@@ -56,13 +61,18 @@ const flag = (value: boolean | (() => boolean) | undefined) => (typeof value ===
  * read now; the menus are described again whenever the desk changes, so they stay current. `can` says whether anything
  * would perform a command now.
  */
-export function describeMenus(menus: readonly Menu[], can: (command: CommandId) => boolean): { menus: NativeMenu[]; chosen: Map<string, MenuItem> } {
+export function describeMenus(
+  menus: readonly Menu[],
+  can: (command: CommandId) => boolean,
+  status: readonly Menu[] = [],
+): { menus: NativeMenu[]; chosen: Map<string, MenuItem> } {
   const chosen = new Map<string, MenuItem>()
-  const described = menus.map((menu, m) => {
+  const described = [...menus, ...status].map((menu, m) => {
     const items = typeof menu.items === 'function' ? menu.items() : menu.items
     return {
       label: menu.label,
       app: menu.emphasis === true,
+      ...(m >= menus.length ? { status: true } : {}),
       items: items.map((item, i): NativeItem => {
         if (item.type === 'separator') return { type: 'separator' }
         // A Mac menu has no headings: one is an item that cannot be chosen.
@@ -85,7 +95,7 @@ export function describeMenus(menus: readonly Menu[], can: (command: CommandId) 
 }
 
 /** Gives the studio's menus to the desktop app to draw, while there is one; else does nothing. */
-export function useNativeMenus(native: StudioNative | undefined, menus: readonly Menu[], desk: Desk) {
+export function useNativeMenus(native: StudioNative | undefined, menus: readonly Menu[], desk: Desk, status: readonly Menu[] = []) {
   const chosen = useRef(new Map<string, MenuItem>())
 
   useEffect(() => {
@@ -97,7 +107,7 @@ export function useNativeMenus(native: StudioNative | undefined, menus: readonly
       // Once a frame at most, and only when they read differently: the desk changes on every step of a window's drag,
       // and the app builds the Mac's menus again each time it is sent them.
       frame = requestAnimationFrame(() => {
-        const described = describeMenus(menus, command => canPerform(desk, command))
+        const described = describeMenus(menus, command => canPerform(desk, command), status)
         chosen.current = described.chosen
         const text = JSON.stringify(described.menus)
         if (text === sent) return
@@ -111,7 +121,7 @@ export function useNativeMenus(native: StudioNative | undefined, menus: readonly
       cancelAnimationFrame(frame)
       unsubscribe()
     }
-  }, [native, menus, desk])
+  }, [native, menus, status, desk])
 
   useEffect(
     () =>

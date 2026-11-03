@@ -1,6 +1,6 @@
 // main.cjs: the desktop app. It runs the studio's standalone Next.js server in Electron's own Node and
 // opens a window on it, so the browser app talks to the same server here as it does from npm start.
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, shell, utilityProcess } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -148,11 +148,32 @@ function studioItems(win, items) {
   });
 }
 
+/*
+ * The page's status menu (the connection in use) as a menu bar extra, at the right of the Mac's menu bar where the
+ * page keeps it: a database's drum and the connection's name, opening the same menu.
+ */
+let tray = null;
+function setTray(win, menu) {
+  if (!menu) {
+    tray?.destroy();
+    tray = null;
+    return;
+  }
+  if (!tray) {
+    tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'build', 'trayTemplate.png')));
+    tray.setToolTip('The connection Drivine Studio uses');
+  }
+  tray.setTitle(` ${String(menu.label)}`);
+  tray.setContextMenu(Menu.buildFromTemplate(studioItems(win, menu.items)));
+}
+
 function setMenu(win = null, studioMenus = []) {
   const isMac = process.platform === 'darwin';
   const appMenu = studioMenus.find(menu => menu.app);
-  const studioWindow = studioMenus.find(menu => !menu.app && menu.label === 'Window');
-  const others = studioMenus.filter(menu => menu !== appMenu && menu !== studioWindow);
+  const studioWindow = studioMenus.find(menu => !menu.app && !menu.status && menu.label === 'Window');
+  const fileMenu = studioMenus.find(menu => !menu.app && !menu.status && menu.label === 'File');
+  const others = studioMenus.filter(menu => menu !== appMenu && menu !== studioWindow && menu !== fileMenu && !menu.status);
+  if (isMac) setTray(win, studioMenus.find(menu => menu.status));
   const template = [
     ...(isMac ? [{
       label: app.getName(),
@@ -171,6 +192,8 @@ function setMenu(win = null, studioMenus = []) {
         { role: 'quit' },
       ],
     }] : []),
+    // File first after the app's menu, as a Mac app has it; then Edit and View, the app's own, and Window.
+    ...(fileMenu ? [{ label: 'File', submenu: studioItems(win, fileMenu.items) }] : []),
     {
       label: 'Edit',
       submenu: [
