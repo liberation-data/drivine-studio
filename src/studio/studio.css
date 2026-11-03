@@ -145,10 +145,6 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-bad { color: var(--desk-bad); margin: 0; }
 /* A connection that allows writes: the warning colour, darkened toward the ink to be read as text. */
 .studio-warn { color: color-mix(in srgb, var(--desk-warn) 75%, var(--desk-ink)); margin: 0; }
-.studio-writes {
-  margin: 0; padding: var(--desk-space-1) var(--desk-space-4); border-bottom: 1px solid var(--desk-rule);
-  font-size: var(--desk-text-small); background: color-mix(in srgb, var(--desk-warn) 10%, transparent);
-}
 
 /* Cypher */
 .studio-editor { min-height: 0; resize: vertical; font-family: var(--desk-font-mono); font-size: var(--desk-text-small); line-height: 1.5; padding-block: var(--desk-space-2); }
@@ -169,4 +165,9 @@ html, body, #root { height: 100%; margin: 0; }
 @media (max-width: 640px) {
   .studio-result { flex-direction: column; }
   .studio-inspector { width: auto; max-height: 40%; border-left: 0; border-top: 1px solid var(--desk-rule); }
+}
+
+/* What a window is, behind its (i): set as reading, in a book face, a size up from the window's small print. */
+.desk-infotip-body {
+  max-width: 38ch; font-family: 'Times New Roman', Times, serif; font-size: var(--desk-text-lead); line-height: 1.5;
 }

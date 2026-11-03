@@ -2,7 +2,7 @@ import { Button, PopUpButton, Spinner, Split, Table, Tabs, TextField } from '@li
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useStudio } from './App'
-import { ALLOWS_WRITES, DATABASE_NAMES, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
+import { DATABASE_NAMES, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
 import type { Cell, CypherResult } from './database'
 import { GraphView } from './GraphView'
 import type { Selection } from './GraphView'
@@ -197,7 +197,6 @@ export function Cypher() {
 
   return (
     <div className="studio-canvas">
-      {connection?.allowWrites && <p className="studio-writes studio-warn" role="note">{ALLOWS_WRITES}</p>}
       {/*
         The editor above, what it gave below, and the edge between them remembered. Expanded, the results are
         hidden rather than taken away, so the editor keeps its place and the results come back as they were.
