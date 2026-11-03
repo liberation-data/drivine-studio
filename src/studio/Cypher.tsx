@@ -1,8 +1,8 @@
-import { Button, PopUpButton, Spinner, Split, Table, Tabs, TextField } from '@liberation-data/desk/react'
+import { Button, Spinner, Split, Table, Tabs, TextField } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useStudio } from './App'
-import { DATABASE_NAMES, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
+import { DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
 import type { Cell, CypherResult } from './database'
 import { GraphView, LiveLayoutToggle, useLiveLayout } from './GraphView'
 import type { Selection } from './GraphView'
@@ -32,7 +32,7 @@ const STATEMENT = 'drivine-studio.cypher.statement'
 const PARAMETERS = 'drivine-studio.cypher.parameters'
 
 export function Cypher() {
-  const { connections, connection, chooseConnection, pendingCypher, takeCypher } = useStudio()
+  const { connection, pendingCypher, takeCypher } = useStudio()
   const [statement, setStatement] = useState(() => remembered(STATEMENT, 'MATCH (n) RETURN n LIMIT 25'))
   const [parameters, setParameters] = useState(() => remembered(PARAMETERS, ''))
   const [showParameters, setShowParameters] = useState(() => parameters.trim() !== '')
@@ -109,14 +109,6 @@ export function Cypher() {
   const editor = (
     <form className="studio-query studio-query-fill" onSubmit={submit} aria-label="Cypher">
       <div className="studio-query-row">
-        <PopUpButton
-          label="Connection" labelHidden size="small"
-          value={connection?.id ?? null}
-          placeholder={connections?.length ? 'Choose a connection' : 'No connections yet'}
-          disabled={!connections?.length}
-          onChange={chooseConnection}
-          options={(connections ?? []).map(c => ({ value: c.id, label: `${c.name} · ${DATABASE_NAMES[c.type]}` }))}
-        />
         <span className="desk-grow" />
         {run.state === 'running' && <Spinner label="Running" size="small" />}
         <Button type="button" size="small" intent="quiet" onClick={() => setExpanded(!expanded)} aria-pressed={expanded}>
@@ -166,7 +158,7 @@ export function Cypher() {
       {!connection ? (
         <div className="studio-hint">
           <h2>No connection in use</h2>
-          <p>Add one in Connections, or choose one above. The studio runs each statement where it cannot write.</p>
+          <p>Choose one from the connection menu at the end of the menu bar, or add one in Connections.</p>
         </div>
       ) : result && drawn ? (
         <Tabs

@@ -1,7 +1,7 @@
 import { createDesk, DeskCommands } from '@liberation-data/desk'
 import type { WindowLimits } from '@liberation-data/desk'
 import {
-  Button, DeskShell, Desktop, Dock, MenuBar, Split, dockItem, menuAction, menuCommand, menuSeparator, windowMenuItems,
+  Button, DeskShell, Desktop, Dock, MenuBar, Split, dockItem, menuAction, menuCommand, menuHeader, menuSeparator, windowMenuItems,
 } from '@liberation-data/desk/react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -11,7 +11,7 @@ import { Canvas } from './Canvas'
 import { Catalogue } from './Catalogue'
 import { Connections } from './Connections'
 import { Cypher } from './Cypher'
-import { ALLOWS_WRITES, listConnections } from './database'
+import { ALLOWS_WRITES, DATABASE_NAMES, listConnections } from './database'
 import type { StudioConnection } from './database'
 import { inCatalog, nextSubject } from './model'
 import { nativeMenus, useNativeMenus } from './nativeMenu'
@@ -29,6 +29,17 @@ const LIMITS: Record<string, WindowLimits> = {
   explore: { minWidth: 640, minHeight: 360 },
   cypher: { minWidth: 520, minHeight: 360 },
   connections: { minWidth: 560, minHeight: 360 },
+}
+
+/**
+ * What each window is looking at, in its title bar: the connection it runs on, and whether that only reads (Explore
+ * always) or may write (Cypher, on a connection that allows it).
+ */
+function noteOf(id: string, connection: StudioConnection | null): ReactNode {
+  if (id !== 'explore' && id !== 'cypher') return null
+  const name = connection?.name ?? 'no connection'
+  if (id === 'explore') return `${name} · read-only`
+  return connection?.allowWrites ? <>{name} · <span className="studio-warn">writes allowed</span></> : name
 }
 
 /** What each window is, behind the (i) in its title bar. */
@@ -207,22 +218,43 @@ export function App() {
       ],
     },
   ], [reload, reloadConnections])
-  useNativeMenus(native, menus, desk)
+
+  /*
+   * The connection in use, at the trailing end of the menu bar: one for the whole studio, so chosen where the whole
+   * studio is, not in a window. Each window's title bar names it too.
+   */
+  const status = useMemo(() => [{
+    id: 'connection',
+    label: connection?.name ?? 'No Connection',
+    title: (
+      <span className="studio-connection-menu">
+        <span className="studio-connection-icon" aria-hidden="true" />
+        {connection?.name ?? 'No Connection'}
+      </span>
+    ),
+    items: () => [
+      menuHeader('Use'),
+      ...(connections ?? []).map(c =>
+        menuAction(c.name, () => chooseConnection(c.id), { checked: c.id === connection?.id, detail: DATABASE_NAMES[c.type] }),
+      ),
+      ...(connections?.length ? [menuSeparator()] : []),
+      menuAction('Connections…', () => desk.open('connections')),
+    ],
+  }], [connections, connection, chooseConnection])
+  const nativeAll = useMemo(() => [...menus, ...status], [menus, status])
+  useNativeMenus(native, nativeAll, desk)
 
   return (
     <DeskShell desk={desk}>
       <StudioContext.Provider value={studio}>
         <div className="studio">
-          {!native && <MenuBar menus={menus} leading={<span className="studio-mark" role="img" aria-label="Drivine" />} />}
+          {!native && <MenuBar menus={menus} status={status} leading={<span className="studio-mark" role="img" aria-label="Drivine" />} />}
           <main className="studio-screen">
             <Desktop
               title={title}
               renderWindow={renderWindow}
               // What each window is looking at: Explore only reads; Cypher on a connection that allows writes changes it.
-              note={id =>
-                id === 'explore' ? 'read-only'
-                  : id === 'cypher' && connection?.allowWrites ? <span className="studio-warn">writes allowed</span>
-                  : null}
+              note={id => noteOf(id, connection)}
               info={id => infoOf(id, connection)}
               limits={id => LIMITS[id] ?? null}
               // The studio opens on nothing: one person came to explore the model, another to run a statement.
