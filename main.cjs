@@ -222,6 +222,20 @@ ipcMain.on('studio:menus', (event, menus) => {
   setMenu(win, menus);
 });
 
+// The system's folder picker, for the page to link a project by choosing it: the path chosen, or null. Only for the
+// studio's own page; it is the person's choice, made in the system's own dialog, so nothing is read without it.
+ipcMain.handle('studio:pick-folder', async event => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || !event.senderFrame?.url.startsWith(URL)) return null;
+  const chosen = await dialog.showOpenDialog(win, {
+    title: 'Link a Project',
+    message: 'Choose a project that uses Drivine: the studio reads the model files under it.',
+    buttonLabel: 'Link',
+    properties: ['openDirectory'],
+  });
+  return chosen.canceled ? null : (chosen.filePaths[0] ?? null);
+});
+
 app.whenReady().then(async () => {
   log('[Electron] App ready');
   try {
