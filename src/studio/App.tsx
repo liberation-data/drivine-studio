@@ -1,4 +1,4 @@
-import { createDesk, DeskCommands } from '@liberation-data/desk'
+import { addCommandHandler, createDesk, DeskCommands } from '@liberation-data/desk'
 import type { WindowLimits } from '@liberation-data/desk'
 import {
   Button, DeskShell, Desktop, Dock, MenuBar, Split, dockItem, menuAction, menuCommand, menuHeader, menuSeparator, windowMenuItems,
@@ -24,7 +24,15 @@ const desk = createDesk()
 export const StudioCommands = {
   save: 'studio.query.save',
   saveAs: 'studio.query.saveAs',
+  open: 'studio.open',
+  connections: 'studio.connections',
 } as const
+
+// What the whole studio answers, wherever focus is: commands, so their shortcuts work as the menu bar shows them.
+if (typeof document !== 'undefined') {
+  addCommandHandler(document, StudioCommands.open, () => desk.open('queries'))
+  addCommandHandler(document, StudioCommands.connections, () => desk.open('connections'))
+}
 // In the desktop app on a Mac, the menus are the Mac's own, at the top of the screen.
 const native = nativeMenus()
 
@@ -234,25 +242,24 @@ export function App() {
   )
 
   const menus = useMemo(() => [
+    // The app's own menu: what is about the studio and how it is set up, as a Mac app keeps its Settings there.
     { id: 'studio', label: 'Drivine Studio', emphasis: true, items: [
-        menuAction('Reload Catalogue', reload),
+        menuCommand('Connections…', StudioCommands.connections, { shortcut: 'mod+,' }),
         menuAction('Reload Connections', reloadConnections),
-        menuSeparator(),
-        menuAction('Explore', () => desk.open('explore')),
-        menuAction('Cypher', () => desk.open('cypher')),
-        menuAction('Queries', () => desk.open('queries')),
-        menuAction('Connections', () => desk.open('connections')),
       ] },
+    // The documents: queries to make, open and keep, and the model files the studio reads.
     {
       id: 'file',
       label: 'File',
       items: [
         menuAction('New Query', () => openInCypher('', '')),
-        menuAction('Open…', () => desk.open('queries')),
+        menuCommand('Open…', StudioCommands.open, { shortcut: 'mod+o' }),
         menuSeparator(),
         // The Cypher window answers these, when it is the one in front: dimmed otherwise, as a Mac's are.
         menuCommand('Save', StudioCommands.save, { shortcut: 'mod+s' }),
         menuCommand('Save As…', StudioCommands.saveAs, { shortcut: 'mod+shift+s' }),
+        menuSeparator(),
+        menuAction('Reload Model Files', reload),
         menuSeparator(),
         menuCommand('Close Window', DeskCommands.closeWindow),
       ],
@@ -260,7 +267,10 @@ export function App() {
     {
       id: 'window',
       label: 'Window',
+      // The studio's windows to open, as a Mac app lists its own tools here, then the ones open now.
       items: () => [
+        ...['explore', 'cypher', 'queries', 'connections'].map(id => menuAction(title(id), () => desk.open(id))),
+        menuSeparator(),
         menuCommand('Arrange', DeskCommands.arrange, { shortcut: 'mod+alt+a' }),
         menuSeparator(),
         ...windowMenuItems(desk.getState(), id => desk.focus(id), title),
