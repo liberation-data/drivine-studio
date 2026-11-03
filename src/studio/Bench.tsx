@@ -116,7 +116,7 @@ export function Bench() {
 const SLOT: Record<string, number> = { neo4j: 1, falkordb: 2, oracle: 3, postgres: 4 }
 const colourOf = (engine: string) => `var(--bench-${SLOT[engine] ?? 1})`
 
-/** Lucide's trophy, in the colour around it: the winner of a row, and the scoreboard's leader. */
+/** Lucide's trophy, in the colour around it: the scoreboard's leader, and only it. */
 function Trophy({ size, label }: { size: number; label?: string }) {
   return (
     <svg
@@ -228,7 +228,7 @@ function Report({ results, base, baseName }: { results: EngineResults[]; base: E
                               ? `${e}: ${Math.round(value).toLocaleString()} calls a second, middle ${f.p50.toFixed(2)} ms`
                               : `${e}: middle ${f.p50.toFixed(2)} ms, slowest 5% ${f.p95.toFixed(2)} ms, fastest ${f.min.toFixed(2)} ms, over ${f.calls} calls`}
                           >
-                            {value === best && <span className="studio-bench-crown"><Trophy size={11} label="best" /> </span>}
+                            {value === best && <span className="studio-bench-crown" aria-label="best">★ </span>}
                             {concurrent ? `${Math.round(value).toLocaleString()}/s` : <>{value.toFixed(2)} <span className="desk-text-muted">({f.p95.toFixed(2)})</span></>}
                             <span className="studio-bench-bar" aria-hidden="true"><span style={{ width: `${most ? Math.max(4, (value / most) * 100) : 0}%` }} /></span>
                             {change !== null && (

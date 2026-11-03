@@ -299,7 +299,6 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-bench-bar > span { display: block; height: 100%; margin-left: auto; border-radius: 3px; background: var(--bench-colour); }
 .studio-bench-table td[data-best] { background: color-mix(in srgb, var(--bench-colour) 20%, transparent); font-weight: 600; }
 .studio-bench-crown { color: var(--bench-colour); }
-.studio-bench-crown .studio-bench-trophy { vertical-align: -1px; }
 /* The leader's trophy, the only big one: top right of its tile, in its colour. */
 .studio-bench-score { position: relative; }
 .studio-bench-score-trophy { position: absolute; top: var(--desk-space-3); right: var(--desk-space-3); color: var(--bench-colour); filter: drop-shadow(0 2px 8px color-mix(in srgb, var(--bench-colour) 45%, transparent)); }
