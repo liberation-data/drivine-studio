@@ -116,13 +116,26 @@ html, body, #root { height: 100%; margin: 0; }
 }
 
 /* Connections */
+/* A row of a list with its own actions beside it: the catalogue's problems. */
 .studio-connection {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--desk-space-2);
   padding: var(--desk-space-2) var(--desk-space-3); border-radius: var(--desk-control-radius);
 }
-.studio-connection[aria-current] { background: color-mix(in srgb, var(--desk-accent) 16%, transparent); }
 .studio-connection-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 18ch; overflow-wrap: anywhere; }
-.studio-connection-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--desk-space-1); }
+.studio-connection-entry { cursor: default; }
+.studio-connection-entry .studio-entry-name { display: flex; align-items: baseline; gap: var(--desk-space-2); }
+.studio-tag {
+  padding: 0 var(--desk-space-1); border-radius: 4px; font-size: var(--desk-text-caption); font-weight: 500;
+  color: var(--desk-accent); background: color-mix(in srgb, var(--desk-accent) 14%, transparent);
+}
+/* The editor's fields, two to a row where they belong together: host and port, user and password. */
+.studio-fields fieldset {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--desk-space-3);
+  margin: 0; padding: 0; border: 0; min-width: 0;
+}
+.studio-fields p, .studio-fields + * { margin: 0; }
+.studio-wide { grid-column: 1 / -1; }
+.studio-fields { margin-bottom: var(--desk-space-3); }
 .studio-form { display: flex; flex-direction: column; gap: var(--desk-space-3); }
 .studio-form p { margin: 0; }
 .studio-bad { color: var(--desk-bad); margin: 0; }
