@@ -1,13 +1,13 @@
 import { addCommandHandler, windowElement } from '@liberation-data/desk'
-import { Button, PopUpButton, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField, useDropTarget, useWindowId } from '@liberation-data/desk/react'
+import { Button, PopUpButton, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField, Toggle, useDropTarget, useWindowId } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { StudioCommands, useStudio } from './App'
 import type { SavedAs } from './App'
 import { addQuery, firstLine, listQueries, QUERY_DRAG, updateQuery } from './savedQueries'
 import type { QueryDrag, SavedQuery } from './savedQueries'
-import { DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
-import type { Cell, CypherResult } from './database'
+import { connectResults, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
+import type { Cell, CypherRelationship, CypherResult } from './database'
 import { GraphView, LiveLayoutToggle, useLiveLayout } from './GraphView'
 import type { Selection } from './GraphView'
 import { Inspector } from './Inspector'
@@ -41,6 +41,7 @@ const remember = (key: string, value: string) => {
 
 const STATEMENT = 'drivine-studio.cypher.statement'
 const PARAMETERS = 'drivine-studio.cypher.parameters'
+const CONNECT = 'drivine-studio.cypher.connect'
 
 export function Cypher() {
   const { connection, pendingCypher, takeCypher, savedQuery } = useStudio()
@@ -167,7 +168,33 @@ export function Cypher() {
     },
   })
 
-  const drawn = useMemo(() => (result ? graphOf(result.graph) : null), [result])
+  /*
+   * The relationships among the result's nodes, drawn beside what the query gave back, as Neo4j Browser's "Connect
+   * result nodes" does: one more read, on by default, and remembered. The graph waits for them, so it is laid out once.
+   */
+  const [connectOn, setConnectOn] = useState(() => remembered(CONNECT, 'on') === 'on')
+  useEffect(() => remember(CONNECT, connectOn ? 'on' : 'off'), [connectOn])
+  const [connected, setConnected] = useState<{ for: CypherResult; relationships: CypherRelationship[]; truncated: boolean } | null>(null)
+  useEffect(() => {
+    if (!result || !connection || !connectOn) return
+    const ids = result.graph.nodes.filter(n => !n.partial).map(n => n.id)
+    if (ids.length < 2) return setConnected({ for: result, relationships: [], truncated: false })
+    const controller = new AbortController()
+    connectResults(connection.id, ids, controller.signal).then(
+      got => setConnected({ for: result, ...got }),
+      () => {
+        // Not connected is still a graph: what the query gave back, as it gave it.
+        if (!controller.signal.aborted) setConnected({ for: result, relationships: [], truncated: false })
+      },
+    )
+    return () => controller.abort()
+  }, [result, connection, connectOn])
+  const waiting = connectOn && result !== null && connected?.for !== result
+  const drawn = useMemo(
+    () => (result && !waiting ? graphOf(result.graph, connectOn && connected?.for === result ? connected.relationships : []) : null),
+    [result, waiting, connectOn, connected],
+  )
+  const added = drawn ? drawn.graph.edges.filter(e => e.added).length : 0
   const [live, setLive] = useLiveLayout(drawn?.graph)
 
   const given = parameters.trim() !== ''
@@ -246,6 +273,8 @@ export function Cypher() {
           <h2>No connection in use</h2>
           <p>Choose one from the connection menu at the end of the menu bar, or add one in Connections.</p>
         </div>
+      ) : result && waiting ? (
+        <div className="studio-hint"><Spinner label="Connecting the results" size="small" /></div>
       ) : result && drawn ? (
         <Tabs
           label="Result"
@@ -256,6 +285,11 @@ export function Cypher() {
           actions={
             <span className="studio-tabs-actions">
               {/* Up here, it stays put when a node's details open beside the graph. */}
+              {view === 'graph' && (
+                <span className="studio-live desk-text-small" title="Draw the relationships among the nodes that came back, as Neo4j Browser does">
+                  <Toggle label={added ? `Connect results (${added})` : 'Connect results'} checked={connectOn} onChange={setConnectOn} />
+                </span>
+              )}
               {view === 'graph' && <LiveLayoutToggle live={live} onChange={setLive} />}
               <Summary result={result} />
             </span>

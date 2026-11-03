@@ -334,3 +334,18 @@ describe('boltParameters', () => {
     expect(sent.none).toBeNull()
   })
 })
+
+describe('connecting a result’s nodes', () => {
+  it('asks each store by its own ids: elementId on Neo4j, id() as a number elsewhere, as text on Neptune', async () => {
+    const { connecting } = await import('./datasources')
+    expect(connecting('NEO4J', ['4:a:1', '4:a:2'])).toEqual({
+      statement: 'MATCH (a)-[r]->(b) WHERE elementId(a) IN $ids AND elementId(b) IN $ids RETURN r',
+      parameters: { ids: ['4:a:1', '4:a:2'] },
+    })
+    expect(connecting('POSTGRES', ['14', '15', 'x'])).toEqual({
+      statement: 'MATCH (a)-[r]->(b) WHERE id(a) IN $ids AND id(b) IN $ids RETURN r',
+      parameters: { ids: [14, 15] },
+    })
+    expect(connecting('NEPTUNE', ['a', 'b']).parameters).toEqual({ ids: ['a', 'b'] })
+  })
+})

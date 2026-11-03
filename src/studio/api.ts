@@ -137,6 +137,8 @@ export interface GraphEdge {
   type: string
   directed: boolean
   properties: Record<string, unknown>
+  /** Not given back by the query: drawn because it connects two nodes that were, as Neo4j Browser draws them. */
+  added?: boolean
 }
 
 export interface Result {

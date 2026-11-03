@@ -152,5 +152,9 @@ export const freeDockerPort = (type: DatabaseType): Promise<number> =>
 export const dockerAction = (action: 'start' | 'stop' | 'remove', draft: DockerDraft, id?: string): Promise<unknown> =>
   fetch(`${API}/docker`, json('POST', { action, draft, ...(id ? { id } : {}) })).then(r => read<unknown>(r))
 
+/** The relationships among a result's nodes, to draw beside it as Neo4j Browser does. A read. */
+export const connectResults = (connection: string, ids: string[], signal?: AbortSignal): Promise<{ relationships: CypherRelationship[]; truncated: boolean }> =>
+  fetch(`${API}/cypher/connect`, json('POST', { connection, ids }, signal)).then(r => read<{ relationships: CypherRelationship[]; truncated: boolean }>(r))
+
 export const runCypher = (request: CypherRequest, signal?: AbortSignal): Promise<CypherResult> =>
   fetch(`${API}/cypher`, json('POST', request, signal)).then(r => read<CypherResult>(r))
