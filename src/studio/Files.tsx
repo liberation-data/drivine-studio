@@ -3,7 +3,7 @@ import {
   useContextMenu,
 } from '@liberation-data/desk/react'
 import type { IconViewItem, MenuItem } from '@liberation-data/desk/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { listModelFiles, readModelFile } from './api'
 import type { ModelFileEntry } from './api'
@@ -343,18 +343,53 @@ function NewFolder({ inside, onDone }: { inside: string; onDone: (made: boolean)
   )
 }
 
-// Drawn, not images: they take the text's colour, so they follow the scheme.
-const Glyph = ({ small, children }: { small?: boolean; children: ReactNode }) => (
-  <svg viewBox="0 0 24 24" width={small ? 16 : 40} height={small ? 16 : 40} fill="none" stroke="currentColor" strokeWidth={small ? 1.8 : 1.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {children}
-  </svg>
-)
-const FolderIcon = ({ small }: { small?: boolean }) => (
-  <Glyph small={small}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></Glyph>
-)
-const QueryIcon = ({ small }: { small?: boolean }) => (
-  <Glyph small={small}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /><path d="M10 12l-2 2 2 2M14 12l2 2-2 2" /></Glyph>
-)
-const ModelIcon = ({ small }: { small?: boolean }) => (
-  <Glyph small={small}><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" /><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" /></Glyph>
-)
+// Drawn, not images, in the studio's colours: a Finder's filled, two-tone icons rather than outlines. Each takes ids of
+// its own for its gradients, as two on a page would otherwise share the first's.
+const SIZE = { small: 16, large: 44 }
+
+function Folder({ small }: { small?: boolean }) {
+  const id = useId()
+  const size = small ? SIZE.small : SIZE.large
+  return (
+    <svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true">
+      <defs>
+        <linearGradient id={`${id}-back`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2b8f9b" /><stop offset="1" stopColor="#0f6e7a" /></linearGradient>
+        <linearGradient id={`${id}-front`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#6fc6d0" /><stop offset="1" stopColor="#2a95a2" /></linearGradient>
+      </defs>
+      <path d="M4 12a4 4 0 0 1 4-4h10.3a3 3 0 0 1 2.2 1l2.6 2.8a3 3 0 0 0 2.2 1H40a4 4 0 0 1 4 4V36a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z" fill={`url(#${id}-back)`} />
+      <path d="M4 19a3 3 0 0 1 3-3h34a3 3 0 0 1 3 3v17a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z" fill={`url(#${id}-front)`} />
+      <path d="M7 17.6h34" stroke="#ffffff" strokeOpacity="0.45" strokeWidth="1" />
+    </svg>
+  )
+}
+
+function Query({ small }: { small?: boolean }) {
+  const id = useId()
+  const size = small ? SIZE.small : SIZE.large
+  return (
+    <svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true">
+      <defs>
+        <linearGradient id={`${id}-paper`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#ffffff" /><stop offset="1" stopColor="#dbe8eb" /></linearGradient>
+      </defs>
+      <path d="M11 4h18l10 10v28a2 2 0 0 1-2 2H11a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill={`url(#${id}-paper)`} stroke="#9fbcc3" strokeWidth="1" />
+      <path d="M29 4v8a2 2 0 0 0 2 2h8" fill="#c9dde1" stroke="#9fbcc3" strokeWidth="1" />
+      <path d="M20 23l-5 5 5 5M28 23l5 5-5 5M25.5 21l-3 14" fill="none" stroke="#f08a5d" strokeWidth={small ? 3.2 : 2.6} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function Model({ small }: { small?: boolean }) {
+  const size = small ? SIZE.small : SIZE.large
+  return (
+    <svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true">
+      <path d="M24 5l17 9.5L24 24 7 14.5z" fill="#6fc6d0" />
+      <path d="M7 14.5L24 24v19L7 33.5z" fill="#0f6e7a" />
+      <path d="M41 14.5L24 24v19l17-9.5z" fill="#f08a5d" />
+      <path d="M24 24v19" stroke="#ffffff" strokeOpacity="0.35" strokeWidth="1" />
+    </svg>
+  )
+}
+
+const FolderIcon = Folder
+const QueryIcon = Query
+const ModelIcon = Model
