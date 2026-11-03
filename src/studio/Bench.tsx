@@ -1,4 +1,4 @@
-import { Button, Loading, PopUpButton, Sheet, Split, TextField } from '@liberation-data/desk/react'
+import { Button, Loading, PopUpButton, SegmentedControl, Sheet, Split, TextField } from '@liberation-data/desk/react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { BenchSet, EngineResults, Outcome } from '../server/bench'
 import { json, read } from './fetching'
@@ -34,6 +34,7 @@ export function Bench() {
   const [problem, setProblem] = useState<string | null>(null)
   const [chosen, setChosen] = useState<string | null>(null)
   const [scale, setScale] = useState<number | null>(null)
+  const [view, setView] = useState<'report' | 'scaling'>('report')
   const [against, setAgainst] = useState<string>('')
   const [results, setResults] = useState<EngineResults[] | null>(null)
   const [base, setBase] = useState<EngineResults[] | null>(null)
@@ -46,6 +47,7 @@ export function Bench() {
   const set = sets?.find(s => keyOf(s) === chosen) ?? sets?.[0] ?? null
   const at = scale !== null && set?.scales.includes(scale) ? scale : (set?.scales[0] ?? null)
   const other = sets?.find(s => keyOf(s) === against) ?? null
+  const scaling = view === 'scaling' && (set?.scales.length ?? 0) > 1
 
   useEffect(() => {
     setResults(null)
@@ -91,18 +93,24 @@ export function Bench() {
           <div className="studio-finder-bar">
             <strong className="desk-text-small">{set ? nameOf(set, sets) : 'No results'}</strong>
             <span className="desk-grow" />
+            {/* Run at more than one size, a set can be read across them: how each engine's time grows with the graph. */}
             {set && set.scales.length > 1 && (
+              <SegmentedControl label="View" size="small" value={scaling ? 'scaling' : 'report'} onChange={setView} options={[{ value: 'report', label: 'Report' }, { value: 'scaling', label: 'Scaling' }]} />
+            )}
+            {set && set.scales.length > 1 && !scaling && (
               <PopUpButton label="Scale" size="small" value={String(at)} onChange={v => setScale(Number(v))} options={set.scales.map(s => ({ value: String(s), label: `scale ${s}` }))} />
             )}
-            <PopUpButton
+            {!scaling && <PopUpButton
               label="Compare with" size="small"
               value={against}
               onChange={setAgainst}
               options={[{ value: '', label: 'Compare with nothing' }, ...sets.filter(s => !set || keyOf(s) !== keyOf(set)).map(s => ({ value: keyOf(s), label: `Compare with ${nameOf(s, sets)}` }))]}
-            />
+            />}
           </div>
           <div className="studio-bench-body">
-            {!results ? <Loading label="Reading them" /> : <Report results={results} base={other ? base : null} baseName={other ? nameOf(other, sets) : null} />}
+            {scaling && set ? (
+              <Scaling set={set} />
+            ) : !results ? <Loading label="Reading them" /> : <Report results={results} base={other ? base : null} baseName={other ? nameOf(other, sets) : null} />}
           </div>
           {problem && <p className="studio-bad desk-text-small studio-finder-problem" role="alert">{problem}</p>}
         </div>
@@ -320,5 +328,154 @@ function Scoreboard({ results, keys, find }: {
         </div>
       )}
     </div>
+  )
+}
+
+/** A point of a workload's line: how many nodes the graph had, and the middle time there. */
+interface Point { nodes: number; ms: number; p95: number }
+
+/** Where one engine's line drops below another's, between two sizes: estimated on the log–log lines between them. */
+export interface Crossover { workload: string; group: string; ahead: string; behind: string; from: number; to: number; at: number }
+
+/** The size of a set's graph at a scale: the load's own count, or Graph Bench's 1,121,500 a scale when it wasn't kept. */
+const nodesOf = (r: EngineResults) => r.load?.nodes ?? Math.round(1_121_500 * r.scale)
+
+/**
+ * For each workload, where the fastest engine changes as the graph grows: the engine that leads at the larger size,
+ * the one it overtakes, the two sizes it happened between, and about where, on straight lines in log–log between them.
+ */
+export function crossovers(lines: Map<string, Map<string, Point[]>>, workloads: Outcome[]): Crossover[] {
+  const found: Crossover[] = []
+  for (const w of workloads) {
+    const byEngine = lines.get(`${w.group}|${w.name}`)
+    if (!byEngine || byEngine.size < 2) continue
+    const sizes = [...new Set([...byEngine.values()].flatMap(ps => ps.map(p => p.nodes)))].sort((a, b) => a - b)
+    const at = (engine: string, n: number) => byEngine.get(engine)?.find(p => p.nodes === n)?.ms
+    const leaderAt = (n: number) =>
+      [...byEngine.keys()].map(e => ({ e, ms: at(e, n) })).filter((x): x is { e: string; ms: number } => x.ms !== undefined).sort((a, b) => a.ms - b.ms)[0]?.e
+    for (let i = 1; i < sizes.length; i++) {
+      const before = leaderAt(sizes[i - 1]!)
+      const after = leaderAt(sizes[i]!)
+      if (!before || !after || before === after) continue
+      const [n0, n1] = [sizes[i - 1]!, sizes[i]!]
+      // Where the two lines meet, in log space: the difference of their logs goes from positive to negative.
+      const d0 = Math.log(at(after, n0) ?? 1) - Math.log(at(before, n0) ?? 1)
+      const d1 = Math.log(at(after, n1) ?? 1) - Math.log(at(before, n1) ?? 1)
+      const t = d0 === d1 ? 0.5 : d0 / (d0 - d1)
+      const meet = Math.exp(Math.log(n0) + Math.min(1, Math.max(0, t)) * (Math.log(n1) - Math.log(n0)))
+      found.push({ workload: w.name, group: w.group, ahead: after, behind: before, from: n0, to: n1, at: meet })
+    }
+  }
+  return found
+}
+
+const count = (n: number) => (n >= 1e6 ? `${+(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n))
+
+/** A set read across its sizes: a small chart for each workload, its time against the graph's size, and the crossovers. */
+function Scaling({ set }: { set: BenchSet }) {
+  const [all, setAll] = useState<EngineResults[] | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  useEffect(() => {
+    setAll(null)
+    Promise.all(set.scales.map(scale => resultsOf(set, scale))).then(got => setAll(got.flat()), (e: unknown) => setProblem(message(e)))
+  }, [set])
+  const shaped = useMemo(() => {
+    if (!all) return null
+    const lines = new Map<string, Map<string, Point[]>>()
+    const workloads = new Map<string, Outcome>()
+    for (const r of all) {
+      for (const o of r.outcomes) {
+        const key = `${o.group}|${o.name}`
+        workloads.set(key, o)
+        const byEngine = lines.get(key) ?? new Map<string, Point[]>()
+        byEngine.set(r.engine, [...(byEngine.get(r.engine) ?? []), { nodes: nodesOf(r), ms: o.p50, p95: o.p95 }].sort((a, b) => a.nodes - b.nodes))
+        lines.set(key, byEngine)
+      }
+    }
+    const engines = [...new Set(all.map(r => r.engine))].sort((a, b) => (SLOT[a] ?? 9) - (SLOT[b] ?? 9))
+    const sizes = [...new Set(all.map(nodesOf))].sort((a, b) => a - b)
+    return { lines, workloads: [...workloads.values()], engines, sizes, crossings: crossovers(lines, [...workloads.values()]) }
+  }, [all])
+
+  if (problem) return <p className="studio-bad desk-text-small" role="alert">{problem}</p>
+  if (!shaped) return <Loading label="Reading every size" />
+  const groups = [...new Set(shaped.workloads.map(w => w.group))]
+  return (
+    <div className="studio-bench-report">
+      <div className="studio-bench-legend" aria-label="Engines">
+        {shaped.engines.map(e => <EngineName key={e} engine={e} />)}
+        <span className="desk-text-small desk-text-muted">· middle time against the graph’s nodes, both on log scales: {shaped.sizes.map(count).join(', ')}</span>
+      </div>
+      <h3>Crossovers</h3>
+      {shaped.crossings.length === 0 ? (
+        <p className="desk-text-small desk-text-muted">No engine overtakes another at these sizes: each workload’s fastest stays the fastest.</p>
+      ) : (
+        <ul className="studio-bench-crossings">
+          {shaped.crossings.map(c => (
+            <li key={`${c.group}|${c.workload}|${c.from}`}>
+              <EngineName engine={c.ahead} /> overtakes <EngineName engine={c.behind} /> at about <strong>{count(c.at)} nodes</strong>
+              <span className="desk-text-muted"> (between {count(c.from)} and {count(c.to)})</span> on <em>{c.workload}</em>
+            </li>
+          ))}
+        </ul>
+      )}
+      {groups.map(group => (
+        <Fragment key={group}>
+          <h3>{group}</h3>
+          <div className="studio-bench-charts">
+            {shaped.workloads.filter(w => w.group === group).map(w => (
+              <ScalingChart
+                key={w.name}
+                title={w.name}
+                lines={shaped.lines.get(`${w.group}|${w.name}`) ?? new Map()}
+                sizes={shaped.sizes}
+                crossings={shaped.crossings.filter(c => c.group === w.group && c.workload === w.name)}
+              />
+            ))}
+          </div>
+        </Fragment>
+      ))}
+    </div>
+  )
+}
+
+/** One workload: a 2px line an engine, markers at each size with the figures on hover, and where the lead changed. */
+function ScalingChart({ title, lines, sizes, crossings }: { title: string; lines: Map<string, Point[]>; sizes: number[]; crossings: Crossover[] }) {
+  const W = 300
+  const H = 160
+  const pad = { l: 40, r: 10, t: 8, b: 22 }
+  const values = [...lines.values()].flat().map(p => p.ms).filter(v => v > 0)
+  if (!values.length || sizes.length < 2) return null
+  const lo = Math.log10(Math.min(...values)) - 0.1
+  const hi = Math.log10(Math.max(...values)) + 0.1
+  const x = (n: number) => pad.l + ((Math.log10(n) - Math.log10(sizes[0]!)) / (Math.log10(sizes[sizes.length - 1]!) - Math.log10(sizes[0]!) || 1)) * (W - pad.l - pad.r)
+  const y = (ms: number) => pad.t + (1 - (Math.log10(Math.max(ms, 1e-6)) - lo) / (hi - lo || 1)) * (H - pad.t - pad.b)
+  // A gridline at each power of ten in range, labelled.
+  const decades: number[] = []
+  for (let d = Math.ceil(lo); d <= Math.floor(hi); d++) decades.push(10 ** d)
+  return (
+    <figure className="studio-bench-chart">
+      <figcaption>{title}</figcaption>
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title}: middle time by graph size`}>
+        {decades.map(d => (
+          <g key={d}>
+            <line x1={pad.l} x2={W - pad.r} y1={y(d)} y2={y(d)} className="studio-bench-grid" />
+            <text x={pad.l - 4} y={y(d) + 3} textAnchor="end" className="studio-bench-tick">{d >= 1000 ? `${d / 1000}s` : `${d}ms`}</text>
+          </g>
+        ))}
+        {sizes.map(n => <text key={n} x={x(n)} y={H - 6} textAnchor="middle" className="studio-bench-tick">{count(n)}</text>)}
+        {crossings.map(c => <line key={c.from} x1={x(c.at)} x2={x(c.at)} y1={pad.t} y2={H - pad.b} className="studio-bench-cross" style={{ stroke: colourOf(c.ahead) }} />)}
+        {[...lines.entries()].map(([engine, points]) => (
+          <g key={engine} style={{ color: colourOf(engine) }}>
+            <polyline points={points.map(p => `${x(p.nodes)},${y(p.ms)}`).join(' ')} className="studio-bench-line" />
+            {points.map(p => (
+              <circle key={p.nodes} cx={x(p.nodes)} cy={y(p.ms)} r={4} className="studio-bench-point">
+                <title>{`${engine} at ${count(p.nodes)} nodes: middle ${p.ms.toFixed(2)} ms, slowest 5% ${p.p95.toFixed(2)} ms`}</title>
+              </circle>
+            ))}
+          </g>
+        ))}
+      </svg>
+    </figure>
   )
 }
