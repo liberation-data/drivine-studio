@@ -144,6 +144,10 @@ export const dockerStatus = (draft: Pick<DockerDraft, 'type' | 'host' | 'port'>)
   fetch(`${API}/docker?${new URLSearchParams({ type: draft.type, host: draft.host, port: draft.port })}`, { cache: 'no-store' })
     .then(r => read<DockerStatus>(r))
 
+/** A port to start a new database of this kind on in Docker: its usual one, or the next free. */
+export const freeDockerPort = (type: DatabaseType): Promise<number> =>
+  fetch(`${API}/docker?${new URLSearchParams({ type, free: '' })}`, { cache: 'no-store' }).then(r => read<{ port: number }>(r)).then(r => r.port)
+
 /** Starts, stops or removes the container for these settings; a saved connection's id lends it the kept password. */
 export const dockerAction = (action: 'start' | 'stop' | 'remove', draft: DockerDraft, id?: string): Promise<unknown> =>
   fetch(`${API}/docker`, json('POST', { action, draft, ...(id ? { id } : {}) })).then(r => read<unknown>(r))

@@ -1,5 +1,5 @@
 import { findConnection } from '../../../server/connections'
-import { draftOf, start, status, stop } from '../../../server/docker'
+import { draftOf, freePort, start, status, stop } from '../../../server/docker'
 import { body, failure, foreign, refuse } from '../../../server/http'
 
 export const dynamic = 'force-dynamic'
@@ -10,6 +10,8 @@ export async function GET(request: Request) {
   if (refused) return refused
   try {
     const query = new URL(request.url).searchParams
+    // ?type=NEO4J&free: a port to start a new one on.
+    if (query.has('free')) return Response.json({ port: await freePort(draftOf(Object.fromEntries(query)).type) })
     return Response.json(await status(draftOf(Object.fromEntries(query))))
   } catch (e) {
     return failure(e)

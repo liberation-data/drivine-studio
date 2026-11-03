@@ -51,7 +51,7 @@ export type DockerCommand =
 
 const LOCAL = new Set(['', 'localhost', '127.0.0.1', '::1', '[::1]'])
 
-const DEFAULT_PORTS: Record<DatabaseType, string> = {
+export const DEFAULT_PORTS: Record<DatabaseType, string> = {
   NEO4J: '7687', MEMGRAPH: '7687', NEPTUNE: '8182', FALKORDB: '6379', POSTGRES: '5432', ORACLE: '1521',
 }
 
