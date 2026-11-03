@@ -313,6 +313,8 @@ export function App() {
       <StudioContext.Provider value={studio}>
         <div className="studio">
           {!native && <MenuBar menus={menus} status={status} leading={<span className="studio-mark" role="img" aria-label="Drivine" />} />}
+          {/* In the desktop app on a Mac, where the window has no title bar: room for its traffic lights, to drag it by. */}
+          {native && <div className="studio-window-bar" aria-hidden="true" />}
           <main className="studio-screen">
             <Desktop
               title={title}

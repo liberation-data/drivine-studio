@@ -97,6 +97,9 @@ function createWindow() {
     show: false,
     // The window's own icon, where the system shows one (Windows, Linux); a Mac shows the bundle's.
     icon: ICON,
+    // On a Mac, no title bar of its own: the app's name is in the menu bar just above, so the window's would only say
+    // it again. The traffic lights sit over the page, which keeps a strip at its top to drag the window by.
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hidden' } : {}),
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
 

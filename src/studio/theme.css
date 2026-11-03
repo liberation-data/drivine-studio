@@ -112,3 +112,13 @@
   --studio-db: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cellipse cx='12' cy='5' rx='9' ry='3'/%3E%3Cpath d='M3 5v14a9 3 0 0 0 18 0V5'/%3E%3Cpath d='M3 12a9 3 0 0 0 18 0'/%3E%3C/svg%3E");
   mask: var(--studio-db) center / contain no-repeat; -webkit-mask: var(--studio-db) center / contain no-repeat;
 }
+
+/*
+ * The desktop app's window on a Mac has no title bar: a strip of the same frost as the browser's menu bar takes its
+ * place, under the traffic lights, and the window is dragged by it. What is in it would take clicks from the drag.
+ */
+.studio > .studio-window-bar {
+  flex: none; height: 28px; -webkit-app-region: drag; app-region: drag;
+  background: var(--studio-frost); backdrop-filter: blur(32px) saturate(140%); -webkit-backdrop-filter: blur(32px) saturate(140%);
+  border-bottom: 1px solid rgb(255 255 255 / 14%);
+}
