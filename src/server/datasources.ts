@@ -25,7 +25,7 @@ const shared = globalThis as typeof globalThis & {
 const cache = (shared.drivineStudioProviders ??= { providers: new Map(), built: 0 })
 const providers = cache.providers
 
-async function providerFor(connection: Connection): Promise<ConnectionProvider> {
+export async function providerFor(connection: Connection): Promise<ConnectionProvider> {
   // Whether it allows writes is the studio's, not the provider's: a change to it keeps the provider.
   const { allowWrites: _, ...connects } = connection
   const settings = JSON.stringify(connects)
@@ -62,6 +62,9 @@ export async function forget(id: string): Promise<void> {
 
 /** A statement the studio will not run, or one the database turned down: the person can fix it, so it is a 400. */
 export class StatementError extends Error {}
+
+/** The graph the statement is for is not there yet: no tables on Postgres or Oracle, nothing written on FalkorDB. */
+export class NoGraphError extends StatementError {}
 
 /** How a statement is run. */
 export interface RunOptions {
@@ -298,7 +301,7 @@ function sqlRefused(e: unknown, type: 'POSTGRES' | 'ORACLE', graph: string, writ
   if (code === '25006' || oracle === 1456) return new StatementError(writes ? e.message : `${READS_ONLY} ${e.message}`)
   // Postgres's undefined_table; Oracle's ORA-00942, a table or view that does not exist.
   if (code === '42P01' || oracle === 942) {
-    return new StatementError(`${DATABASE_NAMES[type]} has no graph ${graph} here: the tables ${graph}_node and ${graph}_edge are not there. (${e.message})`)
+    return new NoGraphError(`${DATABASE_NAMES[type]} has no graph ${graph} here: the tables ${graph}_node and ${graph}_edge are not there. (${e.message})`)
   }
   // Postgres's data exceptions: a value the statement could not take, as a regular expression that is not one.
   if (type === 'POSTGRES' && code.startsWith('22')) return new StatementError(e.message)
@@ -449,7 +452,7 @@ function refused(e: unknown, graphName: string | undefined): unknown {
   if (!reply) return e
   const { message } = e as Error
   if (/only on read-only queries/.test(message)) return new StatementError(`${READS_ONLY} ${message}`)
-  if (/empty key/.test(message)) return new StatementError(`FalkorDB has no graph ${graphName ?? ''}, or nothing in it yet.`)
+  if (/empty key/.test(message)) return new NoGraphError(`FalkorDB has no graph ${graphName ?? ''}, or nothing in it yet.`)
   return new StatementError(message)
 }
 

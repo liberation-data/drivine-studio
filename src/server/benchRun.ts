@@ -9,15 +9,17 @@ import type { Connection } from './connections'
 import { run as runCypher } from './datasources'
 import { studioHome } from './home'
 import { listQueries } from './queries'
-import { BenchError, RUN_FILE } from './bench'
+import { BenchError, RUN_FILE, scaleText } from './bench'
+import { loadedInto } from './benchLoad'
 import type { EngineResults, Outcome } from './bench'
 
 /*
  * A bench of the studio's own: saved queries, run on connections, timed. Each query is run a few times to warm up and
  * then timed over a number of runs, on each connection in turn; what it gave back is digested, so the connections can be
  * checked to agree. It only ever reads. The results are kept as Graph Bench keeps its own, a file a connection in a
- * folder of the run's own, `bench/<run>/<connection>-sf1.0.json` in the studio's home, so the Bench window reads,
- * compares and charts them as it does Graph Bench's.
+ * folder of the run's own, `bench/<run>/<connection>-sf<scale>.json` in the studio's home, so the Bench window reads,
+ * compares and charts them as it does Graph Bench's. The scale is that of Graph Bench's data, where it was loaded from
+ * the studio, with its load times; otherwise 1.
  */
 
 export interface RunInput {
@@ -94,6 +96,8 @@ const percentile = (sorted: number[], p: number) => sorted[Math.min(sorted.lengt
 
 async function runIn(running: RunJob, input: RunInput, connections: Connection[], queries: Awaited<ReturnType<typeof listQueries>>['queries']) {
   const results: (EngineResults & { type: string })[] = []
+  // Graph Bench's data, where it was loaded from here: its scale and how long it took, as Graph Bench reports them.
+  const loaded = await loadedInto()
   for (const connection of connections) {
     const outcomes: Outcome[] = []
     for (const query of queries) {
@@ -124,7 +128,7 @@ async function runIn(running: RunJob, input: RunInput, connections: Connection[]
       running.done += 1
     }
     results.push({
-      engine: connection.name, type: connection.type.toLowerCase(), scale: 1, load: null, outcomes,
+      engine: connection.name, type: connection.type.toLowerCase(), scale: loaded[connection.id]?.scale ?? 1, load: loaded[connection.id]?.load ?? null, outcomes,
       run: {
         at: new Date().toISOString().slice(0, 19) + 'Z',
         machine: machine(),
@@ -142,7 +146,7 @@ async function runIn(running: RunJob, input: RunInput, connections: Connection[]
   await mkdir(folder, { recursive: true, mode: 0o700 })
   // The run's name as it was given; the folder's carries an id and only what a path can.
   await writeFile(join(folder, RUN_FILE), JSON.stringify({ name: input.name }, null, 2), { mode: 0o600 })
-  for (const r of results) await writeFile(join(folder, `${slug(r.engine)}-sf1.0.json`), JSON.stringify(r, null, 2), { mode: 0o600 })
+  for (const r of results) await writeFile(join(folder, `${slug(r.engine)}-sf${scaleText(r.scale)}.json`), JSON.stringify(r, null, 2), { mode: 0o600 })
   running.set = set
   running.now = ''
   running.state = 'done'
