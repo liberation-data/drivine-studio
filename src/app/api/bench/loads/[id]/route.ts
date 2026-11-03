@@ -1,4 +1,4 @@
-import { loadJob } from '../../../../../server/benchLoad'
+import { loadBatch } from '../../../../../server/benchLoad'
 import { failure, foreign, refuse } from '../../../../../server/http'
 
 export const dynamic = 'force-dynamic'
@@ -8,7 +8,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const refused = foreign(request)
   if (refused) return refused
   try {
-    const found = loadJob((await params).id)
+    const found = loadBatch((await params).id)
     return found ? Response.json(found) : refuse(404, 'There is no such load.')
   } catch (e) {
     return failure(e)

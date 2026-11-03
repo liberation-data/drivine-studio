@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   }
 }
 
-/** Loads Graph Bench's dataset into a connection that allows writes: `{ connection, scale }`. */
+/** Loads Graph Bench's dataset into connections that allow writes, one after another: `{ connections, scale }`. */
 export async function POST(request: Request) {
   const refused = foreign(request)
   if (refused) return refused

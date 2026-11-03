@@ -5,8 +5,8 @@ import { GenericContainer, Wait } from 'testcontainers'
 import type { StartedTestContainer } from 'testcontainers'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Dataset, Scale } from './benchData'
-import { beginLoad, loadedInto, loadJob, SMALLEST } from './benchLoad'
-import type { LoadJob } from './benchLoad'
+import { beginLoad, loadBatch, loadedInto, SMALLEST } from './benchLoad'
+import type { LoadBatch, LoadJob } from './benchLoad'
 import type { Connection } from './connections'
 import { forget, readRows } from './datasources'
 
@@ -28,10 +28,10 @@ afterAll(async () => {
   await rm(home, { recursive: true, force: true })
 })
 
-async function finished(started: LoadJob): Promise<LoadJob> {
+async function finished(started: LoadBatch): Promise<LoadJob> {
   for (;;) {
-    const now = loadJob(started.id)!
-    if (now.state !== 'running') return now
+    const now = loadBatch(started.id)!
+    if (now.state !== 'running') return now.loads[0]!
     await new Promise(resolve => setTimeout(resolve, 200))
   }
 }
@@ -40,7 +40,7 @@ const count = async (connection: Connection, statement: string) => Number((await
 
 function loads(connection: () => Connection) {
   it('loads every node and relationship Graph Bench makes, and remembers it', async () => {
-    const done = await finished(await beginLoad(connection(), SMALLEST))
+    const done = await finished(await beginLoad([connection()], SMALLEST))
     expect(done.error).toBeUndefined()
     expect(done.state).toBe('done')
     expect(done.loaded!.load).toMatchObject({ nodes: data.scale.nodes, edges: EDGES })
@@ -55,7 +55,7 @@ function loads(connection: () => Connection) {
   })
 
   it('refuses to load twice into the same graph', async () => {
-    await expect(beginLoad(connection(), SMALLEST)).rejects.toThrow(/already/)
+    await expect(beginLoad([connection()], SMALLEST)).rejects.toThrow(/already/)
   })
 }
 

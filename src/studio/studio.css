@@ -269,11 +269,11 @@ html, body, #root { height: 100%; margin: 0; }
  * for the scheme and checked for colour blindness against the studio's own surfaces. Text stays in ink; the colour is on
  * the chip, the bar and the tile beside it.
  */
-.studio-bench-report { --bench-1: #2a78d6; --bench-2: #eb6834; --bench-3: #1baf7a; --bench-4: #eda100; --bench-5: #e87ba4; --bench-6: #008300; }
+.studio-bench-report, .studio-bench-busy { --bench-1: #2a78d6; --bench-2: #eb6834; --bench-3: #1baf7a; --bench-4: #eda100; --bench-5: #e87ba4; --bench-6: #008300; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .studio-bench-report { --bench-1: #3987e5; --bench-2: #d95926; --bench-3: #199e70; --bench-4: #c98500; --bench-5: #d55181; --bench-6: #008300; }
+  :root:not([data-theme="light"]) .studio-bench-report, :root:not([data-theme="light"]) .studio-bench-busy { --bench-1: #3987e5; --bench-2: #d95926; --bench-3: #199e70; --bench-4: #c98500; --bench-5: #d55181; --bench-6: #008300; }
 }
-:root[data-theme="dark"] .studio-bench-report { --bench-1: #3987e5; --bench-2: #d95926; --bench-3: #199e70; --bench-4: #c98500; --bench-5: #d55181; --bench-6: #008300; }
+:root[data-theme="dark"] .studio-bench-report, :root[data-theme="dark"] .studio-bench-busy { --bench-1: #3987e5; --bench-2: #d95926; --bench-3: #199e70; --bench-4: #c98500; --bench-5: #d55181; --bench-6: #008300; }
 
 .studio-bench-engine { display: inline-flex; align-items: center; gap: 6px; }
 .studio-bench-chip { width: 10px; height: 10px; border-radius: 3px; flex: none; }
@@ -330,3 +330,26 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-bench-job { display: flex; flex-wrap: wrap; align-items: center; gap: var(--desk-space-2); padding: var(--desk-space-2); border-radius: 8px; background: color-mix(in srgb, var(--desk-accent) 10%, transparent); }
 .studio-bench-progress { flex-basis: 100%; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--desk-ink) 10%, transparent); }
 .studio-bench-progress > span { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--desk-accent), #f08a5d); }
+
+/* Loading Graph Bench's data: how big, into what. */
+.studio-bench-size { display: flex; flex-direction: column; gap: var(--desk-space-2); padding: var(--desk-space-3); border-radius: 10px; background: linear-gradient(135deg, color-mix(in srgb, var(--desk-accent) 16%, transparent), color-mix(in srgb, #f08a5d 12%, transparent)); border: 1px solid color-mix(in srgb, var(--desk-accent) 35%, transparent); }
+.studio-bench-size h4 { margin: 0; font-size: var(--desk-text-size-body, 14px); }
+.studio-bench-size p { margin: 0; }
+.studio-bench-size-stops { display: flex; justify-content: space-between; margin-top: -4px; }
+.studio-bench-size-stops [data-on] { color: var(--desk-ink); font-weight: 600; }
+.studio-bench-size-says strong { font-size: 1.15em; font-variant-numeric: tabular-nums; }
+.studio-bench-target { display: flex; align-items: baseline; justify-content: space-between; gap: var(--desk-space-2); }
+.studio-bench-target-new { display: flex; align-items: center; gap: var(--desk-space-2); margin-top: var(--desk-space-2); padding-top: var(--desk-space-2); border-top: 1px solid var(--desk-rule); }
+
+/* A load or run going on, in place of the report. */
+.studio-bench-busy { display: flex; flex-direction: column; gap: var(--desk-space-3); max-width: 760px; padding: var(--desk-space-4) var(--desk-space-2); }
+.studio-bench-busy h3 { margin: 0; }
+.studio-bench-busy p { margin: 0; }
+.studio-bench-busy > button { align-self: flex-start; }
+.studio-bench-busy-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--desk-space-3); }
+.studio-bench-busy-row { display: grid; grid-template-columns: 180px 1fr; grid-template-rows: auto auto; column-gap: var(--desk-space-3); row-gap: 4px; align-items: center; }
+.studio-bench-busy-says { grid-column: 2; display: flex; align-items: center; gap: var(--desk-space-2); min-height: 20px; }
+.studio-bench-busy-row .studio-bench-progress { height: 8px; border-radius: 4px; }
+.studio-bench-busy-row .studio-bench-progress > span { border-radius: 4px; transition: width 0.6s ease; }
+.studio-bench-busy-row[style] .studio-bench-progress > span { background: var(--bench-colour); }
+.studio-bench-busy-row[data-state='waiting'] { opacity: 0.6; }
