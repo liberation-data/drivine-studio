@@ -1,6 +1,11 @@
-import { Button, Loading, PopUpButton, SegmentedControl, Sheet, Split, TextField } from '@liberation-data/desk/react'
+import { Button, Checkbox, Loading, PopUpButton, SegmentedControl, Sheet, Spinner, Split, TextField } from '@liberation-data/desk/react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { BenchSet, EngineResults, Outcome } from '../server/bench'
+import type { RunJob } from '../server/benchRun'
+import { listConnections, DATABASE_NAMES } from './database'
+import type { StudioConnection } from './database'
+import { listQueries } from './savedQueries'
+import type { SavedQuery } from './savedQueries'
 import { json, read } from './fetching'
 import { folderPicker } from './nativeMenu'
 
@@ -20,6 +25,7 @@ const linkBench = (path: string): Promise<string[]> => fetch(`${API}/links`, jso
 const keyOf = (s: BenchSet) => `${s.source}|${s.set}`
 const nameOf = (s: BenchSet, all: BenchSet[]) => {
   if (s.source === 'published') return 'Published'
+  if (s.source === 'studio') return s.label
   const many = new Set(all.filter(x => x.source !== 'published').map(x => x.source)).size > 1
   const where = many ? `${s.source.split('/').pop()}: ` : ''
   return `${where}${s.set || 'results'}`
@@ -39,6 +45,23 @@ export function Bench() {
   const [results, setResults] = useState<EngineResults[] | null>(null)
   const [base, setBase] = useState<EngineResults[] | null>(null)
   const [linking, setLinking] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [job, setJob] = useState<RunJob | null>(null)
+  // A run going on: read how it's getting on every second, and show its results when it's done.
+  useEffect(() => {
+    if (!job || job.state !== 'running') return
+    const timer = setInterval(() => {
+      fetch(`${API}/runs/${encodeURIComponent(job.id)}`, { cache: 'no-store' }).then(r => read<RunJob>(r)).then(now => {
+        setJob(now)
+        if (now.state === 'done' && now.set) {
+          void reload()
+          setChosen(`studio|${now.set}`)
+          setView('report')
+        }
+      }, () => undefined)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [job])
   const pick = useMemo(folderPicker, [])
 
   const reload = () => listSets().then(got => setSets(got.sets), (e: unknown) => setProblem(message(e)))
@@ -82,7 +105,17 @@ export function Bench() {
           </li>
         ))}
       </ul>
+      <Button size="small" intent="default" onClick={() => setRunning(true)}>New Run…</Button>
       <Button size="small" onClick={link}>Link Graph Bench…</Button>
+      {job && (
+        <div className="studio-bench-job" role="status">
+          {job.state === 'running' && <Spinner label="Running" size="small" />}
+          <span className="desk-text-small">
+            {job.state === 'running' ? `${job.done} of ${job.total}: ${job.now}` : job.state === 'done' ? `${job.name}: done` : `${job.name}: ${job.error}`}
+          </span>
+          {job.state === 'running' && <span className="studio-bench-progress"><span style={{ width: `${(job.done / Math.max(1, job.total)) * 100}%` }} /></span>}
+        </div>
+      )}
     </div>
   )
 
@@ -115,14 +148,29 @@ export function Bench() {
           {problem && <p className="studio-bad desk-text-small studio-finder-problem" role="alert">{problem}</p>}
         </div>
       </Split>
+      {running && (
+        <NewRun
+          onCancel={() => setRunning(false)}
+          onStarted={started => {
+            setRunning(false)
+            setJob(started)
+          }}
+        />
+      )}
       {linking && <LinkBench onDone={linked => { setLinking(false); if (linked) void reload() }} />}
     </>
   )
 }
 
 /** An engine's colour: its slot in the bench's fixed order, so a colour always means the same engine. */
-const SLOT: Record<string, number> = { neo4j: 1, falkordb: 2, oracle: 3, postgres: 4 }
-const colourOf = (engine: string) => `var(--bench-${SLOT[engine] ?? 1})`
+const SLOT: Record<string, number> = { neo4j: 1, falkordb: 2, oracle: 3, postgres: 4, memgraph: 5, neptune: 6 }
+/**
+ * A run of the studio's own names its engines after its connections; each takes its kind of database's colour, so
+ * a Postgres connection is Postgres's yellow as Graph Bench's is. Learnt as results are read.
+ */
+const typeOf = new Map<string, string>()
+const learn = (results: EngineResults[]) => results.forEach(r => r.type && typeOf.set(r.engine, r.type))
+const colourOf = (engine: string) => `var(--bench-${SLOT[typeOf.get(engine) ?? engine] ?? 1})`
 
 /** Lucide's trophy, in the colour around it: the scoreboard's leader, and only it. */
 function Trophy({ size, label }: { size: number; label?: string }) {
@@ -152,6 +200,8 @@ function EngineName({ engine }: { engine: string }) {
 
 function Report({ results, base, baseName }: { results: EngineResults[]; base: EngineResults[] | null; baseName: string | null }) {
   if (!results.length) return <p className="desk-text-small desk-text-muted">No results at this scale.</p>
+  learn(results)
+  if (base) learn(base)
   const engines = results.map(r => r.engine)
   // Compared, a run's figures say as much about its machine as its Drivine: both sets' runs are shown, and the machines counted across them.
   const machines = [...new Set([...results, ...(base ?? [])].map(r => r.run?.machine).filter(Boolean))]
@@ -184,6 +234,7 @@ function Report({ results, base, baseName }: { results: EngineResults[]; base: E
       {machines.length > 1 && <p className="desk-text-small studio-warn">These were run on {machines.length} machines: their numbers don’t compare as they would on one.</p>}
       {[...results, ...(base ?? [])].some(r => !r.run) && <p className="desk-text-small desk-text-muted">Some were written before runs kept their details, so what they ran on isn’t known.</p>}
 
+      {results.some(r => r.load) && <>
       <h3>Load</h3>
       <table className="studio-bench-table">
         <thead><tr><th />{engines.map(e => <th key={e} className="studio-bench-number"><EngineName engine={e} /></th>)}</tr></thead>
@@ -194,6 +245,7 @@ function Report({ results, base, baseName }: { results: EngineResults[]; base: E
           <tr><th>loading relationships, s</th>{results.map(r => <td key={r.engine} className="studio-bench-number">{r.load ? r.load.edgeSeconds.toFixed(1) : '—'}</td>)}</tr>
         </tbody>
       </table>
+      </>}
 
       {groups.map(group => {
         const concurrent = group.endsWith('threads')
@@ -392,7 +444,8 @@ function Scaling({ set }: { set: BenchSet }) {
         lines.set(key, byEngine)
       }
     }
-    const engines = [...new Set(all.map(r => r.engine))].sort((a, b) => (SLOT[a] ?? 9) - (SLOT[b] ?? 9))
+    learn(all)
+    const engines = [...new Set(all.map(r => r.engine))].sort((a, b) => (SLOT[typeOf.get(a) ?? a] ?? 9) - (SLOT[typeOf.get(b) ?? b] ?? 9))
     const sizes = [...new Set(all.map(nodesOf))].sort((a, b) => a - b)
     return { lines, workloads: [...workloads.values()], engines, sizes, crossings: crossovers(lines, [...workloads.values()]) }
   }, [all])
@@ -477,5 +530,90 @@ function ScalingChart({ title, lines, sizes, crossings }: { title: string; lines
         ))}
       </svg>
     </figure>
+  )
+}
+
+/**
+ * A bench of your own: saved queries, chosen by folder or one by one, run on the connections chosen, warmed up and
+ * then timed. It only reads; the report it makes is kept, to read and compare in Bench beside Graph Bench's.
+ */
+function NewRun({ onStarted, onCancel }: { onStarted: (job: RunJob) => void; onCancel: () => void }) {
+  const [queries, setQueries] = useState<SavedQuery[] | null>(null)
+  const [connections, setConnections] = useState<StudioConnection[] | null>(null)
+  const [pickedQueries, setPickedQueries] = useState<Set<string>>(new Set())
+  const [pickedConnections, setPickedConnections] = useState<Set<string>>(new Set())
+  const [name, setName] = useState('')
+  const [warmup, setWarmup] = useState('3')
+  const [runs, setRuns] = useState('20')
+  const [problem, setProblem] = useState<string | null>(null)
+  useEffect(() => {
+    listQueries().then(shelf => setQueries(shelf.queries), (e: unknown) => setProblem(message(e)))
+    listConnections().then(setConnections, (e: unknown) => setProblem(message(e)))
+  }, [])
+  const toggle = (set: Set<string>, id: string, on: boolean) => {
+    const next = new Set(set)
+    if (on) next.add(id)
+    else next.delete(id)
+    return next
+  }
+  const folders = [...new Set((queries ?? []).map(q => q.folder))].sort()
+  const start = () =>
+    fetch(`${API}/runs`, json('POST', { name, connections: [...pickedConnections], queries: [...pickedQueries], warmup: Number(warmup), runs: Number(runs) }))
+      .then(r => read<RunJob>(r))
+      .then(onStarted, (e: unknown) => setProblem(message(e)))
+  return (
+    <Sheet
+      open
+      onDismiss={onCancel}
+      title="New Bench Run"
+      description="Times saved queries on the connections you choose: a few runs to warm up, then the runs that count. It only reads."
+      actions={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button intent="default" onClick={start} disabled={!pickedQueries.size || !pickedConnections.size}>
+            Run {pickedQueries.size * pickedConnections.size || ''}
+          </Button>
+        </>
+      }
+    >
+      <div className="studio-form">
+        <TextField label="Name" placeholder="As it's started: the date and time" value={name} onChange={e => setName(e.target.value)} />
+        <fieldset className="studio-bench-pick">
+          <legend className="desk-text-small">Queries</legend>
+          {!queries ? <Loading label="Reading the queries" /> : queries.length === 0 ? (
+            <p className="desk-text-small desk-text-muted">No saved queries yet. Save some from Cypher, in a folder such as Bench, and they can be run here.</p>
+          ) : folders.map(folder => {
+            const inFolder = queries.filter(q => q.folder === folder)
+            const all = inFolder.every(q => pickedQueries.has(q.id))
+            return (
+              <div key={folder || 'top'} className="studio-bench-folder">
+                <Checkbox
+                  label={folder ? `${folder} (${inFolder.length})` : `Queries (${inFolder.length})`}
+                  checked={all}
+                  indeterminate={!all && inFolder.some(q => pickedQueries.has(q.id))}
+                  onChange={on => setPickedQueries(inFolder.reduce((set, q) => toggle(set, q.id, on), pickedQueries))}
+                />
+                <div className="studio-bench-folder-items">
+                  {inFolder.map(q => (
+                    <Checkbox key={q.id} label={q.name} checked={pickedQueries.has(q.id)} onChange={on => setPickedQueries(toggle(pickedQueries, q.id, on))} />
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </fieldset>
+        <fieldset className="studio-bench-pick">
+          <legend className="desk-text-small">Connections</legend>
+          {!connections ? <Loading label="Reading the connections" /> : connections.map(c => (
+            <Checkbox key={c.id} label={`${c.name} · ${DATABASE_NAMES[c.type]}`} checked={pickedConnections.has(c.id)} onChange={on => setPickedConnections(toggle(pickedConnections, c.id, on))} />
+          ))}
+        </fieldset>
+        <div className="studio-bench-counts">
+          <TextField label="Warm-up runs" type="number" min={0} max={100} value={warmup} onChange={e => setWarmup(e.target.value)} />
+          <TextField label="Timed runs" type="number" min={1} max={1000} value={runs} onChange={e => setRuns(e.target.value)} />
+        </div>
+        {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
+      </div>
+    </Sheet>
   )
 }
