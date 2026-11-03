@@ -249,3 +249,22 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-linked-icon > svg:first-child { width: 100%; height: 100%; }
 .studio-link-badge { position: absolute; right: -2%; bottom: -2%; width: 42%; height: 42%; filter: drop-shadow(0 1px 2px rgb(2 28 38 / 35%)); }
 .studio-finder-view .desk-icon-glyph > .studio-linked-icon { width: 100%; height: 100%; }
+
+/* Bench: Graph Bench's results, as tables of numbers to read across. */
+.studio-bench-sets { display: flex; flex-direction: column; gap: var(--desk-space-2); padding: var(--desk-space-3); height: 100%; overflow-y: auto; }
+.studio-bench-heading { margin: 0; letter-spacing: 0.08em; font-weight: 600; }
+.studio-bench-body { flex: 1; min-height: 0; overflow: auto; padding: var(--desk-space-4); }
+.studio-bench-report h3 { margin: var(--desk-space-4) 0 var(--desk-space-2); font-size: var(--desk-text-body); font-weight: 600; }
+.studio-bench-report h3:first-of-type { margin-top: 0; }
+.studio-bench-table { border-collapse: collapse; width: 100%; font-size: var(--desk-text-small); }
+.studio-bench-table th, .studio-bench-table td { padding: 4px 8px; border-bottom: 1px solid var(--desk-rule); text-align: start; vertical-align: top; }
+.studio-bench-table thead th { color: var(--desk-muted); font-weight: 500; }
+.studio-bench-table tbody th { font-weight: 500; }
+.studio-bench-table .studio-bench-number { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.studio-bench-mono { font-family: var(--desk-font-mono); }
+.studio-bench-workload { max-width: 32ch; }
+/* The best of a row: the accent's tint behind it. */
+.studio-bench-table td[data-best] { background: color-mix(in srgb, var(--desk-accent) 14%, transparent); font-weight: 600; }
+.studio-bench-faster, .studio-bench-slower { display: block; font-size: var(--desk-text-caption); }
+.studio-bench-faster { color: color-mix(in srgb, var(--desk-ok) 70%, var(--desk-ink)); }
+.studio-bench-slower { color: var(--desk-bad); }

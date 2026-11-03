@@ -12,6 +12,7 @@ import { Canvas } from './Canvas'
 import { Catalogue } from './Catalogue'
 import { Connections } from './Connections'
 import { Cypher } from './Cypher'
+import { Bench } from './Bench'
 import { Files, QueryIcon } from './Files'
 import { listQueries, QUERY_DRAG } from './savedQueries'
 import type { QueryDrag } from './savedQueries'
@@ -48,6 +49,7 @@ const LIMITS: Record<string, WindowLimits> = {
   cypher: { minWidth: 520, minHeight: 360 },
   connections: { minWidth: 560, minHeight: 360 },
   files: { minWidth: 640, minHeight: 360 },
+  bench: { minWidth: 720, minHeight: 360 },
 }
 
 /**
@@ -81,13 +83,16 @@ function infoOf(id: string, connection: StudioConnection | null): ReactNode {
   if (id === 'files') {
     return 'Queries saved from Cypher, each a .cypher file in the queries folder of the studio’s home, in folders of your own, so an editor opens them too; and the model files the studio reads, one for each module. Double-click a query to open it in Cypher.'
   }
+  if (id === 'bench') {
+    return 'Graph Bench’s results: the ones it publishes, and the runs of a checkout you link. Compare one set with another to see what a Drivine release made faster or slower, on the same machine.'
+  }
   if (id === 'connections') {
     return 'The databases the studio reads, kept in connections.json in its home, passwords too, readable by you alone. One from the environment is set where the studio was started.'
   }
   return null
 }
 
-const TITLES: Record<string, string> = { files: 'Files', explore: 'Explore', cypher: 'Cypher', connections: 'Connections' }
+const TITLES: Record<string, string> = { files: 'Files', explore: 'Explore', cypher: 'Cypher', bench: 'Bench', connections: 'Connections' }
 const title = (id: string) => TITLES[id] ?? id
 
 /** A saved query as the Cypher window knows the one it holds. */
@@ -156,6 +161,7 @@ function renderWindow(id: string): ReactNode {
   if (id === 'cypher') return <Cypher />
   if (id === 'connections') return <Connections />
   if (id === 'files') return <Files />
+  if (id === 'bench') return <Bench />
   return null
 }
 
@@ -189,6 +195,7 @@ const DOCK = [
   dockItem({ id: 'files', label: 'Files', description: 'Saved queries, in folders, and the model files the studio reads', icon: icon('M4 5a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM8 11l-2 2 2 2M16 11l2 2-2 2M13 10l-2 6') }),
   dockItem({ id: 'explore', label: 'Explore', description: 'Views and fragments, loaded and seen as a graph', icon: icon('M6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7.7 7l8.5 2.4M16.6 11.5l-7.2 5.3M6.4 8l1.2 8') }),
   dockItem({ id: 'cypher', label: 'Cypher', description: 'Run Cypher, see a graph or rows', icon: icon('M8 6l-5 6 5 6M16 6l5 6-5 6M14 4l-4 16') }),
+  dockItem({ id: 'bench', label: 'Bench', description: 'Graph Bench results, read and compared', icon: icon('M4 20V10M10 20V4M16 20v-7M22 20H2') }),
   dockItem({ id: 'connections', label: 'Connections', description: 'The databases to read', icon: icon('M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2zM4 6v12c0 1.1 3.6 2 8 2s8-.9 8-2V6M4 12c0 1.1 3.6 2 8 2s8-.9 8-2') }),
 ]
 
@@ -287,7 +294,7 @@ export function App() {
       label: 'Window',
       // The studio's windows to open, as a Mac app lists its own tools here, then the ones open now.
       items: () => [
-        ...['files', 'explore', 'cypher', 'connections'].map(id => menuAction(title(id), () => desk.open(id))),
+        ...['files', 'explore', 'cypher', 'bench', 'connections'].map(id => menuAction(title(id), () => desk.open(id))),
         menuSeparator(),
         menuCommand('Arrange', DeskCommands.arrange, { shortcut: 'mod+alt+a' }),
         menuSeparator(),
