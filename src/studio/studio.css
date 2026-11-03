@@ -206,3 +206,33 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-query-line { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--desk-font-mono); }
 .studio-queries { margin-top: var(--desk-space-2); }
 .studio-queries-heading { margin: var(--desk-space-3) 0 var(--desk-space-1); font-weight: 600; }
+
+/* Files: a Finder of the studio's queries and model files. */
+.studio-finder { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.studio-finder-bar {
+  display: flex; align-items: center; gap: var(--desk-space-2); min-height: var(--desk-control-height);
+  padding: var(--desk-space-2) var(--desk-space-3); border-bottom: 1px solid var(--desk-rule);
+}
+.studio-crumbs { display: flex; align-items: center; min-width: 0; overflow: hidden; white-space: nowrap; }
+.studio-crumb { padding: 2px 4px; border: 0; border-radius: 4px; background: none; color: var(--desk-muted); font: inherit; cursor: pointer; }
+.studio-crumb:hover { background: color-mix(in srgb, var(--desk-ink) 8%, transparent); }
+.studio-crumb[aria-current] { color: var(--desk-ink); font-weight: 600; }
+.studio-find { width: 12rem; }
+.studio-finder-body { display: flex; flex: 1; min-height: 0; }
+.studio-finder-view { flex: 1; min-width: 0; overflow: auto; padding: var(--desk-space-3); }
+.studio-finder-problem { padding: var(--desk-space-2) var(--desk-space-3); }
+.studio-file-name { display: inline-flex; align-items: center; gap: var(--desk-space-2); }
+.studio-file-icon { display: inline-flex; color: var(--desk-accent); }
+.studio-file-icon svg { width: 16px; height: 16px; }
+/* The panel beside the view: what is chosen, in the tone that stands off what it is chosen from. */
+.studio-details {
+  flex: none; width: min(320px, 45%); overflow-y: auto; padding: var(--desk-space-4);
+  display: flex; flex-direction: column; gap: var(--desk-space-2);
+  border-left: 1px solid var(--desk-rule); background: color-mix(in srgb, var(--desk-ink) 5%, var(--desk-surface));
+}
+.studio-details h3 { margin: 0; font-size: var(--desk-text-lead); font-weight: 600; overflow-wrap: anywhere; }
+.studio-details h4 { margin: var(--desk-space-2) 0 0; }
+.studio-details p { margin: 0; }
+.studio-details-icon { color: var(--desk-accent); }
+.studio-details-path { font-family: var(--desk-font-mono); overflow-wrap: anywhere; color: var(--desk-muted); }
+.studio-details-actions { display: flex; gap: var(--desk-space-2); margin-top: var(--desk-space-2); }

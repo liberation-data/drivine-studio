@@ -172,3 +172,20 @@ export const addModelPath = (path: string): Promise<ModelPath[]> =>
 
 export const removeModelPath = (path: string): Promise<ModelPath[]> =>
   fetch(`${API}/models`, json('DELETE', { path })).then(r => read<ModelPath[]>(r))
+
+/** A model file found under a path the studio reads, as the Files window lists it. */
+export interface ModelFileEntry {
+  path: string
+  under: string
+  module: string
+  views: number
+  fragments: number
+  modified: string
+  problem?: string
+}
+
+export const listModelFiles = (): Promise<ModelFileEntry[]> =>
+  fetch(`${API}/models/files`, { cache: 'no-store' }).then(r => read<ModelFileEntry[]>(r))
+
+export const readModelFile = (path: string): Promise<string> =>
+  fetch(`${API}/models/files?${new URLSearchParams({ path })}`, { cache: 'no-store' }).then(r => read<{ text: string }>(r)).then(r => r.text)

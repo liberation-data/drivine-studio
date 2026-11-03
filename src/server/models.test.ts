@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { addModelPath, findModelFiles, listModelPaths, ModelPathError, parseModel, readCatalog, removeModelPath } from './models'
+import { addModelPath, findModelFiles, listModelFiles, listModelPaths, ModelPathError, parseModel, readCatalog, readModelFile, removeModelPath } from './models'
 
 let dir: string
 const saved = { ...process.env }
@@ -156,5 +156,25 @@ describe('the paths to look in', () => {
     process.env.DRIVINE_STUDIO_MODELS = '/from/env'
     await expect(removeModelPath('/from/env')).rejects.toThrow(ModelPathError)
     expect(await listModelPaths()).toHaveLength(1)
+  })
+})
+
+describe('the model files, as files', () => {
+  it('lists each one found, with its module and what it declares, and reads only those', async () => {
+    const project = join(dir, 'project')
+    await mkdir(join(project, 'app', '.drivine'), { recursive: true })
+    await writeFile(join(project, 'app', '.drivine', 'model.json'), await sample())
+    await mkdir(join(project, 'broken', '.drivine'), { recursive: true })
+    await writeFile(join(project, 'broken', '.drivine', 'model.json'), 'not json')
+    process.env.DRIVINE_STUDIO_MODELS = project
+    const files = await listModelFiles()
+    const model = parseModel(await sample())
+    expect(files).toEqual([
+      expect.objectContaining({ path: join(project, 'app', '.drivine', 'model.json'), under: project, module: model.module, views: model.views.length }),
+      expect.objectContaining({ path: join(project, 'broken', '.drivine', 'model.json'), problem: expect.stringMatching(/not JSON/) }),
+    ])
+    expect(await readModelFile(files[0]!.path)).toBe(await sample())
+    await expect(readModelFile(join(dir, 'home', 'connections.json'))).rejects.toThrow(ModelPathError)
+    await expect(readModelFile('/etc/passwd')).rejects.toThrow(/not a model file/)
   })
 })

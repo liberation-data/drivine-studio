@@ -1,10 +1,10 @@
 import { addCommandHandler, windowElement } from '@liberation-data/desk'
-import { Button, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField, useWindowId } from '@liberation-data/desk/react'
+import { Button, PopUpButton, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField, useWindowId } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { StudioCommands, useStudio } from './App'
 import type { SavedAs } from './App'
-import { addQuery, firstLine, updateQuery } from './savedQueries'
+import { addQuery, firstLine, listQueries, updateQuery } from './savedQueries'
 import type { SavedQuery } from './savedQueries'
 import { DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
 import type { Cell, CypherResult } from './database'
@@ -122,7 +122,7 @@ export function Cypher() {
   }
 
   const kept = useCallback((saved: SavedQuery) => {
-    setSavedAs({ id: saved.id, name: saved.name })
+    setSavedAs({ id: saved.id, name: saved.name, folder: saved.folder })
     savedQuery()
     setSavedNote('Saved')
   }, [savedQuery])
@@ -146,7 +146,7 @@ export function Cypher() {
     const save = () => {
       const { statement, parameters, savedAs } = now.current
       if (!savedAs) return setSaving('save')
-      updateQuery(savedAs.id, { name: savedAs.name, statement, parameters }).then(kept, () => setSaving('save'))
+      updateQuery(savedAs.id, { name: savedAs.name, folder: savedAs.folder, statement, parameters }).then(kept, () => setSaving('save'))
     }
     const removers = [
       addCommandHandler(element, StudioCommands.save, save, { enabled: something }),
@@ -350,13 +350,20 @@ function SaveQuery({ statement, parameters, savedAs, onDone }: {
   savedAs: SavedAs | null
   onDone: (saved: SavedQuery | null) => void
 }) {
+  const { browsing } = useStudio()
   const [name, setName] = useState(() => savedAs?.name ?? firstLine(statement).slice(0, 60))
+  // The folder it is in, or for a new one the folder Files is showing.
+  const [folder, setFolder] = useState(() => savedAs?.folder ?? browsing)
+  const [folders, setFolders] = useState<string[]>([])
   const [problem, setProblem] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    listQueries().then(shelf => setFolders(shelf.folders.map(f => f.path)), () => setFolders([]))
+  }, [])
   const save = (asNew: boolean) => {
     setBusy(true)
     setProblem(null)
-    const input = { name, statement, parameters }
+    const input = { name, folder, statement, parameters }
     const saved = savedAs && !asNew ? updateQuery(savedAs.id, input) : addQuery(input)
     saved.then(onDone, (e: unknown) => {
       setBusy(false)
@@ -368,7 +375,7 @@ function SaveQuery({ statement, parameters, savedAs, onDone }: {
       open
       onDismiss={() => onDone(null)}
       title={savedAs ? `Save ${savedAs.name}` : 'Save Query'}
-      description="Kept as a .cypher file in the studio's home, with its parameters, to open again from Queries."
+      description="Kept as a .cypher file in the studio's home, with its parameters, to open again from Files."
       actions={
         <>
           <Button onClick={() => onDone(null)}>Cancel</Button>
@@ -383,7 +390,17 @@ function SaveQuery({ statement, parameters, savedAs, onDone }: {
           save(false)
         }}
       >
-        <TextField label="Name" value={name} onChange={e => setName(e.target.value)} autoFocus />
+        <div className="studio-form">
+          <TextField label="Name" value={name} onChange={e => setName(e.target.value)} autoFocus />
+          {folders.length > 0 && (
+            <PopUpButton
+              label="Folder"
+              value={folder}
+              onChange={setFolder}
+              options={[{ value: '', label: 'Queries' }, ...folders.map(path => ({ value: path, label: `Queries / ${path.split('/').join(' / ')}` }))]}
+            />
+          )}
+        </div>
         {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
       </form>
     </Sheet>
