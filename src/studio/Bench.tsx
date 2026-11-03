@@ -2,6 +2,8 @@ import { Button, Checkbox, Loading, PopUpButton, SegmentedControl, Sheet, Spinne
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { BenchSet, EngineResults, Outcome } from '../server/bench'
 import type { RunJob } from '../server/benchRun'
+import type { Loaded, LoadJob } from '../server/benchLoad'
+import { Scale } from '../server/benchData'
 import { listConnections, DATABASE_NAMES } from './database'
 import type { StudioConnection } from './database'
 import { listQueries } from './savedQueries'
@@ -47,6 +49,16 @@ export function Bench() {
   const [linking, setLinking] = useState(false)
   const [running, setRunning] = useState(false)
   const [job, setJob] = useState<RunJob | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [load, setLoad] = useState<LoadJob | null>(null)
+  // A load going on: read how it's getting on every second.
+  useEffect(() => {
+    if (!load || load.state !== 'running') return
+    const timer = setInterval(() => {
+      fetch(`${API}/loads/${encodeURIComponent(load.id)}`, { cache: 'no-store' }).then(r => read<LoadJob>(r)).then(setLoad, () => undefined)
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [load])
   // A run going on: read how it's getting on every second, and show its results when it's done.
   useEffect(() => {
     if (!job || job.state !== 'running') return
@@ -106,7 +118,21 @@ export function Bench() {
         ))}
       </ul>
       <Button size="small" intent="default" onClick={() => setRunning(true)}>New Run…</Button>
+      <Button size="small" onClick={() => setLoading(true)}>Load Graph Bench Data…</Button>
       <Button size="small" onClick={link}>Link Graph Bench…</Button>
+      {load && (
+        <div className="studio-bench-job" role="status">
+          {load.state === 'running' && <Spinner label="Loading" size="small" />}
+          <span className="desk-text-small">
+            {load.state === 'running'
+              ? `Loading scale ${load.scale}: ${load.now}`
+              : load.state === 'done' && load.loaded
+                ? `Loaded scale ${load.scale}: ${load.loaded.load.nodes.toLocaleString()} nodes, ${load.loaded.load.edges.toLocaleString()} relationships in ${Math.round(load.loaded.load.schemaSeconds + load.loaded.load.nodeSeconds + load.loaded.load.edgeSeconds)} s`
+                : `Loading scale ${load.scale} stopped: ${load.error}`}
+          </span>
+          {load.state === 'running' && <span className="studio-bench-progress"><span style={{ width: `${Math.min(100, (load.done / Math.max(1, load.total)) * 100)}%` }} /></span>}
+        </div>
+      )}
       {job && (
         <div className="studio-bench-job" role="status">
           {job.state === 'running' && <Spinner label="Running" size="small" />}
@@ -154,6 +180,15 @@ export function Bench() {
           onStarted={started => {
             setRunning(false)
             setJob(started)
+          }}
+        />
+      )}
+      {loading && (
+        <LoadData
+          onCancel={() => setLoading(false)}
+          onStarted={started => {
+            setLoading(false)
+            setLoad(started)
           }}
         />
       )}
@@ -612,6 +647,72 @@ function NewRun({ onStarted, onCancel }: { onStarted: (job: RunJob) => void; onC
           <TextField label="Warm-up runs" type="number" min={0} max={100} value={warmup} onChange={e => setWarmup(e.target.value)} />
           <TextField label="Timed runs" type="number" min={1} max={1000} value={runs} onChange={e => setRuns(e.target.value)} />
         </div>
+        {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
+      </div>
+    </Sheet>
+  )
+}
+
+/** The scales offered, from a quick look to a graph of millions. */
+const SCALES = [0.001, 0.01, 0.1, 1, 3, 10]
+const SLOW_SCALE = 0.1
+
+/**
+ * Graph Bench's dataset, loaded into a connection that allows writes: the same graph Graph Bench makes, so its
+ * workloads and saved queries are timed on the same data in each store, and bench runs there say what scale it was.
+ */
+function LoadData({ onStarted, onCancel }: { onStarted: (job: LoadJob) => void; onCancel: () => void }) {
+  const [connections, setConnections] = useState<StudioConnection[] | null>(null)
+  const [loaded, setLoaded] = useState<Record<string, Loaded>>({})
+  const [connection, setConnection] = useState('')
+  const [scale, setScale] = useState(0.01)
+  const [problem, setProblem] = useState<string | null>(null)
+  useEffect(() => {
+    listConnections().then(got => {
+      setConnections(got)
+      setConnection(got.find(c => c.allowWrites)?.id ?? '')
+    }, (e: unknown) => setProblem(message(e)))
+    fetch(`${API}/loads`, { cache: 'no-store' }).then(r => read<Record<string, Loaded>>(r)).then(setLoaded, () => undefined)
+  }, [])
+  const size = new Scale(scale)
+  const there = loaded[connection]
+  const start = () =>
+    fetch(`${API}/loads`, json('POST', { connection, scale }))
+      .then(r => read<LoadJob>(r))
+      .then(onStarted, (e: unknown) => setProblem(message(e)))
+  const writable = (connections ?? []).filter(c => c.allowWrites)
+  return (
+    <Sheet
+      open
+      onDismiss={onCancel}
+      title="Load Graph Bench Data"
+      description="The graph Graph Bench makes, node for node: orgs, people, repos, topics, issues and comments. Loaded with Cypher through Drivine, into a graph that doesn't have it yet."
+      actions={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button intent="default" onClick={start} disabled={!connection}>Load</Button>
+        </>
+      }
+    >
+      <div className="studio-form">
+        {!connections ? <Loading label="Reading the connections" /> : writable.length === 0 ? (
+          <p className="desk-text-small desk-text-muted">None of your connections allows writes. Allow them in a connection’s settings to load data there.</p>
+        ) : (
+          <PopUpButton
+            label="Into" value={connection} onChange={setConnection}
+            options={writable.map(c => ({ value: c.id, label: `${c.name} · ${DATABASE_NAMES[c.type]}` }))}
+          />
+        )}
+        {there && <p className="desk-text-small desk-text-muted">Scale {there.scale} was loaded here on {new Date(there.at).toLocaleDateString()}. Loading again needs an empty graph.</p>}
+        <SegmentedControl label="Scale" size="small" value={String(scale)} onChange={v => setScale(Number(v))} options={SCALES.map(s => ({ value: String(s), label: String(s) }))} />
+        <p className="desk-text-small">
+          About {size.nodes.toLocaleString()} nodes and {(size.nodes * 4).toLocaleString()} relationships.
+        </p>
+        {scale > SLOW_SCALE && (
+          <p className="desk-text-small studio-warn" role="note">
+            A big load. Through Cypher it can take hours{scale >= 3 ? ', and several gigabytes of disk' : ''}; Graph Bench’s own bulk loader is quicker for Postgres and Oracle. Bench runs on this connection meanwhile would time a graph half made.
+          </p>
+        )}
         {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
       </div>
     </Sheet>

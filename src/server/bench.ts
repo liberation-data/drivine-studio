@@ -144,7 +144,7 @@ export async function benchResults(source: string, set: string, scale: number, f
 }
 
 /** As Graph Bench names its files: `1.0`, `0.05`. */
-const scaleText = (scale: number) => (Number.isInteger(scale) ? scale.toFixed(1) : String(scale))
+export const scaleText = (scale: number) => (Number.isInteger(scale) ? scale.toFixed(1) : String(scale))
 
 function inventory(files: string[]): { scales: number[]; engines: string[] } {
   const scales = new Set<number>()
