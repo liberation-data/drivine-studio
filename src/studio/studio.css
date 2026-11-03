@@ -188,3 +188,4 @@ html, body, #root { height: 100%; margin: 0; }
 /* A database in Docker: how its container stands, and what can be done to it, on one line. */
 .studio-docker { display: flex; flex-wrap: wrap; align-items: center; gap: var(--desk-space-2); }
 .studio-docker-job { display: flex; align-items: center; gap: var(--desk-space-2); overflow-wrap: anywhere; }
+.studio-test-failed { display: flex; flex-direction: column; align-items: flex-start; gap: var(--desk-space-2); margin-bottom: var(--desk-space-3); }

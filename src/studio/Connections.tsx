@@ -178,6 +178,9 @@ export function Connections() {
   )
 }
 
+/** What a driver says when nothing listens where a connection points: Neo4j's, Postgres's and Node's own words for it. */
+const UNREACHABLE = /ECONNREFUSED|connection refused|Failed to connect to server|ServiceUnavailable|connect ECONN/i
+
 /** What the database field is, for each kind of database. */
 const DATABASE_FIELD: Record<DatabaseType, { label: string; help: string } | null> = {
   NEO4J: { label: 'Database', help: 'The server\'s default database when empty.' },
@@ -321,6 +324,7 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
   // One from the environment is the studio's to read, not to change: it is set where the studio was started.
   const fixed = !isNew && editing.source === 'environment'
   const changed = JSON.stringify(draft) !== JSON.stringify(initial)
+  const [dockerAsk, setDockerAsk] = useState(0)
 
   useEffect(() => onDirty(changed), [changed, onDirty])
 
@@ -383,7 +387,15 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
   return (
     <Pane header={header} footer={footer} padded label={isNew ? 'New Connection' : editing.name}>
       {/* The mark by the title says how it went; why one failed is worth its own lines. */}
-      {test?.state === 'failed' && <p className="desk-text-small studio-bad" role="alert">{test.message}</p>}
+      {test?.state === 'failed' && (
+        <div className="studio-test-failed">
+          <p className="desk-text-small studio-bad" role="alert">{test.message}</p>
+          {/* Nothing listening, on a host Docker can run it on: the moment to offer one. */}
+          {UNREACHABLE.test(test.message) && dockerCommand(draft).kind === 'command' && (
+            <Button size="small" onClick={() => setDockerAsk(n => n + 1)}>Start It in Docker</Button>
+          )}
+        </div>
+      )}
       {fixed && (
         <p className="desk-text-small desk-text-muted">
           From the environment the studio was started in, by Drivine&apos;s DATABASE_TYPE, DATABASE_HOST and the rest. Change
@@ -444,7 +456,7 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
         <button type="submit" hidden />
       </form>
       {!fixed && (
-        <RunInDocker draft={draft} connectionId={isNew ? undefined : editing.id} passwordKept={hadPassword && !draft.clearPassword} onFill={set} />
+        <RunInDocker draft={draft} connectionId={isNew ? undefined : editing.id} passwordKept={hadPassword && !draft.clearPassword} onFill={set} ask={dockerAsk} />
       )}
     </Pane>
   )
@@ -454,13 +466,16 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
  * No database yet: one of this kind, run here in Docker as Drivine's own tests run it. The studio starts it, as Neo4j
  * Desktop does, and fills in the connection once it answers; or the command is there to paste into a terminal.
  */
-function RunInDocker({ draft, connectionId, passwordKept, onFill }: {
+function RunInDocker({ draft, connectionId, passwordKept, onFill, ask }: {
   draft: Draft
   connectionId: string | undefined
   passwordKept: boolean
   onFill: (fill: Partial<Draft>) => void
+  /** Raised to open this and start the container: a test that found nothing listening offers it. */
+  ask: number
 }) {
   const [open, setOpen] = useState(false)
+  const section = useRef<HTMLDivElement>(null)
   const [here, setHere] = useState<DockerStatus | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [removing, setRemoving] = useState(false)
@@ -499,12 +514,27 @@ function RunInDocker({ draft, connectionId, passwordKept, onFill }: {
   const act = (action: 'start' | 'stop' | 'remove') => {
     setProblem(null)
     setRemoving(false)
-    dockerAction(action, draft, connectionId).then(refresh, (e: unknown) => setProblem(message(e)))
+    dockerAction(action, draft, connectionId).then(refresh, (e: unknown) => {
+      setProblem(message(e))
+      refresh()
+    })
   }
+
+  const asked = useRef(ask)
+  useEffect(() => {
+    if (ask === asked.current) return
+    asked.current = ask
+    setOpen(true)
+    section.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    act('start')
+  }, [ask]) // act reads the draft as it is when asked
 
   const container = here?.container
   const ours = container !== undefined && container.kind !== 'missing' && container.ours
+  const taken = here?.port.kind === 'taken' ? here.port : null
+  const startable = container !== undefined && (container.kind === 'missing' || (container.kind === 'stopped' && ours))
   return (
+    <div ref={section}>
     <Disclosure label="Run it in Docker" open={open} onOpenChange={setOpen}>
       {made.kind === 'none' ? (
         <p className="desk-text-small desk-text-muted">{made.why}</p>
@@ -523,12 +553,20 @@ function RunInDocker({ draft, connectionId, passwordKept, onFill }: {
                 {container.kind !== 'missing' && !container.ours && ' The studio did not make it, so leaves it alone.'}
               </span>
               <span className="desk-grow" />
-              {(container.kind === 'missing' || (container.kind === 'stopped' && ours)) && (
-                <Button size="small" intent="default" onClick={() => act('start')} disabled={busy}>Start</Button>
+              {startable && (
+                <Button intent="default" onClick={() => act('start')} disabled={busy || taken !== null}>
+                  Start {DATABASE_NAMES[draft.type]} in Docker
+                </Button>
               )}
               {container.kind === 'running' && ours && <Button size="small" onClick={() => act('stop')} disabled={busy}>Stop</Button>}
               {ours && <Button size="small" intent="quiet" onClick={() => setRemoving(true)} disabled={busy}>Remove…</Button>}
             </div>
+          )}
+          {taken && startable && !busy && (
+            <p className="desk-text-small studio-warn" role="note">
+              Port {draft.port || made.run.port} is in use by {taken.by ?? 'something else on this machine'}. Choose another port to start one
+              here, or Test the connection: a database may be there already.
+            </p>
           )}
           {job && (
             <p className={`desk-text-small ${job.state === 'failed' ? 'studio-bad' : 'desk-text-muted'} studio-docker-job`} role={job.state === 'failed' ? 'alert' : 'status'}>
@@ -560,5 +598,6 @@ function RunInDocker({ draft, connectionId, passwordKept, onFill }: {
         </div>
       )}
     </Disclosure>
+    </div>
   )
 }

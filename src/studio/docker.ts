@@ -155,8 +155,13 @@ export interface Job {
   error?: string
 }
 
+/** Whether something on this machine already listens on the port, and what, when Docker can say. */
+export type PortHere = { kind: 'free' } | { kind: 'taken'; by: string | null }
+
 export interface DockerStatus {
   docker: DockerHere
   container: Container
+  /** The port, when the container is not the one on it. */
+  port: PortHere
   job: Job | null
 }

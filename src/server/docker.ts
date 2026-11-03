@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process'
+import { connect } from 'node:net'
 
 import { dockerArgs, dockerCommand, STUDIO_LABEL } from '../studio/docker'
-import type { Container, DockerDraft, DockerHere, DockerRun, DockerStatus, Job } from '../studio/docker'
+import type { Container, DockerDraft, DockerHere, DockerRun, DockerStatus, Job, PortHere } from '../studio/docker'
 import { DATABASE_TYPES } from '../studio/database'
 import type { DatabaseType } from '../studio/database'
 import { ConnectionError } from './connections'
@@ -111,8 +112,32 @@ function runOf(draft: DockerDraft): { run: DockerRun; fill: Partial<DockerDraft>
 export async function status(draft: DockerDraft): Promise<DockerStatus> {
   const { run } = runOf(draft)
   const here = await dockerHere()
-  return { docker: here, container: here.kind === 'ready' ? await container(run) : { kind: 'missing' }, job: jobs.get(run.name) ?? null }
+  const there: Container = here.kind === 'ready' ? await container(run) : { kind: 'missing' }
+  // The container's own port is not taken from it: only something else on it is said.
+  const own = there.kind === 'running' && there.port === run.port
+  return { docker: here, container: there, port: own ? { kind: 'free' } : await portHere(run.port, here.kind === 'ready'), job: jobs.get(run.name) ?? null }
 }
+
+/** Whether anything answers on the port here, and which container publishes it, when one does. */
+export async function portHere(port: number, askDocker: boolean): Promise<PortHere> {
+  if (!(await listening(port))) return { kind: 'free' }
+  if (!askDocker) return { kind: 'taken', by: null }
+  const ran = await docker(['ps', '--filter', `publish=${port}`, '--format', '{{.Names}}'])
+  const by = ran.code === 0 ? (ran.out.trim().split(/\r?\n/)[0] ?? '') : ''
+  return { kind: 'taken', by: by ? `the container ${by}` : null }
+}
+
+const listening = (port: number): Promise<boolean> =>
+  new Promise(resolve => {
+    const socket = connect({ host: '127.0.0.1', port })
+    const done = (answer: boolean) => {
+      socket.destroy()
+      resolve(answer)
+    }
+    socket.setTimeout(500, () => done(false))
+    socket.once('connect', () => done(true))
+    socket.once('error', () => done(false))
+  })
 
 /** What a draft says of the type, checked: the browser's word for it is not taken on trust. */
 export function draftOf(input: unknown): DockerDraft {
@@ -141,6 +166,11 @@ export async function start(draft: DockerDraft): Promise<Job> {
   if (there.kind !== 'missing' && there.port !== null && there.port !== run.port) {
     throw new ConnectionError(`${run.name} was made for port ${there.port}. Set Port to ${there.port}, or remove it to make one for ${run.port}.`)
   }
+  // Something else on the port would only make Docker's start fail, after a download: said before anything is done.
+  if (!(there.kind === 'running' && there.port === run.port)) {
+    const port = await portHere(run.port, true)
+    if (port.kind === 'taken') throw new ConnectionError(portTakenBy(run.port, port.by))
+  }
   const job: Job = { state: 'starting', detail: '', started: Date.now() }
   jobs.set(run.name, job)
   void startIn(job, run, { ...draft, ...fill }, there).catch((e: unknown) => {
@@ -164,12 +194,12 @@ async function startIn(job: Job, run: DockerRun, settings: DockerDraft, there: C
     job.state = 'starting'
     say(`Starting ${run.name}`)
     const ran = await docker(dockerArgs(run))
-    if (ran.code !== 0) throw new Error(portTaken(ran.err) ? `Port ${run.port} is in use on this machine. Choose another port.` : lastLine(ran.err))
+    if (ran.code !== 0) throw new Error(portTaken(ran.err) ? portTakenBy(run.port, null) : lastLine(ran.err))
   } else if (there.kind === 'stopped') {
     job.state = 'starting'
     say(`Starting ${run.name} again`)
     const ran = await docker(['start', run.name])
-    if (ran.code !== 0) throw new Error(portTaken(ran.err) ? `Port ${run.port} is in use on this machine. Choose another port.` : lastLine(ran.err))
+    if (ran.code !== 0) throw new Error(portTaken(ran.err) ? portTakenBy(run.port, null) : lastLine(ran.err))
   }
   job.state = 'waiting'
   say('Waiting for the database to answer')
@@ -178,6 +208,10 @@ async function startIn(job: Job, run: DockerRun, settings: DockerDraft, there: C
   job.state = 'ready'
   say(`Answered in ${Math.round(answered / 1000)} s`)
 }
+
+/** What is said of a taken port, by the page and by a start alike. */
+export const portTakenBy = (port: number, by: string | null) =>
+  `Port ${port} is in use by ${by ?? 'something else on this machine'}. Choose another port, or Test the connection: a database may be there already.`
 
 const portTaken = (err: string) => /port is already allocated|address already in use/i.test(err)
 const lastLine = (text: string) => text.trim().split(/\r?\n/).pop() ?? ''

@@ -1,7 +1,9 @@
 import { EventEmitter } from 'node:events'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createServer } from 'node:net'
+import type { AddressInfo } from 'node:net'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { check } from './datasources'
-import { containerOf, dockerHere, draftOf, start, stop } from './docker'
+import { containerOf, dockerHere, draftOf, portHere, start, stop } from './docker'
 
 // What `docker` answers, by its arguments: the test sets it, and every call is recorded.
 type Answer = { code: number; out?: string; err?: string; enoent?: boolean }
@@ -36,7 +38,15 @@ vi.mock('./datasources', async original => ({
 const inspected = (running: boolean, labels: Record<string, string> | null, port: string) =>
   JSON.stringify([{ State: { Running: running }, Config: { Labels: labels }, HostConfig: { PortBindings: { '5432/tcp': [{ HostPort: port }] } } }])
 
-const postgres = { type: 'POSTGRES' as const, host: 'localhost', port: '55432', user: 'studio', password: 'secret', database: 'studio' }
+// On a port nothing here listens on: the start looks before it runs anything.
+const postgres = { type: 'POSTGRES' as const, host: 'localhost', port: '', user: 'studio', password: 'secret', database: 'studio' }
+
+beforeAll(async () => {
+  const server = createServer().listen(0, '127.0.0.1')
+  await new Promise(resolve => server.once('listening', resolve))
+  postgres.port = String((server.address() as AddressInfo).port)
+  await new Promise(resolve => server.close(resolve))
+})
 
 /** Docker up, with these containers and images; anything else it is asked succeeds. */
 const dockerWith = ({ container, image = true, run }: { container?: string; image?: boolean; run?: Answer }) => (args: string[]): Answer => {
@@ -77,12 +87,12 @@ describe('starting one', () => {
     await vi.waitFor(() => expect(job.state).toBe('ready'))
     expect(calls).toContainEqual(['pull', 'pgvector/pgvector:pg16'])
     const run = calls.find(args => args[0] === 'run')
-    expect(run).toEqual(expect.arrayContaining(['--name', 'drivine-postgres', '--label', 'org.drivine.studio=1', '-p', '55432:5432', 'POSTGRES_PASSWORD=secret']))
-    expect(check).toHaveBeenCalledWith(expect.objectContaining({ type: 'POSTGRES', host: 'localhost', port: 55432, user: 'studio', password: 'secret', database: 'studio' }))
+    expect(run).toEqual(expect.arrayContaining(['--name', 'drivine-postgres', '--label', 'org.drivine.studio=1', '-p', `${postgres.port}:5432`, 'POSTGRES_PASSWORD=secret']))
+    expect(check).toHaveBeenCalledWith(expect.objectContaining({ type: 'POSTGRES', host: 'localhost', port: Number(postgres.port), user: 'studio', password: 'secret', database: 'studio' }))
   })
 
   it('starts the studio’s stopped container again, as it is', async () => {
-    answer = dockerWith({ container: inspected(false, { 'org.drivine.studio': '1' }, '55432') })
+    answer = dockerWith({ container: inspected(false, { 'org.drivine.studio': '1' }, postgres.port) })
     const job = await start({ ...postgres, user: 'ada' })
     await vi.waitFor(() => expect(job.state).toBe('ready'))
     expect(calls).toContainEqual(['start', 'drivine-postgres'])
@@ -90,7 +100,7 @@ describe('starting one', () => {
   })
 
   it('leaves alone a container it did not make, and one made for another port', async () => {
-    answer = dockerWith({ container: inspected(true, null, '55432') })
+    answer = dockerWith({ container: inspected(true, null, postgres.port) })
     await expect(start(postgres)).rejects.toThrow(/did not make/)
     answer = dockerWith({ container: inspected(false, { 'org.drivine.studio': '1' }, '5432') })
     await expect(start(postgres)).rejects.toThrow(/made for port 5432/)
@@ -98,9 +108,10 @@ describe('starting one', () => {
 
   it('says when the port is taken', async () => {
     answer = dockerWith({ run: { code: 125, err: 'Bind for 0.0.0.0:55432 failed: port is already allocated' } })
-    const job = await start({ ...postgres, type: 'POSTGRES', port: '55433' })
+    // Taken between the look and the start: Docker's own refusal says the same.
+    const job = await start(postgres)
     await vi.waitFor(() => expect(job.state).toBe('failed'))
-    expect(job.error).toBe('Port 55433 is in use on this machine. Choose another port.')
+    expect(job.error).toMatch(`Port ${postgres.port} is in use by something else on this machine`)
   })
 
   it('takes no type it does not know', () => {
@@ -119,5 +130,37 @@ describe('stopping and removing', () => {
     answer = dockerWith({ container: inspected(true, null, '55432') })
     await expect(stop(postgres, true)).rejects.toThrow(/did not make/)
     expect(calls.some(args => args[0] === 'rm')).toBe(false)
+  })
+})
+
+describe('a port something else holds', () => {
+  const held = async () => {
+    const server = createServer().listen(0, '127.0.0.1')
+    await new Promise(resolve => server.once('listening', resolve))
+    return { server, port: (server.address() as AddressInfo).port }
+  }
+
+  it('is said to be taken, by the container that publishes it when there is one', async () => {
+    const { server, port } = await held()
+    try {
+      answer = args => (args[0] === 'ps' ? { code: 0, out: 'drivine-studio-pg\n' } : { code: 0 })
+      expect(await portHere(port, true)).toEqual({ kind: 'taken', by: 'the container drivine-studio-pg' })
+      answer = args => (args[0] === 'ps' ? { code: 0, out: '' } : { code: 0 })
+      expect(await portHere(port, true)).toEqual({ kind: 'taken', by: null })
+    } finally {
+      server.close()
+    }
+    expect(await portHere(port, true)).toEqual({ kind: 'free' })
+  })
+
+  it('stops a start before anything is downloaded', async () => {
+    const { server, port } = await held()
+    try {
+      answer = dockerWith({ image: false })
+      await expect(start({ ...postgres, port: String(port) })).rejects.toThrow(`Port ${port} is in use by something else on this machine`)
+      expect(calls.some(args => args[0] === 'pull' || args[0] === 'run')).toBe(false)
+    } finally {
+      server.close()
+    }
   })
 })
