@@ -119,7 +119,7 @@ export function Connections() {
 
   return (
     <>
-      <Split side={list} size={260} min={200} remember="drivine-studio.connections" label="Resize the list of connections">
+      <Split side={list} size={260} min={230} remember="drivine-studio.connections" label="Resize the list of connections">
         {shown ? (
           <ConnectionEditor
             // A different connection is a fresh draft.

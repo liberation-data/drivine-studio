@@ -134,12 +134,14 @@ html, body, #root { height: 100%; margin: 0; }
 }
 .studio-connection-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 18ch; overflow-wrap: anywhere; }
 .studio-connection-entry { cursor: default; }
-.studio-connection-entry .studio-entry-name { display: flex; align-items: baseline; gap: var(--desk-space-2); }
+/* A name, then its pills: when the row is narrow they go under it together, never broken in two themselves. */
+.studio-connection-entry .studio-entry-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--desk-space-2); }
 .studio-test { display: inline-flex; align-items: baseline; gap: var(--desk-space-1); margin-inline-start: var(--desk-space-2); font-weight: 400; min-width: 0; }
 .studio-test-passed { color: var(--desk-ok); }
 .studio-tag {
   padding: 0 var(--desk-space-1); border-radius: 4px; font-size: var(--desk-text-caption); font-weight: 500;
   color: var(--desk-accent); background: color-mix(in srgb, var(--desk-accent) 14%, transparent);
+  flex: none; white-space: nowrap;
 }
 .studio-tag-warn { color: color-mix(in srgb, var(--desk-warn) 80%, var(--desk-ink)); background: color-mix(in srgb, var(--desk-warn) 16%, transparent); }
 /* The editor's fields, two to a row where they belong together: host and port, user and password. */
