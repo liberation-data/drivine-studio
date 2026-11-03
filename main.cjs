@@ -34,6 +34,9 @@ log('Log file:', logPath);
 // Before the app is ready, so the menu and dock carry it.
 app.setName('Drivine Studio');
 
+// Drivine's cow on the water. Packaged, a Mac takes it from the bundle; run from source, the dock is told.
+const ICON = path.join(__dirname, 'build', 'icon.png');
+
 // A second launch would find this one's server on the port and refuse to start; bring this one forward instead.
 if (!app.requestSingleInstanceLock()) {
   log('[Electron] Already running; leaving it to that instance');
@@ -92,6 +95,8 @@ function createWindow() {
 
   const win = new BrowserWindow({
     show: false,
+    // The window's own icon, where the system shows one (Windows, Linux); a Mac shows the bundle's.
+    icon: ICON,
     webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
 
@@ -229,6 +234,7 @@ app.whenReady().then(async () => {
     return;
   }
   serverReady = true;
+  if (process.platform === 'darwin' && !app.isPackaged && fs.existsSync(ICON)) app.dock.setIcon(ICON);
   setMenu();
   createWindow();
 });
