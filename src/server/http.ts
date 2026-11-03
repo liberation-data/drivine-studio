@@ -4,6 +4,7 @@ import type { Env } from './connections'
 import { StatementError } from './datasources'
 import { ModelError } from './drivineModels'
 import { ModelPathError } from './models'
+import { QueryError } from './queries'
 
 /**
  * Refuses a request that does not come from the studio's own pages. The studio holds connections and their
@@ -58,7 +59,9 @@ export async function body(request: Request): Promise<unknown> {
  * Memgraph's client errors say. Anything else is the database or the network, as a 502, with what it said.
  */
 export function failure(e: unknown): Response {
-  if (e instanceof ConnectionError || e instanceof StatementError || e instanceof ModelPathError || e instanceof ModelError) return refuse(400, e.message)
+  if (e instanceof ConnectionError || e instanceof StatementError || e instanceof ModelPathError || e instanceof ModelError || e instanceof QueryError) {
+    return refuse(400, e.message)
+  }
   const code = (e as { code?: unknown } | null)?.code
   const reason = e instanceof Error ? e.message || (typeof code === 'string' ? code : '') || e.name : String(e)
   // Memgraph gives every client error one code, so its refusal to write is known by what it says.

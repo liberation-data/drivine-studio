@@ -1,7 +1,10 @@
-import { Button, SegmentedControl, Spinner, Split, Table, Tabs, TextField } from '@liberation-data/desk/react'
+import { Button, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useStudio } from './App'
+import type { SavedAs } from './App'
+import { addQuery, firstLine, updateQuery } from './savedQueries'
+import type { SavedQuery } from './savedQueries'
 import { DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
 import type { Cell, CypherResult } from './database'
 import { GraphView, LiveLayoutToggle, useLiveLayout } from './GraphView'
@@ -39,7 +42,10 @@ const STATEMENT = 'drivine-studio.cypher.statement'
 const PARAMETERS = 'drivine-studio.cypher.parameters'
 
 export function Cypher() {
-  const { connection, pendingCypher, takeCypher } = useStudio()
+  const { connection, pendingCypher, takeCypher, savedQuery } = useStudio()
+  // The saved query the editor holds, when it was opened from one or saved as one: Save saves over it.
+  const [savedAs, setSavedAs] = useState<SavedAs | null>(null)
+  const [saving, setSaving] = useState(false)
   const [statement, setStatement] = useState(() => remembered(STATEMENT, 'MATCH (n) RETURN n LIMIT 25'))
   const [parameters, setParameters] = useState(() => remembered(PARAMETERS, ''))
   const [pane, setPane] = useState<Pane>('statement')
@@ -59,8 +65,10 @@ export function Cypher() {
   useEffect(() => {
     if (!pendingCypher) return
     setStatement(pendingCypher.statement)
-    const parameters = Object.keys(pendingCypher.parameters).length ? JSON.stringify(pendingCypher.parameters, null, 2) : ''
+    const given = pendingCypher.parameters
+    const parameters = typeof given === 'string' ? given : Object.keys(given).length ? JSON.stringify(given, null, 2) : ''
     setParameters(parameters)
+    setSavedAs(pendingCypher.saved ?? null)
     setPane('statement')
     takeCypher()
   }, [pendingCypher, takeCypher])
@@ -102,11 +110,15 @@ export function Cypher() {
     event.preventDefault()
     execute()
   }
-  // ⌘↵ or Ctrl+↵ runs it from the editor, where Enter is a new line.
+  // ⌘↵ or Ctrl+↵ runs it from the editor, where Enter is a new line; ⌘S saves it.
   const keys = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault()
       execute()
+    }
+    if (event.key === 's' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault()
+      if (statement.trim()) setSaving(true)
     }
   }
 
@@ -135,6 +147,7 @@ export function Cypher() {
           onChange={setSize}
           options={[{ value: 'line', label: 'Line' }, { value: 'split', label: 'Split' }, { value: 'full', label: 'Full' }]}
         />
+        {savedAs && <span className="studio-saved-as desk-text-small desk-text-muted" title="The saved query this is">{savedAs.name}</span>}
         <span className="desk-grow" />
         {run.state === 'running' && <Spinner label="Running" size="small" />}
         <span className="studio-query-word desk-text-small desk-text-muted">at most</span>
@@ -142,6 +155,7 @@ export function Cypher() {
           <TextField label="Rows to read, at most" labelHidden type="number" min={1} max={MAX_LIMIT} value={limit} onChange={e => setLimit(e.target.value)} />
         </span>
         <span className="desk-text-small desk-text-muted">rows</span>
+        <Button type="button" onClick={() => setSaving(true)} disabled={!statement.trim()} title="⌘S">Save</Button>
         <Button type="submit" intent="default" disabled={!connection || run.state === 'running'} title="⌘↵">Run</Button>
       </div>
       {size === 'line' ? (
@@ -239,6 +253,19 @@ export function Cypher() {
       >
         {results}
       </Split>
+      {saving && (
+        <SaveQuery
+          statement={statement}
+          parameters={parameters}
+          savedAs={savedAs}
+          onDone={saved => {
+            setSaving(false)
+            if (!saved) return
+            setSavedAs({ id: saved.id, name: saved.name })
+            savedQuery()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -279,5 +306,55 @@ function Rows({ result }: { result: CypherResult }) {
         }))}
       />
     </div>
+  )
+}
+
+/**
+ * Asks for a name to keep the statement under, its parameters with it: the simple question a sheet is for. A query
+ * opened from Queries is saved over, under the name given; Save as New keeps it and makes another.
+ */
+function SaveQuery({ statement, parameters, savedAs, onDone }: {
+  statement: string
+  parameters: string
+  savedAs: SavedAs | null
+  onDone: (saved: SavedQuery | null) => void
+}) {
+  const [name, setName] = useState(() => savedAs?.name ?? firstLine(statement).slice(0, 60))
+  const [problem, setProblem] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const save = (asNew: boolean) => {
+    setBusy(true)
+    setProblem(null)
+    const input = { name, statement, parameters }
+    const saved = savedAs && !asNew ? updateQuery(savedAs.id, input) : addQuery(input)
+    saved.then(onDone, (e: unknown) => {
+      setBusy(false)
+      setProblem(e instanceof Error ? e.message : String(e))
+    })
+  }
+  return (
+    <Sheet
+      open
+      onDismiss={() => onDone(null)}
+      title={savedAs ? `Save ${savedAs.name}` : 'Save Query'}
+      description="Kept as a .cypher file in the studio's home, with its parameters, to open again from Queries."
+      actions={
+        <>
+          <Button onClick={() => onDone(null)}>Cancel</Button>
+          {savedAs && <Button onClick={() => save(true)} disabled={busy || !name.trim()}>Save as New</Button>}
+          <Button intent="default" onClick={() => save(false)} disabled={busy || !name.trim()}>Save</Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={event => {
+          event.preventDefault()
+          save(false)
+        }}
+      >
+        <TextField label="Name" value={name} onChange={e => setName(e.target.value)} autoFocus />
+        {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
+      </form>
+    </Sheet>
   )
 }

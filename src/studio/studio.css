@@ -200,3 +200,9 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-docker { display: flex; flex-wrap: wrap; align-items: center; gap: var(--desk-space-2); }
 .studio-docker-job { display: flex; align-items: center; gap: var(--desk-space-2); overflow-wrap: anywhere; }
 .studio-test-failed { display: flex; flex-direction: column; align-items: flex-start; gap: var(--desk-space-2); margin-bottom: var(--desk-space-3); }
+
+/* Saved queries */
+.studio-saved-as { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio-query-line { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--desk-font-mono); }
+.studio-queries { margin-top: var(--desk-space-2); }
+.studio-queries-heading { margin: var(--desk-space-3) 0 var(--desk-space-1); font-weight: 600; }
