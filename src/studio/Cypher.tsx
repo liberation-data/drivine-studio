@@ -1,7 +1,8 @@
-import { Button, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField } from '@liberation-data/desk/react'
+import { addCommandHandler, windowElement } from '@liberation-data/desk'
+import { Button, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField, useWindowId } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
-import { useStudio } from './App'
+import { StudioCommands, useStudio } from './App'
 import type { SavedAs } from './App'
 import { addQuery, firstLine, updateQuery } from './savedQueries'
 import type { SavedQuery } from './savedQueries'
@@ -45,7 +46,9 @@ export function Cypher() {
   const { connection, pendingCypher, takeCypher, savedQuery } = useStudio()
   // The saved query the editor holds, when it was opened from one or saved as one: Save saves over it.
   const [savedAs, setSavedAs] = useState<SavedAs | null>(null)
-  const [saving, setSaving] = useState(false)
+  // The name sheet, open to save under a name, or to save a copy under a new one.
+  const [saving, setSaving] = useState<'save' | 'copy' | null>(null)
+  const [savedNote, setSavedNote] = useState<string | null>(null)
   const [statement, setStatement] = useState(() => remembered(STATEMENT, 'MATCH (n) RETURN n LIMIT 25'))
   const [parameters, setParameters] = useState(() => remembered(PARAMETERS, ''))
   const [pane, setPane] = useState<Pane>('statement')
@@ -110,17 +113,47 @@ export function Cypher() {
     event.preventDefault()
     execute()
   }
-  // ⌘↵ or Ctrl+↵ runs it from the editor, where Enter is a new line; ⌘S saves it.
+  // ⌘↵ or Ctrl+↵ runs it from the editor, where Enter is a new line.
   const keys = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault()
       execute()
     }
-    if (event.key === 's' && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault()
-      if (statement.trim()) setSaving(true)
-    }
   }
+
+  const kept = useCallback((saved: SavedQuery) => {
+    setSavedAs({ id: saved.id, name: saved.name })
+    savedQuery()
+    setSavedNote('Saved')
+  }, [savedQuery])
+  useEffect(() => {
+    if (!savedNote) return
+    const timer = setTimeout(() => setSavedNote(null), 2000)
+    return () => clearTimeout(timer)
+  }, [savedNote])
+
+  /*
+   * File ▸ Save and Save As…, answered by this window while it is the one in front. A query already saved is saved
+   * over at once, as a document is; one not saved yet, or a copy, asks for its name first.
+   */
+  const windowId = useWindowId()
+  const now = useRef({ statement, parameters, savedAs })
+  now.current = { statement, parameters, savedAs }
+  useEffect(() => {
+    const element = windowId ? windowElement(document, windowId) : null
+    if (!element) return
+    const something = () => now.current.statement.trim() !== ''
+    const save = () => {
+      const { statement, parameters, savedAs } = now.current
+      if (!savedAs) return setSaving('save')
+      updateQuery(savedAs.id, { name: savedAs.name, statement, parameters }).then(kept, () => setSaving('save'))
+    }
+    const removers = [
+      addCommandHandler(element, StudioCommands.save, save, { enabled: something }),
+      addCommandHandler(element, StudioCommands.saveAs, () => setSaving('copy'), { enabled: something }),
+    ]
+    return () => removers.forEach(remove => remove())
+  }, [windowId, kept])
 
   const drawn = useMemo(() => (result ? graphOf(result.graph) : null), [result])
   const [live, setLive] = useLiveLayout(drawn?.graph)
@@ -148,6 +181,7 @@ export function Cypher() {
           options={[{ value: 'line', label: 'Line' }, { value: 'split', label: 'Split' }, { value: 'full', label: 'Full' }]}
         />
         {savedAs && <span className="studio-saved-as desk-text-small desk-text-muted" title="The saved query this is">{savedAs.name}</span>}
+        {savedNote && <span className="desk-text-small studio-ok" role="status">{savedNote}</span>}
         <span className="desk-grow" />
         {run.state === 'running' && <Spinner label="Running" size="small" />}
         <span className="studio-query-word desk-text-small desk-text-muted">at most</span>
@@ -155,7 +189,6 @@ export function Cypher() {
           <TextField label="Rows to read, at most" labelHidden type="number" min={1} max={MAX_LIMIT} value={limit} onChange={e => setLimit(e.target.value)} />
         </span>
         <span className="desk-text-small desk-text-muted">rows</span>
-        <Button type="button" onClick={() => setSaving(true)} disabled={!statement.trim()} title="⌘S">Save</Button>
         <Button type="submit" intent="default" disabled={!connection || run.state === 'running'} title="⌘↵">Run</Button>
       </div>
       {size === 'line' ? (
@@ -257,12 +290,10 @@ export function Cypher() {
         <SaveQuery
           statement={statement}
           parameters={parameters}
-          savedAs={savedAs}
+          savedAs={saving === 'copy' ? null : savedAs}
           onDone={saved => {
-            setSaving(false)
-            if (!saved) return
-            setSavedAs({ id: saved.id, name: saved.name })
-            savedQuery()
+            setSaving(null)
+            if (saved) kept(saved)
           }}
         />
       )}

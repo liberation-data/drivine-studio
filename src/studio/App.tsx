@@ -19,6 +19,12 @@ import { nativeMenus, useNativeMenus } from './nativeMenu'
 import type { Subject } from './model'
 
 const desk = createDesk()
+
+/** What the menus ask of a window, which the window that can do it answers. */
+export const StudioCommands = {
+  save: 'studio.query.save',
+  saveAs: 'studio.query.saveAs',
+} as const
 // In the desktop app on a Mac, the menus are the Mac's own, at the top of the screen.
 const native = nativeMenus()
 
@@ -154,9 +160,10 @@ const rememberedConnection = (): string | null => {
 }
 
 const DOCK = [
+  // First, as the Finder is in a Mac's dock: what has been kept, to open again.
+  dockItem({ id: 'queries', label: 'Queries', description: 'The statements saved from Cypher, to open again', icon: icon('M4 5a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM8 11l-2 2 2 2M16 11l2 2-2 2M13 10l-2 6') }),
   dockItem({ id: 'explore', label: 'Explore', description: 'Views and fragments, loaded and seen as a graph', icon: icon('M6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7.7 7l8.5 2.4M16.6 11.5l-7.2 5.3M6.4 8l1.2 8') }),
   dockItem({ id: 'cypher', label: 'Cypher', description: 'Run Cypher, see a graph or rows', icon: icon('M8 6l-5 6 5 6M16 6l5 6-5 6M14 4l-4 16') }),
-  dockItem({ id: 'queries', label: 'Queries', description: 'The statements saved from Cypher, to open again', icon: icon('M4 5a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM8 11l-2 2 2 2M16 11l2 2-2 2M13 10l-2 6') }),
   dockItem({ id: 'connections', label: 'Connections', description: 'The databases to read', icon: icon('M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2zM4 6v12c0 1.1 3.6 2 8 2s8-.9 8-2V6M4 12c0 1.1 3.6 2 8 2s8-.9 8-2') }),
 ]
 
@@ -237,6 +244,20 @@ export function App() {
         menuAction('Connections', () => desk.open('connections')),
       ] },
     {
+      id: 'file',
+      label: 'File',
+      items: [
+        menuAction('New Query', () => openInCypher('', '')),
+        menuAction('Open…', () => desk.open('queries')),
+        menuSeparator(),
+        // The Cypher window answers these, when it is the one in front: dimmed otherwise, as a Mac's are.
+        menuCommand('Save', StudioCommands.save, { shortcut: 'mod+s' }),
+        menuCommand('Save As…', StudioCommands.saveAs, { shortcut: 'mod+shift+s' }),
+        menuSeparator(),
+        menuCommand('Close Window', DeskCommands.closeWindow),
+      ],
+    },
+    {
       id: 'window',
       label: 'Window',
       items: () => [
@@ -245,7 +266,7 @@ export function App() {
         ...windowMenuItems(desk.getState(), id => desk.focus(id), title),
       ],
     },
-  ], [reload, reloadConnections])
+  ], [reload, reloadConnections, openInCypher])
 
   /*
    * The connection in use, at the trailing end of the menu bar: one for the whole studio, so chosen where the whole
