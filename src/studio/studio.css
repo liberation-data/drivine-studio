@@ -223,7 +223,7 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-finder-view { flex: 1; min-width: 0; overflow: auto; padding: var(--desk-space-3); }
 .studio-finder-problem { padding: var(--desk-space-2) var(--desk-space-3); }
 .studio-file-name { display: inline-flex; align-items: center; gap: var(--desk-space-2); }
-.studio-file-icon { display: inline-flex; color: var(--desk-accent); }
+.studio-file-icon { display: inline-flex; }
 .studio-file-icon svg { width: 16px; height: 16px; }
 /* The panel beside the view: what is chosen, in the tone that stands off what it is chosen from. */
 .studio-details {
@@ -234,6 +234,10 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-details h3 { margin: 0; font-size: var(--desk-text-lead); font-weight: 600; overflow-wrap: anywhere; }
 .studio-details h4 { margin: var(--desk-space-2) 0 0; }
 .studio-details p { margin: 0; }
-.studio-details-icon { color: var(--desk-accent); }
+.studio-details-icon svg { width: 64px; height: 64px; filter: drop-shadow(0 4px 10px rgb(2 28 38 / 30%)); }
 .studio-details-path { font-family: var(--desk-font-mono); overflow-wrap: anywhere; color: var(--desk-muted); }
 .studio-details-actions { display: flex; gap: var(--desk-space-2); margin-top: var(--desk-space-2); }
+/* In Files, icons as a Finder shows them: large, drawn bare, not on a tile; chosen, a soft wash behind. */
+.studio-finder-view .desk-icon-glyph { width: 64px; height: 64px; border: 0; background: none; border-radius: 12px; }
+.studio-finder-view .desk-icon-glyph > svg { width: 100%; height: 100%; filter: drop-shadow(0 2px 4px rgb(2 28 38 / 25%)); }
+.studio-finder-view .desk-icon-cell[aria-selected="true"] .desk-icon-glyph { background: color-mix(in srgb, var(--desk-ink) 10%, transparent); }
