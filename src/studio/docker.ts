@@ -1,3 +1,4 @@
+import { DATABASE_NAMES } from './database'
 import type { DatabaseType } from './database'
 
 /*
@@ -19,14 +20,32 @@ export interface DockerDraft {
   database: string
 }
 
+/** The connection's fields a container answers to. */
+type Fill = Partial<Pick<DockerDraft, 'port' | 'user' | 'password' | 'database'>>
+
+/** A container to run, as data: the command to copy is written from it, and the studio's server runs it as it is. */
+export interface DockerRun {
+  /** One per kind of database: drivine-postgres, drivine-neo4j. */
+  readonly name: string
+  readonly image: string
+  /** The port on this machine, and the one inside the container it is passed to. */
+  readonly port: number
+  readonly inside: number
+  readonly env: Readonly<Record<string, string>>
+}
+
+/** Every container the studio's commands make carries it, so the studio stops and removes only its own. */
+export const STUDIO_LABEL = 'org.drivine.studio'
+
 export type DockerCommand =
   | {
       kind: 'command'
+      run: DockerRun
       command: string
       /** What to know before running it, or after. */
       note?: string
       /** The connection's fields the container answers to, for the ones the form leaves empty. */
-      fill: Partial<Pick<DockerDraft, 'port' | 'user' | 'password' | 'database'>>
+      fill: Fill
     }
   | { kind: 'none'; why: string }
 
@@ -39,14 +58,25 @@ const DEFAULT_PORTS: Record<DatabaseType, string> = {
 /** As the shell reads it: plain words as they are, anything else between single quotes. */
 export const shellWord = (value: string) => (/^[\w.@:/=+-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`)
 
-const run = (name: string, port: string, inside: number, env: Record<string, string>, image: string) =>
+/** The arguments to `docker`, as the server passes them: an argument list, never a line for a shell to read. */
+export const dockerArgs = (run: DockerRun): string[] => [
+  'run', '-d', '--name', run.name, '--label', `${STUDIO_LABEL}=1`, '-p', `${run.port}:${run.inside}`,
+  ...Object.entries(run.env).flatMap(([key, value]) => ['-e', `${key}=${value}`]),
+  run.image,
+]
+
+/** The same, as a person pastes it into a terminal. */
+const written = (run: DockerRun) =>
   [
     // A short first line: the code block's Copy button sits at its end.
-    `docker run -d --name ${name}`,
-    `-p ${port}:${inside}`,
-    ...Object.entries(env).map(([key, value]) => `-e ${shellWord(`${key}=${value}`)}`),
-    image,
+    `docker run -d --name ${run.name}`,
+    `--label ${STUDIO_LABEL}=1`,
+    `-p ${run.port}:${run.inside}`,
+    ...Object.entries(run.env).map(([key, value]) => `-e ${shellWord(`${key}=${value}`)}`),
+    run.image,
   ].join(' \\\n  ')
+
+const command = (run: DockerRun, rest: { note?: string; fill: Fill }): DockerCommand => ({ kind: 'command', run, command: written(run), ...rest })
 
 export function dockerCommand(draft: DockerDraft): DockerCommand {
   if (draft.type === 'NEPTUNE') return { kind: 'none', why: 'Neptune runs on AWS only: there is no image of it to run here.' }
@@ -54,52 +84,43 @@ export function dockerCommand(draft: DockerDraft): DockerCommand {
     return { kind: 'none', why: 'Docker runs a database on this machine. Set Host to localhost to run one here.' }
   }
   const port = draft.port.trim() || DEFAULT_PORTS[draft.type]
+  const number = Number(port)
+  if (!Number.isInteger(number) || number < 1 || number > 65535) return { kind: 'none', why: `${port} is not a port: give one from 1 to 65535.` }
+  const at = (name: string, inside: number, env: Record<string, string>, image: string): DockerRun => ({ name, image, port: number, inside, env })
   const password = draft.password || TEST_PASSWORD
   const user = draft.user.trim() || TEST_USER
   switch (draft.type) {
     case 'NEO4J':
-      return {
-        kind: 'command',
-        command: run('drivine-neo4j', port, 7687, { NEO4J_AUTH: `neo4j/${password}` }, 'neo4j:latest'),
+      return command(at('drivine-neo4j', 7687, { NEO4J_AUTH: `neo4j/${password}` }, 'neo4j:latest'), {
         // Neo4j's first user is always neo4j, and it refuses a password shorter than eight characters.
         note: `Its user is neo4j${password.length < 8 ? ', and Neo4j refuses a password shorter than 8 characters' : ''}.`,
         fill: { port, user: 'neo4j', password },
-      }
+      })
     case 'MEMGRAPH':
-      return {
-        kind: 'command',
-        command: run('drivine-memgraph', port, 7687, {}, 'memgraph/memgraph:latest'),
+      return command(at('drivine-memgraph', 7687, {}, 'memgraph/memgraph:latest'), {
         note: 'Memgraph starts with no users: leave User and Password empty.',
         fill: { port },
-      }
+      })
     case 'FALKORDB':
-      return {
-        kind: 'command',
-        // The release Drivine's tests pass on; Docker Hub's latest can be an older line's backport.
-        command: run('drivine-falkordb', port, 6379, draft.password ? { REDIS_ARGS: `--requirepass ${draft.password}` } : {}, 'falkordb/falkordb:6.0.3'),
+      // The release Drivine's tests pass on; Docker Hub's latest can be an older line's backport.
+      return command(at('drivine-falkordb', 6379, draft.password ? { REDIS_ARGS: `--requirepass ${draft.password}` } : {}, 'falkordb/falkordb:6.0.3'), {
         fill: { port },
-      }
+      })
     case 'POSTGRES': {
       const database = draft.database.trim() || 'drivine'
-      return {
-        kind: 'command',
-        // pgvector's image: Postgres with the extension a vector search uses.
-        command: run('drivine-postgres', port, 5432, { POSTGRES_USER: user, POSTGRES_PASSWORD: password, POSTGRES_DB: database }, 'pgvector/pgvector:pg16'),
+      // pgvector's image: Postgres with the extension a vector search uses.
+      return command(at('drivine-postgres', 5432, { POSTGRES_USER: user, POSTGRES_PASSWORD: password, POSTGRES_DB: database }, 'pgvector/pgvector:pg16'), {
         fill: { port, user, password, database },
-      }
+      })
     }
     case 'ORACLE':
-      return {
-        kind: 'command',
-        // An ordinary user of the pluggable database: the administrators' tablespace can't hold a graph's JSON column.
-        command: run('drivine-oracle', port, 1521, { ORACLE_PASSWORD: password, APP_USER: user, APP_USER_PASSWORD: password }, 'gvenzl/oracle-free:23-faststart'),
+      // An ordinary user of the pluggable database: the administrators' tablespace can't hold a graph's JSON column.
+      return command(at('drivine-oracle', 1521, { ORACLE_PASSWORD: password, APP_USER: user, APP_USER_PASSWORD: password }, 'gvenzl/oracle-free:23-faststart'), {
         note: 'The image is a few GB, and the database takes a minute or two to open the first time.',
         fill: { port, user, password, database: 'FREEPDB1' },
-      }
+      })
   }
 }
-
-type Fill = Extract<DockerCommand, { kind: 'command' }>['fill']
 
 /**
  * What filling the form from the command would set: the container's settings for the fields still empty, and nothing
@@ -115,3 +136,54 @@ export function fillFor(fill: Fill, draft: DockerDraft, passwordKept: boolean): 
 /** The fields named as a person reads a list: "Port", "Port and User", "Port, User and Password". */
 export const listed = (names: readonly string[]): string =>
   names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+
+/** Whether Docker can be used here, and if not, what to do about it. */
+export type DockerHere = { kind: 'ready' } | { kind: 'absent'; why: string }
+
+/** The container a kind of database is run in: not made yet, or there, running or not, and whether the studio made it. */
+export type Container =
+  | { kind: 'missing' }
+  | { kind: 'running' | 'stopped'; ours: boolean; port: number | null }
+
+/** A start under way, or how the last one ended. */
+export interface Job {
+  state: 'pulling' | 'starting' | 'waiting' | 'ready' | 'failed'
+  /** What Docker or the database said last: a layer downloading, the database not answering yet. */
+  detail: string
+  /** When it began, and on ready how long until the database answered. */
+  started: number
+  milliseconds?: number
+  error?: string
+}
+
+/** Whether something on this machine already listens on the port, and what, when Docker can say. */
+/**
+ * What a database on a port was found to be: a kind of database, or one that speaks Bolt, as Neo4j and Memgraph both do,
+ * when nothing tells the two apart.
+ */
+export type Found = DatabaseType | 'BOLT'
+
+export type PortHere =
+  | { kind: 'free' }
+  | {
+      kind: 'taken'
+      /** The container that publishes it, when Docker's does: "the container drivine-studio-pg". */
+      by: string | null
+      /** What answers there, when its greeting or its image says. */
+      runs: Found | null
+    }
+
+/** Whether what was found on a port is the kind of database a connection is for. */
+export const sameKind = (found: Found | null, type: DatabaseType): boolean =>
+  found === type || (found === 'BOLT' && (type === 'NEO4J' || type === 'MEMGRAPH'))
+
+/** What was found, as a person names it. */
+export const foundName = (found: Found): string => (found === 'BOLT' ? 'a Bolt database (Neo4j or Memgraph)' : DATABASE_NAMES[found])
+
+export interface DockerStatus {
+  docker: DockerHere
+  container: Container
+  /** The port, when the container is not the one on it. */
+  port: PortHere
+  job: Job | null
+}

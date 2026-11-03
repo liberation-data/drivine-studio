@@ -156,6 +156,8 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-form { display: flex; flex-direction: column; gap: var(--desk-space-3); }
 .studio-form p { margin: 0; }
 .studio-bad { color: var(--desk-bad); margin: 0; }
+/* Good news, as text: the ok colour, darkened toward the ink to be read. */
+.studio-ok { color: color-mix(in srgb, var(--desk-ok) 70%, var(--desk-ink)); margin: 0; }
 /* A connection that allows writes: the warning colour, darkened toward the ink to be read as text. */
 .studio-warn { color: color-mix(in srgb, var(--desk-warn) 75%, var(--desk-ink)); margin: 0; }
 
@@ -184,3 +186,8 @@ html, body, #root { height: 100%; margin: 0; }
 .desk-infotip-body {
   max-width: 38ch; font-family: 'Times New Roman', Times, serif; font-size: var(--desk-text-lead); line-height: 1.5;
 }
+
+/* A database in Docker: how its container stands, and what can be done to it, on one line. */
+.studio-docker { display: flex; flex-wrap: wrap; align-items: center; gap: var(--desk-space-2); }
+.studio-docker-job { display: flex; align-items: center; gap: var(--desk-space-2); overflow-wrap: anywhere; }
+.studio-test-failed { display: flex; flex-direction: column; align-items: flex-start; gap: var(--desk-space-2); margin-bottom: var(--desk-space-3); }
