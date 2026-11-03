@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { connect } from 'node:net'
 
-import { dockerArgs, dockerCommand, foundName, sameKind, STUDIO_LABEL } from '../studio/docker'
+import { DEFAULT_PORTS, dockerArgs, dockerCommand, foundName, sameKind, STUDIO_LABEL } from '../studio/docker'
 import type { Container, DockerDraft, DockerHere, DockerRun, DockerStatus, Found, Job, PortHere } from '../studio/docker'
 import { DATABASE_TYPES } from '../studio/database'
 import type { DatabaseType } from '../studio/database'
@@ -122,6 +122,18 @@ export async function status(draft: DockerDraft): Promise<DockerStatus> {
  * Whether anything answers on the port here, and if so what: the container that publishes it, when Docker's does, and
  * the kind of database, from the image the container was made from or else from how the port answers a greeting.
  */
+/**
+ * A port to start a database of a kind on: its usual one, else the next that nothing here answers on, so a new one
+ * never lands on one already running. Twenty tries, then the usual one, for the start to say what holds it.
+ */
+export const freePort = (type: DatabaseType): Promise<number> => firstFreeFrom(Number(DEFAULT_PORTS[type]))
+
+/** The first of twenty ports from this one that nothing here answers on, or this one when all are taken. */
+export async function firstFreeFrom(usual: number): Promise<number> {
+  for (let port = usual; port < usual + 20; port++) if (!(await listening(port))) return port
+  return usual
+}
+
 export async function portHere(port: number, askDocker: boolean): Promise<PortHere> {
   if (!(await listening(port))) return { kind: 'free' }
   let by: string | null = null

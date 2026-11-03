@@ -3,7 +3,7 @@ import { createServer } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { check } from './datasources'
-import { containerOf, dockerHere, draftOf, greeted, kindOfImage, portHere, start, stop } from './docker'
+import { containerOf, dockerHere, draftOf, firstFreeFrom, greeted, kindOfImage, portHere, start, stop } from './docker'
 
 // What `docker` answers, by its arguments: the test sets it, and every call is recorded.
 type Answer = { code: number; out?: string; err?: string; enoent?: boolean }
@@ -202,5 +202,20 @@ describe('what a database on a port is', () => {
     } finally {
       for (const { server } of [bolt, postgres, redis]) server.close()
     }
+  })
+})
+
+describe('a port for a new database', () => {
+  it('is the usual one when it is free, else the next that nothing answers on', async () => {
+    const server = createServer().listen(0, '127.0.0.1')
+    await new Promise(resolve => server.once('listening', resolve))
+    const held = (server.address() as AddressInfo).port
+    try {
+      expect(await firstFreeFrom(held)).toBeGreaterThan(held)
+    } finally {
+      server.close()
+    }
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(await firstFreeFrom(held)).toBe(held)
   })
 })

@@ -1,5 +1,5 @@
 import {
-  Alert, Button, Checkbox, CodeBlock, Disclosure, Loading, menuAction, menuSeparator, Pane, PaneHeader, PopUpButton, Spinner, Split, TextField,
+  Alert, Button, Checkbox, CodeBlock, Disclosure, Loading, menuAction, menuSeparator, Pane, PaneHeader, PopUpButton, Sheet, Spinner, Split, TextField,
   Toolbar, useContextMenu,
 } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -7,7 +7,7 @@ import type { FormEvent } from 'react'
 import { useStudio } from './App'
 import { dockerCommand, fillFor, foundName, listed, sameKind } from './docker'
 import type { DockerStatus } from './docker'
-import { addConnection, DATABASE_NAMES, DATABASE_TYPES, dockerAction, dockerStatus, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
+import { addConnection, DATABASE_NAMES, DATABASE_TYPES, dockerAction, dockerStatus, freeDockerPort, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
 
 type Test = { state: 'testing' } | { state: 'passed'; milliseconds: number } | { state: 'failed'; message: string }
@@ -27,6 +27,9 @@ export function Connections() {
   const [leaving, setLeaving] = useState<{ to: Chosen } | null>(null)
   const [dirty, setDirty] = useState(false)
   const [removing, setRemoving] = useState<StudioConnection | null>(null)
+  // A database to make in Docker: asked for in a sheet, then the connection made for it, started as it opens.
+  const [makingInDocker, setMakingInDocker] = useState(false)
+  const [startFor, setStartFor] = useState<string | null>(null)
   const [tests, setTests] = useState<Record<string, Test>>({})
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -83,6 +86,7 @@ export function Connections() {
           >
             −
           </Button>
+          <Button size="small" onClick={() => setMakingInDocker(true)} title="Run a new database in Docker, and connect to it">New in Docker…</Button>
         </Toolbar>
       }
     >
@@ -143,6 +147,8 @@ export function Connections() {
               setDirty(false)
               setChosen(null)
             }}
+            startDocker={shown !== 'new' && shown.id === startFor}
+            onDockerStarted={() => setStartFor(null)}
           />
         ) : (
           <div className="studio-hint">
@@ -152,6 +158,20 @@ export function Connections() {
           </div>
         )}
       </Split>
+      {makingInDocker && (
+        <NewInDocker
+          taken={(connections ?? []).map(c => c.name)}
+          onCancel={() => setMakingInDocker(false)}
+          onMade={saved => {
+            setMakingInDocker(false)
+            setDirty(false)
+            setChosen(saved.id)
+            setStartFor(saved.id)
+            reloadConnections()
+            if (!active) chooseConnection(saved.id)
+          }}
+        />
+      )}
       <Alert
         open={leaving !== null}
         title="Discard your changes?"
@@ -310,9 +330,12 @@ interface EditorProps {
   readonly onDirty: (dirty: boolean) => void
   readonly onSaved: (saved: StudioConnection) => void
   readonly onCancelNew: () => void
+  /** Made by New in Docker: its container is started as it opens. */
+  readonly startDocker?: boolean
+  readonly onDockerStarted?: () => void
 }
 
-function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSaved, onCancelNew }: EditorProps) {
+function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSaved, onCancelNew, startDocker, onDockerStarted }: EditorProps) {
   const initial = useMemo(() => draftOf(editing), [editing])
   const [draft, setDraft] = useState<Draft>(initial)
   const [saving, setSaving] = useState(false)
@@ -325,6 +348,11 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
   const fixed = !isNew && editing.source === 'environment'
   const changed = JSON.stringify(draft) !== JSON.stringify(initial)
   const [dockerAsk, setDockerAsk] = useState(0)
+  useEffect(() => {
+    if (!startDocker) return
+    setDockerAsk(n => n + 1)
+    onDockerStarted?.()
+  }, [startDocker, onDockerStarted])
 
   useEffect(() => onDirty(changed), [changed, onDirty])
 
@@ -614,5 +642,88 @@ function RunInDocker({ draft, connectionId, passwordKept, onFill, ask }: {
       )}
     </Disclosure>
     </div>
+  )
+}
+
+/** The kinds of database Docker runs here: all but Neptune, which runs on AWS only. */
+const IN_DOCKER = DATABASE_TYPES.filter(type => type !== 'NEPTUNE')
+
+/**
+ * A new database, run in Docker: which kind, under what name, on which port. The connection is made with the settings
+ * the container is made with (Drivine's tests' own), and its container started as it opens, so the person picks a kind
+ * and has a database to read.
+ */
+function NewInDocker({ taken, onMade, onCancel }: { taken: string[]; onMade: (saved: StudioConnection) => void; onCancel: () => void }) {
+  const [type, setType] = useState<DatabaseType>('NEO4J')
+  const named = (t: DatabaseType) => {
+    const base = `${DATABASE_NAMES[t]} in Docker`
+    let name = base
+    for (let n = 2; taken.includes(name); n++) name = `${base} ${n}`
+    return name
+  }
+  const [name, setName] = useState(() => named('NEO4J'))
+  const [nameEdited, setNameEdited] = useState(false)
+  const [port, setPort] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!nameEdited) setName(named(type))
+    setPort('')
+    freeDockerPort(type).then(p => setPort(String(p)), () => setPort(DEFAULT_PORTS[type]))
+  }, [type])
+
+  const made = dockerCommand({ type, host: 'localhost', port, user: '', password: '', database: '' })
+  const fill = made.kind === 'command' ? made.fill : {}
+  const settings = [fill.user && `user ${fill.user}`, fill.password && `password ${fill.password}`, fill.database && `database ${fill.database}`].filter(Boolean)
+
+  const make = () => {
+    if (made.kind !== 'command') return setProblem(made.why)
+    setBusy(true)
+    setProblem(null)
+    const portNumber = Number(port)
+    addConnection({
+      name: name.trim(),
+      type,
+      host: 'localhost',
+      ...(Number.isFinite(portNumber) && port ? { port: portNumber } : {}),
+      ...(fill.user ? { user: fill.user } : {}),
+      ...(fill.password ? { password: fill.password } : {}),
+      ...(fill.database ? { database: fill.database } : {}),
+    }).then(onMade, (e: unknown) => {
+      setBusy(false)
+      setProblem(message(e))
+    })
+  }
+
+  return (
+    <Sheet
+      open
+      onDismiss={onCancel}
+      title="New Database in Docker"
+      description="Runs one here in Docker, as Drivine’s own tests do, and makes a connection to it."
+      actions={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button intent="default" onClick={make} disabled={busy || !name.trim() || !port}>Create and Start</Button>
+        </>
+      }
+    >
+      <form
+        className="studio-form"
+        onSubmit={event => {
+          event.preventDefault()
+          make()
+        }}
+      >
+        <PopUpButton label="Database" value={type} onChange={setType} options={IN_DOCKER.map(t => ({ value: t, label: DATABASE_NAMES[t] }))} />
+        <TextField label="Name" value={name} onChange={e => { setName(e.target.value); setNameEdited(true) }} />
+        <TextField label="Port" type="number" min={1} max={65535} value={port} help="Its usual port, or the next free one here." onChange={e => setPort(e.target.value)} />
+        {settings.length > 0 && <p className="desk-text-small desk-text-muted">The connection is made with Drivine’s test settings: {settings.join(', ')}.</p>}
+        {/* Neo4j's note is its user, which the line above already gives. */}
+        {made.kind === 'command' && made.note && type !== 'NEO4J' && <p className="desk-text-small desk-text-muted">{made.note}</p>}
+        {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
+      </form>
+    </Sheet>
   )
 }
