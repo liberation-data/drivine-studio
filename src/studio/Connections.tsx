@@ -1,9 +1,10 @@
-import { Alert, Button, Checkbox, CodeBlock, Disclosure, Loading, Pane, PaneHeader, PopUpButton, Split, TextField, Toolbar } from '@liberation-data/desk/react'
-import { useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Checkbox, CodeBlock, Disclosure, Loading, Pane, PaneHeader, PopUpButton, Spinner, Split, TextField, Toolbar } from '@liberation-data/desk/react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useStudio } from './App'
 import { dockerCommand, fillFor, listed } from './docker'
-import { addConnection, DATABASE_NAMES, DATABASE_TYPES, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
+import type { DockerStatus } from './docker'
+import { addConnection, DATABASE_NAMES, DATABASE_TYPES, dockerAction, dockerStatus, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
 
 type Test = { state: 'testing' } | { state: 'passed'; milliseconds: number } | { state: 'failed'; message: string }
@@ -384,22 +385,66 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
         <button type="submit" hidden />
       </form>
       {!fixed && (
-        <RunInDocker draft={draft} passwordKept={hadPassword && !draft.clearPassword} onFill={set} />
+        <RunInDocker draft={draft} connectionId={isNew ? undefined : editing.id} passwordKept={hadPassword && !draft.clearPassword} onFill={set} />
       )}
     </Pane>
   )
 }
 
 /**
- * No database yet: the command that runs one of this kind here, in Docker, as Drivine's own tests do, to copy into a
- * terminal. The studio does not run it; what it starts is the person's to see first.
+ * No database yet: one of this kind, run here in Docker as Drivine's own tests run it. The studio starts it, as Neo4j
+ * Desktop does, and fills in the connection once it answers; or the command is there to paste into a terminal.
  */
-function RunInDocker({ draft, passwordKept, onFill }: { draft: Draft; passwordKept: boolean; onFill: (fill: Partial<Draft>) => void }) {
+function RunInDocker({ draft, connectionId, passwordKept, onFill }: {
+  draft: Draft
+  connectionId: string | undefined
+  passwordKept: boolean
+  onFill: (fill: Partial<Draft>) => void
+}) {
   const [open, setOpen] = useState(false)
+  const [here, setHere] = useState<DockerStatus | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [removing, setRemoving] = useState(false)
   const made = dockerCommand(draft)
   const fill = made.kind === 'command' ? fillFor(made.fill, draft, passwordKept) : {}
   const names: Record<string, string> = { port: 'Port', user: 'User', password: 'Password', database: DATABASE_FIELD[draft.type]?.label ?? 'Database' }
   const filled = Object.keys(fill).map(key => names[key] ?? key)
+  // The password the studio keeps is never in the page: Start uses it on the server, and the command says where it goes.
+  const shown = passwordKept && !draft.password ? dockerCommand({ ...draft, password: 'YOUR-PASSWORD' }) : made
+  const job = here?.job ?? null
+  const busy = job !== null && job.state !== 'ready' && job.state !== 'failed'
+  const name = made.kind === 'command' ? made.run.name : ''
+
+  // Read while it is open, and again every second and a half while a start is under way.
+  const refresh = useCallback(() => {
+    dockerStatus(draft).then(setHere, (e: unknown) => setProblem(message(e)))
+  }, [draft.type, draft.host, draft.port])
+  useEffect(() => {
+    if (open && made.kind === 'command') refresh()
+  }, [open, made.kind, refresh])
+  useEffect(() => {
+    if (!busy) return
+    const timer = setInterval(refresh, 1500)
+    return () => clearInterval(timer)
+  }, [busy, refresh])
+
+  // Once it answers, the connection is set to match it: only what is empty, as Fill In does.
+  const filledFor = useRef<number | null>(null)
+  useEffect(() => {
+    if (job?.state === 'ready' && filledFor.current !== job.started) {
+      filledFor.current = job.started
+      onFill(fill)
+    }
+  }, [job, fill, onFill])
+
+  const act = (action: 'start' | 'stop' | 'remove') => {
+    setProblem(null)
+    setRemoving(false)
+    dockerAction(action, draft, connectionId).then(refresh, (e: unknown) => setProblem(message(e)))
+  }
+
+  const container = here?.container
+  const ours = container !== undefined && container.kind !== 'missing' && container.ours
   return (
     <Disclosure label="Run it in Docker" open={open} onOpenChange={setOpen}>
       {made.kind === 'none' ? (
@@ -407,16 +452,52 @@ function RunInDocker({ draft, passwordKept, onFill }: { draft: Draft; passwordKe
       ) : (
         <div className="studio-form">
           <p className="desk-text-small desk-text-muted">
-            No {DATABASE_NAMES[draft.type]} to connect to? This runs one here, as Drivine&apos;s own tests do. Paste it into a terminal.
+            No {DATABASE_NAMES[draft.type]} to connect to? The studio can run one here in Docker, as Drivine&apos;s own tests do.
           </p>
-          <CodeBlock code={made.command} language="shell" />
+          {here?.docker.kind === 'absent' && <p className="desk-text-small studio-warn" role="note">{here.docker.why}</p>}
+          {here?.docker.kind === 'ready' && container && (
+            <div className="studio-docker">
+              <span className="desk-text-small" role="status">
+                {container.kind === 'missing' && <>{name} is not made yet.</>}
+                {container.kind === 'running' && <>{name} is running{container.port ? ` on port ${container.port}` : ''}.</>}
+                {container.kind === 'stopped' && <>{name} is stopped. Its data is kept.</>}
+                {container.kind !== 'missing' && !container.ours && ' The studio did not make it, so leaves it alone.'}
+              </span>
+              <span className="desk-grow" />
+              {(container.kind === 'missing' || (container.kind === 'stopped' && ours)) && (
+                <Button size="small" intent="default" onClick={() => act('start')} disabled={busy}>Start</Button>
+              )}
+              {container.kind === 'running' && ours && <Button size="small" onClick={() => act('stop')} disabled={busy}>Stop</Button>}
+              {ours && <Button size="small" intent="quiet" onClick={() => setRemoving(true)} disabled={busy}>Remove…</Button>}
+            </div>
+          )}
+          {job && (
+            <p className={`desk-text-small ${job.state === 'failed' ? 'studio-bad' : 'desk-text-muted'} studio-docker-job`} role={job.state === 'failed' ? 'alert' : 'status'}>
+              {busy && <Spinner label="Working" size="small" />}
+              {job.state === 'failed' ? job.error : job.state === 'ready' ? `Ready: it answered in ${Math.round((job.milliseconds ?? 0) / 1000)} s.` : job.detail}
+            </p>
+          )}
+          {problem && <p className="desk-text-small studio-bad" role="alert">{problem}</p>}
           {made.note && <p className="desk-text-small desk-text-muted">{made.note}</p>}
+          <p className="desk-text-small desk-text-muted">
+            Or run it yourself, in a terminal{shown !== made ? ', with the connection’s password for YOUR-PASSWORD' : ''}:
+          </p>
+          {shown.kind === 'command' && <CodeBlock code={shown.command} language="shell" />}
           {/* Only what is empty, and said: a button that changed fields it did not name would be a surprise. */}
           {filled.length > 0 && (
             <div>
               <Button size="small" onClick={() => onFill(fill)}>Fill In {listed(filled)}</Button>
             </div>
           )}
+          <Alert
+            open={removing}
+            title={`Remove ${name}?`}
+            message="Docker removes the container and the data in it. The connection stays."
+            confirmLabel="Remove"
+            destructive
+            onConfirm={() => act('remove')}
+            onCancel={() => setRemoving(false)}
+          />
         </div>
       )}
     </Disclosure>

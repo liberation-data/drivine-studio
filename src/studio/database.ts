@@ -1,6 +1,7 @@
-// The studio's own endpoints for connections and for running Cypher on them: what this app's server
-// answers, in src/app/api/connections and src/app/api/cypher.
+// The studio's own endpoints for connections, for running Cypher on them, and for a database in Docker: what this
+// app's server answers, in src/app/api/connections, src/app/api/cypher and src/app/api/docker.
 
+import type { DockerDraft, DockerStatus } from './docker'
 import { json, read } from './fetching'
 
 export const DATABASE_TYPES = ['NEO4J', 'MEMGRAPH', 'FALKORDB', 'NEPTUNE', 'POSTGRES', 'ORACLE'] as const
@@ -137,6 +138,15 @@ export const removeConnection = (id: string): Promise<void> =>
 /** Connects and runs a trivial read. Answers how long it took, or throws why it could not. */
 export const testConnection = (id: string): Promise<{ milliseconds: number }> =>
   fetch(`${API}/connections/${encodeURIComponent(id)}/test`, json('POST')).then(r => read<{ milliseconds: number }>(r))
+
+/** How Docker and the container for these settings stand. Never the password: the status needs only type and port. */
+export const dockerStatus = (draft: Pick<DockerDraft, 'type' | 'host' | 'port'>): Promise<DockerStatus> =>
+  fetch(`${API}/docker?${new URLSearchParams({ type: draft.type, host: draft.host, port: draft.port })}`, { cache: 'no-store' })
+    .then(r => read<DockerStatus>(r))
+
+/** Starts, stops or removes the container for these settings; a saved connection's id lends it the kept password. */
+export const dockerAction = (action: 'start' | 'stop' | 'remove', draft: DockerDraft, id?: string): Promise<unknown> =>
+  fetch(`${API}/docker`, json('POST', { action, draft, ...(id ? { id } : {}) })).then(r => read<unknown>(r))
 
 export const runCypher = (request: CypherRequest, signal?: AbortSignal): Promise<CypherResult> =>
   fetch(`${API}/cypher`, json('POST', request, signal)).then(r => read<CypherResult>(r))

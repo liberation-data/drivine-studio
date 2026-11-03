@@ -171,3 +171,7 @@ html, body, #root { height: 100%; margin: 0; }
 .desk-infotip-body {
   max-width: 38ch; font-family: 'Times New Roman', Times, serif; font-size: var(--desk-text-lead); line-height: 1.5;
 }
+
+/* A database in Docker: how its container stands, and what can be done to it, on one line. */
+.studio-docker { display: flex; flex-wrap: wrap; align-items: center; gap: var(--desk-space-2); }
+.studio-docker-job { display: flex; align-items: center; gap: var(--desk-space-2); overflow-wrap: anywhere; }
