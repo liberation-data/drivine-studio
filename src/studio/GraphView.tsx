@@ -116,19 +116,43 @@ const short = (text: string) => (text.length > 26 ? `${text.slice(0, 25)}…` : 
 
 export type Selection = { kind: 'node'; node: GraphNode } | { kind: 'edge'; edge: GraphEdge } | null
 
+/**
+ * Whether the graph's layout is live: as last chosen, else on for a graph small enough. A graph past `LIVE_UP_TO`
+ * starts off whatever was chosen before, as the motion of so many is noise; turned on for it, it stays on for it.
+ */
+export function useLiveLayout(graph: Result['graph'] | null | undefined): [boolean, (live: boolean) => void] {
+  const [choice, setChoice] = useState<{ live: boolean; graph: unknown } | null>(null)
+  const large = (graph?.nodes.length ?? 0) > LIVE_UP_TO
+  const live = large ? choice !== null && choice.graph === graph && choice.live : (choice?.live ?? true)
+  return [live, next => setChoice({ live: next, graph })]
+}
+
+/** The switch for it, for the header of whatever holds the graph. */
+export function LiveLayoutToggle({ live, onChange }: { live: boolean; onChange: (live: boolean) => void }) {
+  return (
+    <span className="studio-live desk-text-small">
+      <Toggle label="Live layout" checked={live} onChange={onChange} />
+    </span>
+  )
+}
+
+/** The legend opens folded past this many fragments: a long list would cover the graph it explains. */
+const LEGEND_OPEN_UP_TO = 12
+
 interface Props {
   graph: Result['graph']
+  /** Whether a drag moves the rest: `useLiveLayout`, with its switch in the holder's header. */
+  live: boolean
   /** Every fragment name in the catalogue, which fixes each one's colour across queries. */
   fragments: readonly string[]
   onSelect: (selection: Selection) => void
 }
 
-export function GraphView({ graph, fragments, onSelect }: Props) {
+export function GraphView({ graph, live, fragments, onSelect }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const cy = useRef<Core | null>(null)
   const select = useRef(onSelect)
   select.current = onSelect
-  const [live, setLive] = useState(graph.nodes.length <= LIVE_UP_TO)
   const liveNow = useRef(live)
   liveNow.current = live
   // The simulation running now, if any; the nodes put down by hand, which it holds where they are.
@@ -327,6 +351,7 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
   const labelOf = (fragment: string) => iconLabelOf(graph.nodes, fragment)
   const { images, icons } = useLabelIcons(present.flatMap(fragment => labelOf(fragment) ?? []))
   const [choosing, setChoosing] = useState<string | null>(null)
+  const [legendOpen, setLegendOpen] = useState(present.length <= LEGEND_OPEN_UP_TO)
 
   // Turned off, nothing moves but what is dragged.
   useEffect(() => {
@@ -351,14 +376,13 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
   return (
     <div className="studio-graph">
       <div ref={container} className="studio-graph-canvas" role="img" aria-label={`Graph of ${graph.nodes.length} nodes and ${graph.edges.length} relationships`} />
-      <div className="studio-graph-controls desk-text-small">
-        <Toggle
-          label="Live layout"
-          checked={live}
-          onChange={setLive}
-        />
-      </div>
-      <ul className="studio-legend" aria-label="Fragments">
+      <div className="studio-legend">
+        <button type="button" className="studio-legend-head desk-text-small desk-text-muted" aria-expanded={legendOpen} onClick={() => setLegendOpen(!legendOpen)}>
+          <span className="studio-legend-chevron" aria-hidden="true">{legendOpen ? '▾' : '▸'}</span>
+          {present.length} {present.length === 1 ? 'label' : 'labels'}
+        </button>
+        {legendOpen && (
+      <ul className="studio-legend-list" aria-label="Fragments">
         {present.map(fragment => {
           const label = labelOf(fragment)
           return (
@@ -378,6 +402,8 @@ export function GraphView({ graph, fragments, onSelect }: Props) {
           )
         })}
       </ul>
+        )}
+      </div>
       {choosing && <IconPicker label={choosing} current={icons[choosing]} onDone={() => setChoosing(null)} />}
     </div>
   )

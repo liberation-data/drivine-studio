@@ -4,7 +4,7 @@ import type { FormEvent, KeyboardEvent } from 'react'
 import { useStudio } from './App'
 import { DATABASE_NAMES, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
 import type { Cell, CypherResult } from './database'
-import { GraphView } from './GraphView'
+import { GraphView, LiveLayoutToggle, useLiveLayout } from './GraphView'
 import type { Selection } from './GraphView'
 import { Inspector } from './Inspector'
 import { cellText, graphOf, parametersOf, writtenText } from './results'
@@ -104,6 +104,7 @@ export function Cypher() {
   }
 
   const drawn = useMemo(() => (result ? graphOf(result.graph) : null), [result])
+  const [live, setLive] = useLiveLayout(drawn?.graph)
 
   const editor = (
     <form className="studio-query studio-query-fill" onSubmit={submit} aria-label="Cypher">
@@ -174,7 +175,13 @@ export function Cypher() {
           onChange={setView}
           className="studio-tabs"
           // What came back, and how long it took, heads what came back rather than the controls that asked.
-          actions={<Summary result={result} />}
+          actions={
+            <span className="studio-tabs-actions">
+              {/* Up here, it stays put when a node's details open beside the graph. */}
+              {view === 'graph' && <LiveLayoutToggle live={live} onChange={setLive} />}
+              <Summary result={result} />
+            </span>
+          }
           tabs={[
             { value: 'graph', label: 'Graph', badge: drawn.graph.nodes.length || undefined, disabled: drawn.graph.nodes.length === 0 },
             { value: 'rows', label: 'Rows', badge: result.rows.length },
@@ -182,7 +189,7 @@ export function Cypher() {
         >
           {view === 'graph' ? (
             <div className="studio-result">
-              <GraphView graph={drawn.graph} fragments={drawn.labels} onSelect={setSelection} />
+              <GraphView graph={drawn.graph} live={live} fragments={drawn.labels} onSelect={setSelection} />
               {selection && <Inspector selection={selection} nodes={drawn.graph.nodes} fragments={drawn.labels} />}
             </div>
           ) : (
