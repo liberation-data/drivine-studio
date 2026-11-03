@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dockerArgs, dockerCommand, fillFor, listed, shellWord, TEST_PASSWORD } from './docker'
+import { dockerArgs, dockerCommand, fillFor, foundName, listed, sameKind, shellWord, TEST_PASSWORD } from './docker'
 import type { DockerDraft } from './docker'
 
 const draft = (patch: Partial<DockerDraft>): DockerDraft => ({ type: 'POSTGRES', host: 'localhost', port: '', user: '', password: '', database: '', ...patch })
@@ -89,5 +89,17 @@ describe('the container as the studio runs it', () => {
   it('has no container for a port that is not one', () => {
     expect(dockerCommand(draft({ port: '99999' }))).toMatchObject({ kind: 'none' })
     expect(dockerCommand(draft({ port: '54x' }))).toMatchObject({ kind: 'none' })
+  })
+})
+
+describe('what is found on a port, against the connection', () => {
+  it('is the same kind when it is the type, or Bolt for Neo4j and Memgraph', () => {
+    expect(sameKind('POSTGRES', 'POSTGRES')).toBe(true)
+    expect(sameKind('BOLT', 'NEO4J')).toBe(true)
+    expect(sameKind('BOLT', 'MEMGRAPH')).toBe(true)
+    expect(sameKind('BOLT', 'POSTGRES')).toBe(false)
+    expect(sameKind(null, 'POSTGRES')).toBe(false)
+    expect(foundName('BOLT')).toBe('a Bolt database (Neo4j or Memgraph)')
+    expect(foundName('POSTGRES')).toBe('Postgres')
   })
 })

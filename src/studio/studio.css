@@ -156,6 +156,8 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-form { display: flex; flex-direction: column; gap: var(--desk-space-3); }
 .studio-form p { margin: 0; }
 .studio-bad { color: var(--desk-bad); margin: 0; }
+/* Good news, as text: the ok colour, darkened toward the ink to be read. */
+.studio-ok { color: color-mix(in srgb, var(--desk-ok) 70%, var(--desk-ink)); margin: 0; }
 /* A connection that allows writes: the warning colour, darkened toward the ink to be read as text. */
 .studio-warn { color: color-mix(in srgb, var(--desk-warn) 75%, var(--desk-ink)); margin: 0; }
 

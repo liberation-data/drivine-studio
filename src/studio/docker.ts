@@ -1,3 +1,4 @@
+import { DATABASE_NAMES } from './database'
 import type { DatabaseType } from './database'
 
 /*
@@ -156,7 +157,28 @@ export interface Job {
 }
 
 /** Whether something on this machine already listens on the port, and what, when Docker can say. */
-export type PortHere = { kind: 'free' } | { kind: 'taken'; by: string | null }
+/**
+ * What a database on a port was found to be: a kind of database, or one that speaks Bolt, as Neo4j and Memgraph both do,
+ * when nothing tells the two apart.
+ */
+export type Found = DatabaseType | 'BOLT'
+
+export type PortHere =
+  | { kind: 'free' }
+  | {
+      kind: 'taken'
+      /** The container that publishes it, when Docker's does: "the container drivine-studio-pg". */
+      by: string | null
+      /** What answers there, when its greeting or its image says. */
+      runs: Found | null
+    }
+
+/** Whether what was found on a port is the kind of database a connection is for. */
+export const sameKind = (found: Found | null, type: DatabaseType): boolean =>
+  found === type || (found === 'BOLT' && (type === 'NEO4J' || type === 'MEMGRAPH'))
+
+/** What was found, as a person names it. */
+export const foundName = (found: Found): string => (found === 'BOLT' ? 'a Bolt database (Neo4j or Memgraph)' : DATABASE_NAMES[found])
 
 export interface DockerStatus {
   docker: DockerHere

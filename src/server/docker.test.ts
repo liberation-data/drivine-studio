@@ -3,7 +3,7 @@ import { createServer } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { check } from './datasources'
-import { containerOf, dockerHere, draftOf, portHere, start, stop } from './docker'
+import { containerOf, dockerHere, draftOf, greeted, kindOfImage, portHere, start, stop } from './docker'
 
 // What `docker` answers, by its arguments: the test sets it, and every call is recorded.
 type Answer = { code: number; out?: string; err?: string; enoent?: boolean }
@@ -143,10 +143,15 @@ describe('a port something else holds', () => {
   it('is said to be taken, by the container that publishes it when there is one', async () => {
     const { server, port } = await held()
     try {
-      answer = args => (args[0] === 'ps' ? { code: 0, out: 'drivine-studio-pg\n' } : { code: 0 })
-      expect(await portHere(port, true)).toEqual({ kind: 'taken', by: 'the container drivine-studio-pg' })
+      // Its image says what it is: by name, as `docker ps` may give only an id.
+      answer = args =>
+        args[0] === 'ps' ? { code: 0, out: 'drivine-studio-pg\n' }
+          : args[0] === 'container' ? { code: 0, out: 'pgvector/pgvector:pg16\n' }
+          : { code: 0 }
+      expect(await portHere(port, true)).toEqual({ kind: 'taken', by: 'the container drivine-studio-pg', runs: 'POSTGRES' })
+      // No container, and a port that answers no greeting: taken, by something unknown.
       answer = args => (args[0] === 'ps' ? { code: 0, out: '' } : { code: 0 })
-      expect(await portHere(port, true)).toEqual({ kind: 'taken', by: null })
+      expect(await portHere(port, true)).toEqual({ kind: 'taken', by: null, runs: null })
     } finally {
       server.close()
     }
@@ -161,6 +166,41 @@ describe('a port something else holds', () => {
       expect(calls.some(args => args[0] === 'pull' || args[0] === 'run')).toBe(false)
     } finally {
       server.close()
+    }
+  })
+})
+
+describe('what a database on a port is', () => {
+  it('is known by the image it was made from', () => {
+    expect(kindOfImage('neo4j:5.26')).toBe('NEO4J')
+    expect(kindOfImage('memgraph/memgraph:latest')).toBe('MEMGRAPH')
+    expect(kindOfImage('falkordb/falkordb:6.0.3')).toBe('FALKORDB')
+    expect(kindOfImage('pgvector/pgvector:pg16')).toBe('POSTGRES')
+    expect(kindOfImage('gvenzl/oracle-free:23-faststart')).toBe('ORACLE')
+    expect(kindOfImage('nginx')).toBeNull()
+  })
+
+  // A port that answers each greeting as one database would: the first bytes back are all that is read.
+  const answering = async (respond: (hello: Buffer) => Buffer | null) => {
+    const server = createServer(socket => socket.on('data', hello => {
+      const back = respond(hello)
+      if (back) socket.write(back)
+      else socket.end()
+    })).listen(0, '127.0.0.1')
+    await new Promise(resolve => server.once('listening', resolve))
+    return { server, port: (server.address() as AddressInfo).port }
+  }
+
+  it('is known by how it answers a greeting, with no password asked', async () => {
+    const bolt = await answering(hello => (hello[0] === 0x60 ? Buffer.from([0, 0, 4, 5]) : null))
+    const postgres = await answering(hello => (hello.length === 8 && hello[4] === 0x04 ? Buffer.from('N') : null))
+    const redis = await answering(hello => (hello.toString() === 'PING\r\n' ? Buffer.from('-NOAUTH Authentication required.\r\n') : null))
+    try {
+      expect(await greeted(bolt.port)).toBe('BOLT')
+      expect(await greeted(postgres.port)).toBe('POSTGRES')
+      expect(await greeted(redis.port)).toBe('FALKORDB')
+    } finally {
+      for (const { server } of [bolt, postgres, redis]) server.close()
     }
   })
 })

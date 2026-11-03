@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process'
 import { connect } from 'node:net'
 
-import { dockerArgs, dockerCommand, STUDIO_LABEL } from '../studio/docker'
-import type { Container, DockerDraft, DockerHere, DockerRun, DockerStatus, Job, PortHere } from '../studio/docker'
+import { dockerArgs, dockerCommand, foundName, sameKind, STUDIO_LABEL } from '../studio/docker'
+import type { Container, DockerDraft, DockerHere, DockerRun, DockerStatus, Found, Job, PortHere } from '../studio/docker'
 import { DATABASE_TYPES } from '../studio/database'
 import type { DatabaseType } from '../studio/database'
 import { ConnectionError } from './connections'
@@ -118,14 +118,68 @@ export async function status(draft: DockerDraft): Promise<DockerStatus> {
   return { docker: here, container: there, port: own ? { kind: 'free' } : await portHere(run.port, here.kind === 'ready'), job: jobs.get(run.name) ?? null }
 }
 
-/** Whether anything answers on the port here, and which container publishes it, when one does. */
+/**
+ * Whether anything answers on the port here, and if so what: the container that publishes it, when Docker's does, and
+ * the kind of database, from the image the container was made from or else from how the port answers a greeting.
+ */
 export async function portHere(port: number, askDocker: boolean): Promise<PortHere> {
   if (!(await listening(port))) return { kind: 'free' }
-  if (!askDocker) return { kind: 'taken', by: null }
-  const ran = await docker(['ps', '--filter', `publish=${port}`, '--format', '{{.Names}}'])
-  const by = ran.code === 0 ? (ran.out.trim().split(/\r?\n/)[0] ?? '') : ''
-  return { kind: 'taken', by: by ? `the container ${by}` : null }
+  let by: string | null = null
+  let runs: Found | null = null
+  if (askDocker) {
+    const ran = await docker(['ps', '--filter', `publish=${port}`, '--format', '{{.Names}}'])
+    const name = ran.code === 0 ? (ran.out.trim().split(/\r?\n/)[0] ?? '') : ''
+    if (name) {
+      by = `the container ${name}`
+      // The image it was made from, by name: `docker ps` gives an id once the name has moved to a newer image.
+      const image = await docker(['container', 'inspect', '--format', '{{.Config.Image}}', name])
+      if (image.code === 0) runs = kindOfImage(image.out.trim())
+    }
+  }
+  return { kind: 'taken', by, runs: runs ?? (await greeted(port)) }
 }
+
+/** The kind of database an image is of, by the names Docker Hub gives them. */
+export function kindOfImage(image: string): DatabaseType | null {
+  const name = image.toLowerCase()
+  if (/neo4j/.test(name)) return 'NEO4J'
+  if (/memgraph/.test(name)) return 'MEMGRAPH'
+  if (/falkordb/.test(name)) return 'FALKORDB'
+  if (/postgres|pgvector|postgis|timescale/.test(name)) return 'POSTGRES'
+  if (/oracle/.test(name)) return 'ORACLE'
+  return null
+}
+
+/**
+ * What answers on a port, by the opening each protocol starts with, sent to it in turn: Bolt's handshake (Neo4j and
+ * Memgraph), Postgres's request for TLS, and Redis's PING (FalkorDB). None needs a password, and each is answered, or
+ * not, before anything is asked of the database. Oracle's is not tried: its listener's greeting is long to write.
+ */
+export async function greeted(port: number): Promise<Found | null> {
+  const bolt = Buffer.from([0x60, 0x60, 0xb0, 0x17, 0, 0, 4, 5, 0, 0, 0, 5, 0, 0, 0, 4, 0, 0, 0, 3])
+  if ((await reply(port, bolt))?.length === 4) return 'BOLT'
+  const tls = Buffer.from([0, 0, 0, 8, 0x04, 0xd2, 0x16, 0x2f])
+  const postgres = await reply(port, tls)
+  if (postgres?.length === 1 && (postgres[0] === 0x53 || postgres[0] === 0x4e)) return 'POSTGRES'
+  const redis = await reply(port, Buffer.from('PING\r\n'))
+  if (redis && (redis[0] === 0x2b || redis[0] === 0x2d)) return 'FALKORDB'
+  return null
+}
+
+/** The first bytes a port answers this with, or null when it answers nothing in a moment. */
+const reply = (port: number, hello: Buffer): Promise<Buffer | null> =>
+  new Promise(resolve => {
+    const socket = connect({ host: '127.0.0.1', port })
+    const done = (answer: Buffer | null) => {
+      socket.destroy()
+      resolve(answer)
+    }
+    socket.setTimeout(800, () => done(null))
+    socket.once('connect', () => socket.write(hello))
+    socket.once('data', (data: Buffer) => done(data))
+    socket.once('error', () => done(null))
+    socket.once('end', () => done(null))
+  })
 
 const listening = (port: number): Promise<boolean> =>
   new Promise(resolve => {
@@ -169,7 +223,13 @@ export async function start(draft: DockerDraft): Promise<Job> {
   // Something else on the port would only make Docker's start fail, after a download: said before anything is done.
   if (!(there.kind === 'running' && there.port === run.port)) {
     const port = await portHere(run.port, true)
-    if (port.kind === 'taken') throw new ConnectionError(portTakenBy(run.port, port.by))
+    if (port.kind === 'taken') {
+      throw new ConnectionError(
+        sameKind(port.runs, draft.type)
+          ? `${foundName(port.runs!)} is already running on port ${run.port}${port.by ? `, in ${port.by}` : ''}. There's nothing to start: Test the connection to use it.`
+          : portTakenBy(run.port, port.by),
+      )
+    }
   }
   const job: Job = { state: 'starting', detail: '', started: Date.now() }
   jobs.set(run.name, job)

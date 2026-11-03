@@ -5,7 +5,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useStudio } from './App'
-import { dockerCommand, fillFor, listed } from './docker'
+import { dockerCommand, fillFor, foundName, listed, sameKind } from './docker'
 import type { DockerStatus } from './docker'
 import { addConnection, DATABASE_NAMES, DATABASE_TYPES, dockerAction, dockerStatus, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
@@ -532,6 +532,10 @@ function RunInDocker({ draft, connectionId, passwordKept, onFill, ask }: {
   const container = here?.container
   const ours = container !== undefined && container.kind !== 'missing' && container.ours
   const taken = here?.port.kind === 'taken' ? here.port : null
+  // What is on the port is this kind of database already: there is nothing to start.
+  const already = taken !== null && sameKind(taken.runs, draft.type)
+  const portNumber = draft.port || (made.kind === 'command' ? String(made.run.port) : '')
+  const holder = taken?.by ? `, in ${taken.by}` : ''
   const startable = container !== undefined && (container.kind === 'missing' || (container.kind === 'stopped' && ours))
   return (
     <div ref={section}>
@@ -547,13 +551,13 @@ function RunInDocker({ draft, connectionId, passwordKept, onFill, ask }: {
           {here?.docker.kind === 'ready' && container && (
             <div className="studio-docker">
               <span className="desk-text-small" role="status">
-                {container.kind === 'missing' && <>{name} is not made yet.</>}
+                {container.kind === 'missing' && !already && <>{name} is not made yet.</>}
                 {container.kind === 'running' && <>{name} is running{container.port ? ` on port ${container.port}` : ''}.</>}
                 {container.kind === 'stopped' && <>{name} is stopped. Its data is kept.</>}
                 {container.kind !== 'missing' && !container.ours && ' The studio did not make it, so leaves it alone.'}
               </span>
               <span className="desk-grow" />
-              {startable && (
+              {startable && !already && (
                 <Button intent="default" onClick={() => act('start')} disabled={busy || taken !== null}>
                   Start {DATABASE_NAMES[draft.type]} in Docker
                 </Button>
@@ -563,10 +567,21 @@ function RunInDocker({ draft, connectionId, passwordKept, onFill, ask }: {
             </div>
           )}
           {taken && startable && !busy && (
-            <p className="desk-text-small studio-warn" role="note">
-              Port {draft.port || made.run.port} is in use by {taken.by ?? 'something else on this machine'}. Choose another port to start one
-              here, or Test the connection: a database may be there already.
-            </p>
+            already ? (
+              <p className="desk-text-small studio-ok" role="note">
+                {foundName(taken.runs!)} is already running on port {portNumber}{holder}. There&apos;s nothing to start: Test the connection to use it.
+              </p>
+            ) : taken.runs ? (
+              <p className="desk-text-small studio-warn" role="note">
+                Port {portNumber} is in use by {foundName(taken.runs)}{holder}, not {DATABASE_NAMES[draft.type]}. Choose another port to start{' '}
+                {DATABASE_NAMES[draft.type]} here.
+              </p>
+            ) : (
+              <p className="desk-text-small studio-warn" role="note">
+                Port {portNumber} is in use by {taken.by ?? 'something else on this machine'}. Choose another port to start one here, or Test
+                the connection: a database may be there already.
+              </p>
+            )
           )}
           {job && (
             <p className={`desk-text-small ${job.state === 'failed' ? 'studio-bad' : 'desk-text-muted'} studio-docker-job`} role={job.state === 'failed' ? 'alert' : 'status'}>
