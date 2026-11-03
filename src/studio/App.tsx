@@ -1,4 +1,5 @@
 import { createDesk, DeskCommands } from '@liberation-data/desk'
+import type { WindowLimits } from '@liberation-data/desk'
 import {
   Button, DeskShell, Desktop, Dock, MenuBar, Split, dockItem, menuAction, menuCommand, menuSeparator, windowMenuItems,
 } from '@liberation-data/desk/react'
@@ -19,6 +20,16 @@ import type { Subject } from './model'
 const desk = createDesk()
 // In the desktop app on a Mac, the menus are the Mac's own, at the top of the screen.
 const native = nativeMenus()
+
+/*
+ * How small each window may be made: room for its side panel at its narrowest and for what it shows beside or below
+ * it, so a control is never squeezed past reading.
+ */
+const LIMITS: Record<string, WindowLimits> = {
+  explore: { minWidth: 640, minHeight: 360 },
+  cypher: { minWidth: 520, minHeight: 360 },
+  connections: { minWidth: 560, minHeight: 360 },
+}
 
 const TITLES: Record<string, string> = { explore: 'Explore', cypher: 'Cypher', connections: 'Connections' }
 const title = (id: string) => TITLES[id] ?? id
@@ -185,6 +196,7 @@ export function App() {
               title={title}
               renderWindow={renderWindow}
               note={id => (id === 'explore' ? 'read-only' : null)}
+              limits={id => LIMITS[id] ?? null}
               // The studio opens on nothing: one person came to explore the model, another to run a statement.
               empty={
                 <div className="studio-hint">
