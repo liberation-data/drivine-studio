@@ -31,6 +31,14 @@ export interface StudioNative {
   readonly platform: string
   setMenus(menus: readonly NativeMenu[]): void
   onMenu(handler: (id: string) => void): () => void
+  /** The system's folder picker: the path of the folder chosen, or null. */
+  pickFolder?(): Promise<string | null>
+}
+
+/** The desktop app's folder picker, on any system, when the page is in the desktop app. */
+export const folderPicker = (): (() => Promise<string | null>) | undefined => {
+  const pick = typeof window === 'undefined' ? undefined : window.studioNative?.pickFolder
+  return pick ? () => pick() : undefined
 }
 
 declare global {

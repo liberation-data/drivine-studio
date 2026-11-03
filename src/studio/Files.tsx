@@ -5,8 +5,9 @@ import {
 import type { IconViewItem, MenuItem } from '@liberation-data/desk/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
-import { listModelFiles, readModelFile } from './api'
-import type { ModelFileEntry } from './api'
+import { addModelPath, listModelFiles, listModelPaths, readModelFile, removeModelPath } from './api'
+import type { ModelFileEntry, ModelPath } from './api'
+import { folderPicker } from './nativeMenu'
 import { useStudio } from './App'
 import { addFolder, firstLine, listQueries, removeFolder, removeQuery } from './savedQueries'
 import type { QueryFolder, QueryShelf, SavedQuery } from './savedQueries'
@@ -24,6 +25,7 @@ type Entry =
   | ({ kind: 'folder'; folder: QueryFolder } & IconViewItem)
   | ({ kind: 'query'; query: SavedQuery } & IconViewItem)
   | ({ kind: 'model'; model: ModelFileEntry } & IconViewItem)
+  | ({ kind: 'linked'; linked: ModelPath; files: number } & IconViewItem)
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const LAYOUT = 'drivine-studio.files.layout'
@@ -37,7 +39,12 @@ const remembered = (): Layout => {
 }
 
 export function Files() {
-  const { openInCypher, queriesChanged, savedQuery, browsing, browse, catalog } = useStudio()
+  const { openInCypher, queriesChanged, savedQuery, browsing, browse, catalog, reload } = useStudio()
+  // The project folders linked, whose model files the studio reads; and the one open, in Model Files.
+  const [paths, setPaths] = useState<ModelPath[] | null>(null)
+  const [project, setProject] = useState<string | null>(null)
+  const [linking, setLinking] = useState(false)
+  const pick = useMemo(folderPicker, [])
   const [place, setPlace] = useState<Place>('queries')
   const [layout, setLayout] = useState<Layout>(remembered)
   const [shelf, setShelf] = useState<QueryShelf | null>(null)
@@ -52,8 +59,36 @@ export function Files() {
     listQueries().then(setShelf, (e: unknown) => setProblem(message(e)))
   }, [queriesChanged])
   useEffect(() => {
-    if (place === 'models') listModelFiles().then(setModels, (e: unknown) => setProblem(message(e)))
+    if (place !== 'models') return
+    listModelFiles().then(setModels, (e: unknown) => setProblem(message(e)))
+    listModelPaths().then(setPaths, (e: unknown) => setProblem(message(e)))
   }, [place, catalog])
+
+  /*
+   * Links a project: the studio reads the model files under it where they are, so a rebuild is read again on
+   * Reload Model Files, rather than a copy that goes stale. In the desktop app the system's folder picker chooses it;
+   * a browser can't say where a folder it was given lives, so there the path is pasted.
+   */
+  const linkFolder = () => {
+    if (!pick) return setLinking(true)
+    pick()
+      .then(path => (path ? link(path) : undefined))
+      .catch((e: unknown) => setProblem(message(e)))
+  }
+  const link = (path: string): Promise<void> =>
+    addModelPath(path).then(now => {
+      setPaths(now)
+      setProblem(null)
+      setProject(null)
+      reload()
+    })
+  const unlink = (path: string) =>
+    removeModelPath(path).then(now => {
+      setPaths(now)
+      setSelected(null)
+      setProject(current => (current === path ? null : current))
+      reload()
+    }, (e: unknown) => setProblem(message(e)))
   useEffect(() => {
     try {
       window.localStorage.setItem(LAYOUT, layout)
@@ -73,9 +108,19 @@ export function Files() {
   const entries = useMemo<Entry[]>(() => {
     const words = find.trim().toLowerCase()
     if (place === 'models') {
-      return (models ?? [])
-        .filter(m => !words || m.module.toLowerCase().includes(words))
-        .map(m => ({ kind: 'model', model: m, id: `model:${m.path}`, label: m.module, subtitle: m.problem ? 'cannot be read' : `${m.views} views · ${m.fragments} fragments`, icon: <ModelIcon /> }))
+      const fileEntry = (m: ModelFileEntry): Entry => ({
+        kind: 'model', model: m, id: `model:${m.path}`, label: m.module, subtitle: m.problem ? 'cannot be read' : `${m.views} views · ${m.fragments} fragments`, icon: <ModelIcon />,
+      })
+      // Finding looks in every linked project; otherwise the projects, or what is in the one open.
+      if (words) return (models ?? []).filter(m => m.module.toLowerCase().includes(words)).map(fileEntry)
+      if (project !== null) return (models ?? []).filter(m => m.under === project).map(fileEntry)
+      return (paths ?? []).map(p => {
+        const files = (models ?? []).filter(m => m.under === p.path).length
+        return {
+          kind: 'linked' as const, linked: p, files, id: `linked:${p.path}`, label: baseName(p.path),
+          subtitle: `${files} ${files === 1 ? 'module' : 'modules'}`, icon: <LinkedFolderIcon />,
+        }
+      })
     }
     if (!shelf) return []
     // Finding looks in every folder; otherwise what is in this one.
@@ -89,18 +134,29 @@ export function Files() {
         kind: 'query' as const, query: q, id: `query:${q.id}`, label: q.name, subtitle: words && q.folder ? q.folder : firstLine(q.statement), icon: <QueryIcon />,
       })),
     ]
-  }, [place, models, shelf, folder, find])
+  }, [place, models, paths, project, shelf, folder, find])
 
   const chosen = entries.find(e => e.id === selected) ?? null
 
   const open = (entry: Entry) => {
     if (entry.kind === 'folder') go(entry.folder.path)
+    else if (entry.kind === 'linked') {
+      setProject(entry.linked.path)
+      setSelected(null)
+    }
     else if (entry.kind === 'query') openInCypher(entry.query.statement, entry.query.parameters, { id: entry.query.id, name: entry.query.name, folder: entry.query.folder })
     else setSelected(entry.id)
   }
 
   const menuFor = (entry: Entry): MenuItem[] => {
     if (entry.kind === 'model') return [menuAction('Show Contents', () => setSelected(entry.id))]
+    if (entry.kind === 'linked') {
+      return [
+        menuAction('Open', () => open(entry)),
+        menuSeparator(),
+        menuAction('Unlink', () => void unlink(entry.linked.path), { disabled: entry.linked.source === 'environment' }),
+      ]
+    }
     return [
       menuAction(entry.kind === 'folder' ? 'Open' : 'Open in Cypher', () => open(entry)),
       menuSeparator(),
@@ -127,6 +183,7 @@ export function Files() {
       value={place}
       onChange={id => {
         setPlace(id as Place)
+        setProject(null)
         setSelected(null)
         setFind('')
       }}
@@ -159,7 +216,18 @@ export function Files() {
                 </nav>
               </>
             ) : (
-              <span className="desk-text-small studio-crumb" aria-current="page">Model Files</span>
+              <>
+                <Button size="small" intent="quiet" onClick={() => setProject(null)} disabled={project === null} title="All linked projects">‹</Button>
+                <nav className="studio-crumbs desk-text-small" aria-label="Project">
+                  <button type="button" className="studio-crumb" aria-current={project === null ? 'page' : undefined} onClick={() => setProject(null)}>Model Files</button>
+                  {project !== null && (
+                    <span>
+                      <span className="desk-text-muted"> / </span>
+                      <span className="studio-crumb" aria-current="page" title={project}>{baseName(project)}</span>
+                    </span>
+                  )}
+                </nav>
+              </>
             )}
             <span className="desk-grow" />
             <span className="studio-find">
@@ -167,6 +235,7 @@ export function Files() {
             </span>
             <SegmentedControl label="View as" size="small" value={layout} onChange={setLayout} options={[{ value: 'icons', label: 'Icons' }, { value: 'list', label: 'List' }]} />
             {place === 'queries' && <Button size="small" onClick={() => setNaming(true)}>New Folder</Button>}
+            {place === 'models' && <Button size="small" onClick={linkFolder}>Link Folder…</Button>}
           </div>
           <div className="studio-finder-body">
             <div className="studio-finder-view">
@@ -184,11 +253,23 @@ export function Files() {
                 <ListView entries={entries} selected={selected} onSelect={setSelected} onOpen={open} menuFor={menuFor} empty={<Empty place={place} finding={find.trim() !== ''} />} />
               )}
             </div>
-            {chosen && <Details entry={chosen} onOpen={() => open(chosen)} onRemove={() => setRemoving(chosen)} />}
+            {chosen && (
+              <Details
+                entry={chosen}
+                onOpen={() => open(chosen)}
+                onRemove={() => (chosen.kind === 'linked' ? void unlink(chosen.linked.path) : setRemoving(chosen))}
+              />
+            )}
           </div>
           {problem && <p className="studio-bad desk-text-small studio-finder-problem" role="alert">{problem}</p>}
         </div>
       </Split>
+      {linking && (
+        <LinkFolder
+          onLink={path => link(path).then(() => setLinking(false))}
+          onCancel={() => setLinking(false)}
+        />
+      )}
       {naming && (
         <NewFolder
           inside={folder}
@@ -214,14 +295,16 @@ export function Files() {
 const parentOf = (path: string) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
 const held = (f: QueryFolder) =>
   [f.folders && `${f.folders} ${f.folders === 1 ? 'folder' : 'folders'}`, `${f.queries} ${f.queries === 1 ? 'query' : 'queries'}`].filter(Boolean).join(', ')
-const kindOf = (entry: Entry) => (entry.kind === 'folder' ? 'Folder' : entry.kind === 'query' ? 'Cypher query' : 'Model file')
+const kindOf = (entry: Entry) =>
+  entry.kind === 'folder' ? 'Folder' : entry.kind === 'query' ? 'Cypher query' : entry.kind === 'linked' ? 'Linked project' : 'Model file'
+const baseName = (path: string) => path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
 const modifiedOf = (entry: Entry) => (entry.kind === 'query' ? entry.query.saved : entry.kind === 'model' ? entry.model.modified : null)
 
 function Empty({ place, finding }: { place: Place; finding: boolean }) {
   if (finding) return <p className="desk-text-small desk-text-muted">Nothing matches.</p>
   return place === 'queries'
     ? <p className="desk-text-small desk-text-muted">Nothing here yet. Save a statement from Cypher with ⌘S, or make a folder.</p>
-    : <p className="desk-text-small desk-text-muted">No model files. Add the folder of a project that uses Drivine in Explore’s catalogue.</p>
+    : <p className="desk-text-small desk-text-muted">No projects linked. Link Folder… a project that uses Drivine, and the studio reads the model files its builds write.</p>
 }
 
 /** The same entries as rows: name, kind and when it changed, as a Finder's list shows them. */
@@ -277,6 +360,15 @@ function Details({ entry, onOpen, onRemove }: { entry: Entry; onOpen: () => void
       <h3>{entry.label}</h3>
       <p className="desk-text-small desk-text-muted">{kindOf(entry)}{modifiedOf(entry) ? ` · ${new Date(modifiedOf(entry)!).toLocaleString()}` : ''}</p>
       {entry.kind === 'folder' && <p className="desk-text-small">{held(entry.folder)}</p>}
+      {entry.kind === 'linked' && (
+        <>
+          <p className="desk-text-small studio-details-path">{entry.linked.path}</p>
+          <p className="desk-text-small">
+            {entry.files} {entry.files === 1 ? 'module' : 'modules'} with model files.{' '}
+            {entry.linked.source === 'environment' ? 'Linked by DRIVINE_STUDIO_MODELS, where the studio was started.' : 'Read where it is: Reload Model Files reads a rebuild.'}
+          </p>
+        </>
+      )}
       {entry.kind === 'query' && (
         <>
           <CodeBlock code={entry.query.statement} language="text" />
@@ -302,13 +394,48 @@ function Details({ entry, onOpen, onRemove }: { entry: Entry; onOpen: () => void
       <div className="studio-details-actions">
         {entry.kind === 'query' && <Button intent="default" onClick={onOpen}>Open in Cypher</Button>}
         {entry.kind === 'folder' && <Button onClick={onOpen}>Open</Button>}
-        {entry.kind !== 'model' && (
+        {entry.kind === 'linked' && <Button onClick={onOpen}>Open</Button>}
+        {entry.kind === 'linked' && (
+          <Button intent="quiet" onClick={onRemove} disabled={entry.linked.source === 'environment'}>Unlink</Button>
+        )}
+        {(entry.kind === 'folder' || entry.kind === 'query') && (
           <Button intent="quiet" onClick={onRemove} disabled={entry.kind === 'folder' && entry.folder.folders + entry.folder.queries > 0}>
             Delete…
           </Button>
         )}
       </div>
     </aside>
+  )
+}
+
+/** In a browser, which can't say where a folder lives: the project's path, pasted, to link where it is. */
+function LinkFolder({ onLink, onCancel }: { onLink: (path: string) => Promise<void>; onCancel: () => void }) {
+  const [path, setPath] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
+  const link = () => onLink(path.trim()).catch((e: unknown) => setProblem(message(e)))
+  return (
+    <Sheet
+      open
+      onDismiss={onCancel}
+      title="Link a Project"
+      description="The folder of a project that uses Drivine, where it is on this machine: the studio reads the model files its builds write under it. In the desktop app, Link Folder… opens a folder picker instead."
+      actions={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button intent="default" onClick={link} disabled={!path.trim()}>Link</Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={event => {
+          event.preventDefault()
+          link()
+        }}
+      >
+        <TextField label="Folder" placeholder="/Users/you/projects/my-app" value={path} onChange={e => setPath(e.target.value)} autoFocus />
+        {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
+      </form>
+    </Sheet>
   )
 }
 
@@ -390,6 +517,20 @@ function Model({ small }: { small?: boolean }) {
   )
 }
 
+/** A folder linked where it is: the folder, with a coral link on it. */
+function LinkedFolder({ small }: { small?: boolean }) {
+  return (
+    <span className="studio-linked-icon" data-small={small ? '' : undefined}>
+      <Folder small={small} />
+      <svg viewBox="0 0 24 24" className="studio-link-badge" aria-hidden="true">
+        <circle cx="12" cy="12" r="11" fill="#f08a5d" />
+        <path d="M10.5 13.5l3-3M9.5 11.5l-1.3 1.3a2.5 2.5 0 0 0 3.5 3.5l1.3-1.3M14.5 12.5l1.3-1.3a2.5 2.5 0 0 0-3.5-3.5l-1.3 1.3" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    </span>
+  )
+}
+
+const LinkedFolderIcon = LinkedFolder
 const FolderIcon = Folder
 const QueryIcon = Query
 const ModelIcon = Model
