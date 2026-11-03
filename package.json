@@ -81,6 +81,8 @@
       "public/**/*",
       "main.cjs",
       "build/icon.png",
+      "build/trayTemplate.png",
+      "build/trayTemplate@2x.png",
       "preload.cjs",
       "server-start.cjs",
       "package.json",
