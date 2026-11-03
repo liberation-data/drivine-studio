@@ -52,6 +52,7 @@
   "build": {
     "appId": "org.drivine.studio",
     "productName": "Drivine Studio",
+    "icon": "build/icon.png",
     "npmRebuild": false,
     "buildDependenciesFromSource": false,
     "asar": false,
@@ -79,6 +80,7 @@
       ".next/static/**/*",
       "public/**/*",
       "main.cjs",
+      "build/icon.png",
       "preload.cjs",
       "server-start.cjs",
       "package.json",
