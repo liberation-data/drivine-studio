@@ -332,7 +332,17 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-bench-progress > span { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--desk-accent), #f08a5d); }
 
 /* Loading Graph Bench's data: how big, into what. */
-.studio-bench-size { display: flex; flex-direction: column; gap: var(--desk-space-2); padding: var(--desk-space-3); border-radius: 10px; background: linear-gradient(135deg, color-mix(in srgb, var(--desk-accent) 16%, transparent), color-mix(in srgb, #f08a5d 12%, transparent)); border: 1px solid color-mix(in srgb, var(--desk-accent) 35%, transparent); }
+.studio-bench-size {
+  --heat: #3fb8c4; --heat-next: #45c29b;
+  /* The slider takes the heat too. */
+  --desk-accent: var(--heat);
+  display: flex; flex-direction: column; gap: var(--desk-space-2); padding: var(--desk-space-3); border-radius: 10px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--heat) 22%, transparent), color-mix(in srgb, var(--heat-next) 14%, transparent));
+  border: 1px solid color-mix(in srgb, var(--heat) 45%, transparent);
+  transition: border-color 0.3s ease;
+}
+/* At the top, a glow: this one is big. */
+.studio-bench-size[data-heat='5'] { box-shadow: 0 0 18px color-mix(in srgb, var(--heat) 35%, transparent); }
 .studio-bench-size h4 { margin: 0; font-size: var(--desk-text-size-body, 14px); }
 .studio-bench-size p { margin: 0; }
 .studio-bench-size-stops { display: flex; justify-content: space-between; margin-top: -4px; }

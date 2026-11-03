@@ -5,7 +5,7 @@ import type { BenchSet, EngineResults, Outcome } from '../server/bench'
 import type { RunJob } from '../server/benchRun'
 import type { Loaded, LoadBatch, LoadJob } from '../server/benchLoad'
 import { Scale } from '../server/benchData'
-import { listConnections, DATABASE_NAMES } from './database'
+import { listConnections, DATABASE_NAMES, testConnection } from './database'
 import type { StudioConnection } from './database'
 import { listQueries } from './savedQueries'
 import type { SavedQuery } from './savedQueries'
@@ -641,6 +641,8 @@ function NewRun({ onStarted, onCancel }: { onStarted: (job: RunJob) => void; onC
 /** The scales offered, from a quick look to a graph of millions. */
 const SCALES = [0.001, 0.01, 0.1, 1, 3, 10]
 const SLOW_SCALE = 0.1
+/** The size section's colour at each scale: cool for a quick look, hotter as the graph grows. */
+const HEAT = ['#3fb8c4', '#45c29b', '#d9c443', '#f0a03a', '#ee6a32', '#e5383b']
 
 /**
  * Graph Bench's dataset, loaded into a connection that allows writes: the same graph Graph Bench makes, so its
@@ -659,12 +661,32 @@ function LoadData({ onStarted, onCancel }: { onStarted: (batch: LoadBatch) => vo
     const timer = setInterval(read, 2000)
     return () => clearInterval(timer)
   }, [])
+  // Whether each is up: one that isn't can't be loaded, and says so rather than failing its turn.
+  const [up, setUp] = useState<Record<string, boolean>>({})
+  const ids = (connections ?? []).map(c => c.id).join('|')
+  useEffect(() => {
+    if (!ids) return
+    let live = true
+    const probe = () => {
+      for (const id of ids.split('|')) testConnection(id).then(() => true, () => false).then(ok => live && setUp(was => (was[id] === ok ? was : { ...was, [id]: ok })))
+    }
+    probe()
+    const timer = setInterval(probe, 5000)
+    return () => {
+      live = false
+      clearInterval(timer)
+    }
+  }, [ids])
   useEffect(() => {
     fetch(`${API}/loads`, { cache: 'no-store' }).then(r => read<Record<string, Loaded>>(r)).then(setLoaded, () => undefined)
   }, [])
   const scale = SCALES[step]!
   const size = new Scale(scale)
-  const chosen = [...picked].filter(id => connections?.some(c => c.id === id && c.allowWrites))
+  const usable = (c: StudioConnection) => !!c.allowWrites && up[c.id] === true
+  const chosen = [...picked].filter(id => connections?.some(c => c.id === id && usable(c)))
+  // Those that can be loaded first, then those that are down, then those that don't allow writes.
+  const rank = (c: StudioConnection) => (!c.allowWrites ? 2 : up[c.id] === false ? 1 : 0)
+  const listed = [...(connections ?? [])].sort((a, b) => rank(a) - rank(b))
   const start = () =>
     fetch(`${API}/loads`, json('POST', { connections: chosen, scale }))
       .then(r => read<LoadBatch>(r))
@@ -685,7 +707,7 @@ function LoadData({ onStarted, onCancel }: { onStarted: (batch: LoadBatch) => vo
       }
     >
       <div className="studio-form">
-        <section className="studio-bench-size">
+        <section className="studio-bench-size" data-heat={step} style={{ '--heat': HEAT[step], '--heat-next': HEAT[Math.min(HEAT.length - 1, step + 1)] } as React.CSSProperties}>
           <h4>How big</h4>
           <p className="desk-text-small desk-text-muted">Graph Bench’s scale: 1 is about a million nodes. Start small to try it; go big to see where the stores part ways.</p>
           <Slider label="Scale" min={0} max={SCALES.length - 1} step={1} value={step} onChange={setStep} format={i => String(SCALES[i])} />
@@ -703,14 +725,14 @@ function LoadData({ onStarted, onCancel }: { onStarted: (batch: LoadBatch) => vo
         </section>
         <fieldset className="studio-bench-pick">
           <legend className="desk-text-small">Into</legend>
-          {!connections ? <Loading label="Reading the connections" /> : connections.map(c => {
+          {!connections ? <Loading label="Reading the connections" /> : listed.map(c => {
             const there = loaded[c.id]
             return (
               <div key={c.id} className="studio-bench-target">
                 <Checkbox
                   label={`${c.name} · ${DATABASE_NAMES[c.type]}`}
-                  checked={picked.has(c.id) && !!c.allowWrites}
-                  disabled={!c.allowWrites}
+                  checked={picked.has(c.id) && usable(c)}
+                  disabled={!usable(c)}
                   onChange={on => {
                     const next = new Set(picked)
                     if (on) next.add(c.id)
@@ -719,7 +741,7 @@ function LoadData({ onStarted, onCancel }: { onStarted: (batch: LoadBatch) => vo
                   }}
                 />
                 <span className="desk-text-caption desk-text-muted">
-                  {!c.allowWrites ? 'doesn’t allow writes' : there ? `has scale ${there.scale}: load again into an empty graph` : ''}
+                  {!c.allowWrites ? 'doesn’t allow writes' : up[c.id] === undefined ? 'checking…' : !up[c.id] ? 'not running' : there ? `has scale ${there.scale}: load again into an empty graph` : ''}
                 </span>
               </div>
             )
