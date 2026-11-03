@@ -1,3 +1,5 @@
+<a href="https://drivine.org/"><img src="https://raw.githubusercontent.com/liberation-data/drivine/master/website/public/images/splash.jpg" alt="Drivine: graph database client for TypeScript, Python and the JVM"></a>
+
 # Drivine Studio
 
 Browse a [Drivine](https://github.com/liberation-data) model, load its views and fragments as `loadAll` does, and
@@ -6,6 +8,10 @@ writes: a connection can be set to allow writes from the Cypher window, and the 
 
 The browser app talks only to this app's own server, which connects to the databases with Drivine (TypeScript). The
 same build runs from `npm start`, as a desktop app in Electron, and is meant to run in a container too.
+
+![Drivine Studio's Cypher window on Postgres: a statement above, and below it a metro network drawn as a graph of stations and their routes, with the station Bastille chosen and its properties shown beside the graph](docs/studio-cypher.png)
+
+*Cypher on Postgres, compiled to SQL by Drivine: a metro network drawn as a graph, the station chosen shown beside it.*
 
 ## Model files
 
