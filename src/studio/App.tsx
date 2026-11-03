@@ -1,8 +1,9 @@
 import { addCommandHandler, createDesk, DeskCommands } from '@liberation-data/desk'
 import type { WindowLimits } from '@liberation-data/desk'
 import {
-  Button, DeskShell, Desktop, Dock, MenuBar, Split, dockItem, menuAction, menuCommand, menuHeader, menuSeparator, windowMenuItems,
+  Button, DeskShell, Desktop, Dock, MenuBar, Split, dockItem, dockSeparator, menuAction, menuCommand, menuHeader, menuSeparator, windowMenuItems,
 } from '@liberation-data/desk/react'
+import type { Drag } from '@liberation-data/desk/react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { loadCatalog } from './api'
@@ -11,7 +12,9 @@ import { Canvas } from './Canvas'
 import { Catalogue } from './Catalogue'
 import { Connections } from './Connections'
 import { Cypher } from './Cypher'
-import { Files } from './Files'
+import { Files, QueryIcon } from './Files'
+import { listQueries, QUERY_DRAG } from './savedQueries'
+import type { QueryDrag } from './savedQueries'
 import { ALLOWS_WRITES, DATABASE_NAMES, listConnections } from './database'
 import type { StudioConnection } from './database'
 import { inCatalog, nextSubject } from './model'
@@ -171,6 +174,16 @@ const rememberedConnection = (): string | null => {
   }
 }
 
+const KEPT = 'drivine-studio.dock.queries'
+const rememberedKept = (): QueryDrag[] => {
+  try {
+    const kept = JSON.parse(window.localStorage.getItem(KEPT) ?? '[]') as unknown
+    return Array.isArray(kept) ? kept.filter((q): q is QueryDrag => typeof q?.id === 'string' && typeof q?.statement === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 const DOCK = [
   // First, as the Finder is in a Mac's dock: what has been kept, to open again.
   dockItem({ id: 'files', label: 'Files', description: 'Saved queries, in folders, and the model files the studio reads', icon: icon('M4 5a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM8 11l-2 2 2 2M16 11l2 2-2 2M13 10l-2 6') }),
@@ -308,6 +321,66 @@ export function App() {
   const nativeAll = useMemo(() => [...menus, ...status], [menus, status])
   useNativeMenus(native, nativeAll, desk)
 
+  /*
+   * Queries kept in the dock: dragged there from Files, as a file is dragged to a Mac's Dock, after the studio's own
+   * windows. A click opens it in Cypher, as it is saved now; kept in this browser, by the query's id.
+   */
+  const [kept, setKept] = useState<QueryDrag[]>(rememberedKept)
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(KEPT, JSON.stringify(kept))
+    } catch {
+      // Kept for this visit only, then.
+    }
+  }, [kept])
+  const openKept = useCallback((q: QueryDrag) => {
+    listQueries().then(
+      shelf => {
+        const now = shelf.queries.find(found => found.id === q.id)
+        const at = now ?? q
+        openInCypher(at.statement, at.parameters, { id: at.id, name: at.name, folder: at.folder })
+      },
+      () => openInCypher(q.statement, q.parameters, { id: q.id, name: q.name, folder: q.folder }),
+    )
+  }, [openInCypher])
+  const dock = useMemo(() => [
+    ...DOCK,
+    ...(kept.length ? [dockSeparator('kept')] : []),
+    ...kept.map(q => dockItem({
+      id: `query:${q.id}`,
+      label: q.name,
+      description: q.folder ? `${q.folder} · saved query` : 'Saved query',
+      icon: <QueryIcon />,
+      onSelect: () => openKept(q),
+      movable: true,
+      contextMenu: () => [
+        menuAction('Open in Cypher', () => openKept(q)),
+        menuSeparator(),
+        menuAction('Remove from Dock', () => setKept(all => all.filter(k => k.id !== q.id))),
+      ],
+    })),
+  ], [kept, openKept])
+  const pins = useMemo(() => ({
+    accepts: QUERY_DRAG,
+    onPin: (drag: Drag, before: string | null) => {
+      const q = drag.payload as QueryDrag
+      setKept(all => {
+        const rest = all.filter(k => k.id !== q.id)
+        const at = before ? rest.findIndex(k => `query:${k.id}` === before) : -1
+        return at < 0 ? [...rest, q] : [...rest.slice(0, at), q, ...rest.slice(at)]
+      })
+    },
+    onMove: (id: string, before: string | null) => {
+      setKept(all => {
+        const moving = all.find(k => `query:${k.id}` === id)
+        if (!moving) return all
+        const rest = all.filter(k => k !== moving)
+        const at = before ? rest.findIndex(k => `query:${k.id}` === before) : -1
+        return at < 0 ? [...rest, moving] : [...rest.slice(0, at), moving, ...rest.slice(at)]
+      })
+    },
+  }), [])
+
   return (
     <DeskShell desk={desk}>
       <StudioContext.Provider value={studio}>
@@ -333,7 +406,7 @@ export function App() {
                 </div>
               }
             />
-            <Dock entries={DOCK} label="Studio dock" />
+            <Dock entries={dock} label="Studio dock" pins={pins} />
           </main>
         </div>
       </StudioContext.Provider>

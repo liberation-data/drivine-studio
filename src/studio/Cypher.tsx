@@ -1,11 +1,11 @@
 import { addCommandHandler, windowElement } from '@liberation-data/desk'
-import { Button, PopUpButton, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField, useWindowId } from '@liberation-data/desk/react'
+import { Button, PopUpButton, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField, useDropTarget, useWindowId } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { StudioCommands, useStudio } from './App'
 import type { SavedAs } from './App'
-import { addQuery, firstLine, listQueries, updateQuery } from './savedQueries'
-import type { SavedQuery } from './savedQueries'
+import { addQuery, firstLine, listQueries, QUERY_DRAG, updateQuery } from './savedQueries'
+import type { QueryDrag, SavedQuery } from './savedQueries'
 import { DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
 import type { Cell, CypherResult } from './database'
 import { GraphView, LiveLayoutToggle, useLiveLayout } from './GraphView'
@@ -155,6 +155,18 @@ export function Cypher() {
     return () => removers.forEach(remove => remove())
   }, [windowId, kept])
 
+  // A saved query carried here from Files opens here, as a double-click on it does.
+  const { dropProps } = useDropTarget<QueryDrag>({
+    accepts: QUERY_DRAG,
+    onDrop: ({ payload: q }) => {
+      setStatement(q.statement)
+      setParameters(q.parameters)
+      setSavedAs({ id: q.id, name: q.name, folder: q.folder })
+      setPane('statement')
+      setSize(current => (current === 'line' ? 'split' : current))
+    },
+  })
+
   const drawn = useMemo(() => (result ? graphOf(result.graph) : null), [result])
   const [live, setLive] = useLiveLayout(drawn?.graph)
 
@@ -269,7 +281,7 @@ export function Cypher() {
   )
 
   return (
-    <div className="studio-canvas">
+    <div className="studio-canvas" {...dropProps}>
       {/*
         The editor above, what it gave below, and the edge between them remembered. Expanded, the results are
         hidden rather than taken away, so the editor keeps its place and the results come back as they were.
