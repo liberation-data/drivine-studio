@@ -5,7 +5,7 @@ import { runQuery } from './api'
 import type { Catalog, Result } from './api'
 import { useStudio } from './App'
 import { SUBJECT } from './Catalogue'
-import { GraphView } from './GraphView'
+import { GraphView, LiveLayoutToggle, useLiveLayout } from './GraphView'
 import type { Selection } from './GraphView'
 import { Inspector } from './Inspector'
 import { emptyDraft, operatorsFor, scopesOf, subjectKey, subjectName, toQuery } from './model'
@@ -41,6 +41,7 @@ function Loaded({ subject, catalog, connection, onClear }: { subject: Subject; c
   const { openInCypher } = useStudio()
   const [draft, setDraft] = useState<QueryDraft>(emptyDraft)
   const [result, setResult] = useState<Result | null>(null)
+  const [live, setLive] = useLiveLayout(result?.graph)
   const [run, setRun] = useState<Run>({ state: 'idle' })
   const [selection, setSelection] = useState<Selection>(null)
   const scopes = useMemo(() => scopesOf(subject, catalog), [subject, catalog])
@@ -85,6 +86,7 @@ function Loaded({ subject, catalog, connection, onClear }: { subject: Subject; c
             {subject.kind === 'view' ? 'View' : 'Fragment'}: {subjectName(subject)}
           </Chip>
           <span className="desk-grow" />
+          {result && result.graph.nodes.length > 0 && <LiveLayoutToggle live={live} onChange={setLive} />}
           <Status run={run} result={result} />
           <Button type="submit" intent="default" disabled={run.state === 'running'}>Load</Button>
         </div>
@@ -121,7 +123,7 @@ function Loaded({ subject, catalog, connection, onClear }: { subject: Subject; c
         </details>
       )}
       <div className="studio-result">
-        {result && result.graph.nodes.length > 0 && <GraphView graph={result.graph} fragments={fragments} onSelect={setSelection} />}
+        {result && result.graph.nodes.length > 0 && <GraphView graph={result.graph} live={live} fragments={fragments} onSelect={setSelection} />}
         {result && result.graph.nodes.length === 0 && (
           <div className="studio-hint">
             <h2>Nothing matched</h2>
