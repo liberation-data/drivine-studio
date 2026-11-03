@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dockerCommand, shellWord, TEST_PASSWORD } from './docker'
+import { dockerCommand, fillFor, listed, shellWord, TEST_PASSWORD } from './docker'
 import type { DockerDraft } from './docker'
 
 const draft = (patch: Partial<DockerDraft>): DockerDraft => ({ type: 'POSTGRES', host: 'localhost', port: '', user: '', password: '', database: '', ...patch })
@@ -52,5 +52,24 @@ describe('a database to try the studio on, in Docker', () => {
     expect(shellWord('two words')).toBe("'two words'")
     expect(shellWord("it's $HOME")).toBe("'it'\\''s $HOME'")
     expect(command({ type: 'POSTGRES', password: 'p@ss word!' }).command).toContain("-e 'POSTGRES_PASSWORD=p@ss word!'")
+  })
+})
+
+describe('filling the form from the command', () => {
+  it('fills only what is empty', () => {
+    const made = command({ type: 'POSTGRES', port: '55432', user: 'studio', database: 'studio' })
+    expect(fillFor(made.fill, draft({ port: '55432', user: 'studio', database: 'studio' }), false)).toEqual({ password: TEST_PASSWORD })
+    expect(fillFor(command({}).fill, draft({}), false)).toEqual(command({}).fill)
+  })
+
+  it('never replaces a password the studio keeps, and fills nothing when nothing is empty', () => {
+    const filled = { port: '55432', user: 'studio', database: 'studio' }
+    expect(fillFor(command(filled).fill, draft(filled), true)).toEqual({})
+  })
+
+  it('names the fields as a list is read', () => {
+    expect(listed(['Password'])).toBe('Password')
+    expect(listed(['Port', 'User'])).toBe('Port and User')
+    expect(listed(['Port', 'User', 'Password', 'Database'])).toBe('Port, User, Password and Database')
   })
 })
