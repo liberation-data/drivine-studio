@@ -31,17 +31,26 @@ export interface Loaded {
   at: string
 }
 
+/** A load into one connection: waiting its turn, going, or over. */
 export interface LoadJob {
-  id: string
   connection: string
-  scale: number
-  state: 'running' | 'done' | 'failed'
+  name: string
+  type: string
+  state: 'waiting' | 'running' | 'done' | 'failed'
   /** Nodes and relationships written so far, and about how many there will be. */
   done: number
   total: number
   now: string
   error?: string
   loaded?: Loaded
+}
+
+/** One scale loaded into each of the connections chosen, one after another, so that no load's time is another's. */
+export interface LoadBatch {
+  id: string
+  scale: number
+  state: 'running' | 'done'
+  loads: LoadJob[]
 }
 
 /** The scales a load takes: from about 1,100 nodes to about 11 million. Past SLOW, a load is long. */
@@ -53,14 +62,15 @@ const EDGES_A_NODE = 4
 
 const LOADS = 'bench-loads.json'
 
-const jobs: Map<string, LoadJob> = ((globalThis as { __studioBenchLoads?: Map<string, LoadJob> }).__studioBenchLoads ??= new Map())
+const batches_: Map<string, LoadBatch> = ((globalThis as { __studioBenchLoads?: Map<string, LoadBatch> }).__studioBenchLoads ??= new Map())
 
-export function validateLoad(input: unknown): { connection: string; scale: number } {
+export function validateLoad(input: unknown): { connections: string[]; scale: number } {
   const given = (input ?? {}) as Record<string, unknown>
-  if (typeof given.connection !== 'string' || !given.connection) throw new BenchError('Choose a connection to load.')
+  const connections = Array.isArray(given.connections) ? [...new Set(given.connections.filter((c): c is string => typeof c === 'string' && !!c))] : []
+  if (!connections.length) throw new BenchError('Choose a connection to load.')
   const scale = Number(given.scale)
   if (!Number.isFinite(scale) || scale < SMALLEST || scale > LARGEST) throw new BenchError(`A scale is from ${SMALLEST} to ${LARGEST}.`)
-  return { connection: given.connection, scale }
+  return { connections, scale }
 }
 
 /** What has been loaded into each connection, by its id. */
@@ -72,37 +82,51 @@ const remember = (id: string, loaded: Loaded) => serially(async () => {
   await writeHomeFile(LOADS, { ...(await loadedInto()), [id]: loaded })
 })
 
-export function loadJob(id: string): LoadJob | undefined {
-  return jobs.get(id)
+export function loadBatch(id: string): LoadBatch | undefined {
+  return batches_.get(id)
 }
 
-/** Starts a load; it goes on in the background, and its job says how far it has got. */
-export async function startLoad(input: { connection: string; scale: number }): Promise<LoadJob> {
-  return beginLoad(await findConnection(input.connection), input.scale)
+/** Starts a load; it goes on in the background, and its batch says how far each connection has got. */
+export async function startLoad(input: { connections: string[]; scale: number }): Promise<LoadBatch> {
+  return beginLoad(await Promise.all(input.connections.map(findConnection)), input.scale)
 }
 
-/** Starts a load into the connection given. */
-export async function beginLoad(connection: Connection, scale: number): Promise<LoadJob> {
-  if (!connection.allowWrites) throw new BenchError(`${connection.name} doesn't allow writes. Allow them in its settings to load Graph Bench's data there.`)
-  if ([...jobs.values()].some(j => j.connection === connection.id && j.state === 'running')) throw new BenchError(`${connection.name} is being loaded already.`)
-  // A graph not there yet is empty: the load makes it.
-  const there = await readRows(connection, 'MATCH (n:Comment) RETURN count(n) AS c', {}, 1, value => Number(value)).catch((e: unknown) => {
-    if (e instanceof NoGraphError) return { rows: [[0]] }
-    throw e
-  })
-  if (Number(there.rows[0]?.[0] ?? 0) > 0) throw new BenchError(`${connection.name} has Graph Bench's data already, or nodes labelled Comment. Load into an empty graph.`)
-  const data = new Dataset(new Scale(scale))
-  const nodes = data.scale.nodes
-  const job: LoadJob = {
-    id: `${Date.now().toString(36)}-${connection.id}`, connection: connection.id, scale,
-    state: 'running', done: 0, total: nodes * (1 + EDGES_A_NODE), now: 'Making the indexes',
+const loading = (id: string) => [...batches_.values()].some(b => b.loads.some(l => l.connection === id && (l.state === 'running' || l.state === 'waiting')))
+
+/** Starts a load into each connection given, once each is found able to take it: else none is started. */
+export async function beginLoad(connections: Connection[], scale: number): Promise<LoadBatch> {
+  for (const connection of connections) {
+    if (!connection.allowWrites) throw new BenchError(`${connection.name} doesn't allow writes. Allow them in its settings to load Graph Bench's data there.`)
+    if (loading(connection.id)) throw new BenchError(`${connection.name} is being loaded already.`)
+    // A graph not there yet is empty: the load makes it.
+    const there = await readRows(connection, 'MATCH (n:Comment) RETURN count(n) AS c', {}, 1, value => Number(value)).catch((e: unknown) => {
+      if (e instanceof NoGraphError) return { rows: [[0]] }
+      throw e
+    })
+    if (Number(there.rows[0]?.[0] ?? 0) > 0) throw new BenchError(`${connection.name} has Graph Bench's data already, or nodes labelled Comment. Load into an empty graph.`)
   }
-  jobs.set(job.id, job)
-  void loadIn(job, connection, data).catch((e: unknown) => {
-    job.state = 'failed'
-    job.error = e instanceof Error ? e.message : String(e)
-  })
-  return job
+  const data = new Dataset(new Scale(scale))
+  const batch: LoadBatch = {
+    id: `${Date.now().toString(36)}-load`, scale, state: 'running',
+    loads: connections.map(c => ({
+      connection: c.id, name: c.name, type: c.type.toLowerCase(), state: 'waiting', done: 0,
+      total: data.scale.nodes * (1 + EDGES_A_NODE), now: 'Waiting its turn',
+    })),
+  }
+  batches_.set(batch.id, batch)
+  void (async () => {
+    for (const [i, connection] of connections.entries()) {
+      const job = batch.loads[i]!
+      job.state = 'running'
+      job.now = 'Making the indexes'
+      await loadIn(job, connection, data).catch((e: unknown) => {
+        job.state = 'failed'
+        job.error = e instanceof Error ? e.message : String(e)
+      })
+    }
+    batch.state = 'done'
+  })()
+  return batch
 }
 
 const seconds = (started: number) => (performance.now() - started) / 1000

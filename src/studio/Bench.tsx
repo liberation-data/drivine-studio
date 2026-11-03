@@ -1,10 +1,11 @@
-import { Button, Checkbox, Loading, PopUpButton, SegmentedControl, Sheet, Spinner, Split, TextField } from '@liberation-data/desk/react'
+import { perform } from '@liberation-data/desk'
+import { Button, Checkbox, Loading, PopUpButton, SegmentedControl, Sheet, Slider, Spinner, Split, TextField } from '@liberation-data/desk/react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { BenchSet, EngineResults, Outcome } from '../server/bench'
 import type { RunJob } from '../server/benchRun'
-import type { Loaded, LoadJob } from '../server/benchLoad'
+import type { Loaded, LoadBatch, LoadJob } from '../server/benchLoad'
 import { Scale } from '../server/benchData'
-import { listConnections, DATABASE_NAMES } from './database'
+import { listConnections, DATABASE_NAMES, testConnection } from './database'
 import type { StudioConnection } from './database'
 import { listQueries } from './savedQueries'
 import type { SavedQuery } from './savedQueries'
@@ -50,12 +51,12 @@ export function Bench() {
   const [running, setRunning] = useState(false)
   const [job, setJob] = useState<RunJob | null>(null)
   const [loading, setLoading] = useState(false)
-  const [load, setLoad] = useState<LoadJob | null>(null)
+  const [load, setLoad] = useState<LoadBatch | null>(null)
   // A load going on: read how it's getting on every second.
   useEffect(() => {
     if (!load || load.state !== 'running') return
     const timer = setInterval(() => {
-      fetch(`${API}/loads/${encodeURIComponent(load.id)}`, { cache: 'no-store' }).then(r => read<LoadJob>(r)).then(setLoad, () => undefined)
+      fetch(`${API}/loads/${encodeURIComponent(load.id)}`, { cache: 'no-store' }).then(r => read<LoadBatch>(r)).then(setLoad, () => undefined)
     }, 1000)
     return () => clearInterval(timer)
   }, [load])
@@ -83,6 +84,8 @@ export function Bench() {
   const at = scale !== null && set?.scales.includes(scale) ? scale : (set?.scales[0] ?? null)
   const other = sets?.find(s => keyOf(s) === against) ?? null
   const scaling = view === 'scaling' && (set?.scales.length ?? 0) > 1
+  // A load or a run going on takes the report's place until it's over.
+  const busy = !!load || (!!job && job.state !== 'done')
 
   useEffect(() => {
     setResults(null)
@@ -120,28 +123,6 @@ export function Bench() {
       <Button size="small" intent="default" onClick={() => setRunning(true)}>New Run…</Button>
       <Button size="small" onClick={() => setLoading(true)}>Load Graph Bench Data…</Button>
       <Button size="small" onClick={link}>Link Graph Bench…</Button>
-      {load && (
-        <div className="studio-bench-job" role="status">
-          {load.state === 'running' && <Spinner label="Loading" size="small" />}
-          <span className="desk-text-small">
-            {load.state === 'running'
-              ? `Loading scale ${load.scale}: ${load.now}`
-              : load.state === 'done' && load.loaded
-                ? `Loaded scale ${load.scale}: ${load.loaded.load.nodes.toLocaleString()} nodes, ${load.loaded.load.edges.toLocaleString()} relationships in ${Math.round(load.loaded.load.schemaSeconds + load.loaded.load.nodeSeconds + load.loaded.load.edgeSeconds)} s`
-                : `Loading scale ${load.scale} stopped: ${load.error}`}
-          </span>
-          {load.state === 'running' && <span className="studio-bench-progress"><span style={{ width: `${Math.min(100, (load.done / Math.max(1, load.total)) * 100)}%` }} /></span>}
-        </div>
-      )}
-      {job && (
-        <div className="studio-bench-job" role="status">
-          {job.state === 'running' && <Spinner label="Running" size="small" />}
-          <span className="desk-text-small">
-            {job.state === 'running' ? `${job.done} of ${job.total}: ${job.now}` : job.state === 'done' ? `${job.name}: done` : `${job.name}: ${job.error}`}
-          </span>
-          {job.state === 'running' && <span className="studio-bench-progress"><span style={{ width: `${(job.done / Math.max(1, job.total)) * 100}%` }} /></span>}
-        </div>
-      )}
     </div>
   )
 
@@ -150,16 +131,16 @@ export function Bench() {
       <Split side={list} size={240} min={200} remember="drivine-studio.bench" label="Resize the list of results">
         <div className="studio-finder">
           <div className="studio-finder-bar">
-            <strong className="desk-text-small">{set ? nameOf(set, sets) : 'No results'}</strong>
+            <strong className="desk-text-small">{load ? 'Loading Graph Bench data' : busy && job ? job.name : set ? nameOf(set, sets) : 'No results'}</strong>
             <span className="desk-grow" />
             {/* Run at more than one size, a set can be read across them: how each engine's time grows with the graph. */}
-            {set && set.scales.length > 1 && (
+            {!busy && set && set.scales.length > 1 && (
               <SegmentedControl label="View" size="small" value={scaling ? 'scaling' : 'report'} onChange={setView} options={[{ value: 'report', label: 'Report' }, { value: 'scaling', label: 'Scaling' }]} />
             )}
-            {set && set.scales.length > 1 && !scaling && (
+            {!busy && set && set.scales.length > 1 && !scaling && (
               <PopUpButton label="Scale" size="small" value={String(at)} onChange={v => setScale(Number(v))} options={set.scales.map(s => ({ value: String(s), label: `scale ${s}` }))} />
             )}
-            {!scaling && <PopUpButton
+            {!busy && !scaling && <PopUpButton
               label="Compare with" size="small"
               value={against}
               onChange={setAgainst}
@@ -167,7 +148,11 @@ export function Bench() {
             />}
           </div>
           <div className="studio-bench-body">
-            {scaling && set ? (
+            {load ? (
+              <LoadProgress batch={load} onClose={() => setLoad(null)} />
+            ) : job && job.state !== 'done' ? (
+              <RunProgress job={job} onClose={() => setJob(null)} />
+            ) : scaling && set ? (
               <Scaling set={set} />
             ) : !results ? <Loading label="Reading them" /> : <Report results={results} base={other ? base : null} baseName={other ? nameOf(other, sets) : null} />}
           </div>
@@ -402,9 +387,9 @@ function Scoreboard({ results, keys, find }: {
       {results.map(r => (
         <div key={r.engine} className="studio-bench-score" role="listitem" style={{ '--bench-colour': colourOf(r.engine) } as React.CSSProperties} data-leader={wins.get(r.engine) === leader ? '' : undefined}>
           {wins.get(r.engine) === leader && <span className="studio-bench-score-trophy"><Trophy size={28} label="leads" /></span>}
-          <span className="studio-bench-score-number">{wins.get(r.engine)}</span>
+          <span className="studio-bench-score-number">{wins.get(r.engine)}<span className="studio-bench-score-of">/{keys.length}</span></span>
           <EngineName engine={r.engine} />
-          <span className="desk-text-caption desk-text-muted">fastest of {keys.length} workloads</span>
+          <span className="desk-text-caption desk-text-muted">workloads it was fastest at</span>
         </div>
       ))}
       {compared > 0 && (
@@ -656,65 +641,173 @@ function NewRun({ onStarted, onCancel }: { onStarted: (job: RunJob) => void; onC
 /** The scales offered, from a quick look to a graph of millions. */
 const SCALES = [0.001, 0.01, 0.1, 1, 3, 10]
 const SLOW_SCALE = 0.1
+/** The size section's colour at each scale: cool for a quick look, hotter as the graph grows. */
+const HEAT = ['#3fb8c4', '#45c29b', '#d9c443', '#f0a03a', '#ee6a32', '#e5383b']
 
 /**
  * Graph Bench's dataset, loaded into a connection that allows writes: the same graph Graph Bench makes, so its
  * workloads and saved queries are timed on the same data in each store, and bench runs there say what scale it was.
  */
-function LoadData({ onStarted, onCancel }: { onStarted: (job: LoadJob) => void; onCancel: () => void }) {
+function LoadData({ onStarted, onCancel }: { onStarted: (batch: LoadBatch) => void; onCancel: () => void }) {
   const [connections, setConnections] = useState<StudioConnection[] | null>(null)
   const [loaded, setLoaded] = useState<Record<string, Loaded>>({})
-  const [connection, setConnection] = useState('')
-  const [scale, setScale] = useState(0.01)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [step, setStep] = useState(SCALES.indexOf(0.01))
   const [problem, setProblem] = useState<string | null>(null)
+  // Read again every few seconds while open: a connection set up in Connections meanwhile shows up here.
   useEffect(() => {
-    listConnections().then(got => {
-      setConnections(got)
-      setConnection(got.find(c => c.allowWrites)?.id ?? '')
-    }, (e: unknown) => setProblem(message(e)))
+    const read = () => listConnections().then(setConnections, (e: unknown) => setProblem(message(e)))
+    void read()
+    const timer = setInterval(read, 2000)
+    return () => clearInterval(timer)
+  }, [])
+  // Whether each is up: one that isn't can't be loaded, and says so rather than failing its turn.
+  const [up, setUp] = useState<Record<string, boolean>>({})
+  const ids = (connections ?? []).map(c => c.id).join('|')
+  useEffect(() => {
+    if (!ids) return
+    let live = true
+    const probe = () => {
+      for (const id of ids.split('|')) testConnection(id).then(() => true, () => false).then(ok => live && setUp(was => (was[id] === ok ? was : { ...was, [id]: ok })))
+    }
+    probe()
+    const timer = setInterval(probe, 5000)
+    return () => {
+      live = false
+      clearInterval(timer)
+    }
+  }, [ids])
+  useEffect(() => {
     fetch(`${API}/loads`, { cache: 'no-store' }).then(r => read<Record<string, Loaded>>(r)).then(setLoaded, () => undefined)
   }, [])
+  const scale = SCALES[step]!
   const size = new Scale(scale)
-  const there = loaded[connection]
+  const usable = (c: StudioConnection) => !!c.allowWrites && up[c.id] === true
+  const chosen = [...picked].filter(id => connections?.some(c => c.id === id && usable(c)))
+  // Those that can be loaded first, then those that are down, then those that don't allow writes.
+  const rank = (c: StudioConnection) => (!c.allowWrites ? 2 : up[c.id] === false ? 1 : 0)
+  const listed = [...(connections ?? [])].sort((a, b) => rank(a) - rank(b))
   const start = () =>
-    fetch(`${API}/loads`, json('POST', { connection, scale }))
-      .then(r => read<LoadJob>(r))
+    fetch(`${API}/loads`, json('POST', { connections: chosen, scale }))
+      .then(r => read<LoadBatch>(r))
       .then(onStarted, (e: unknown) => setProblem(message(e)))
-  const writable = (connections ?? []).filter(c => c.allowWrites)
   return (
     <Sheet
       open
       onDismiss={onCancel}
       title="Load Graph Bench Data"
-      description="The graph Graph Bench makes, node for node: orgs, people, repos, topics, issues and comments. Loaded with Cypher through Drivine, into a graph that doesn't have it yet."
+      description="The graph Graph Bench makes, node for node: orgs, people, repos, topics, issues and comments. Loaded with Cypher through Drivine into each database you choose, one after another."
       actions={
         <>
           <Button onClick={onCancel}>Cancel</Button>
-          <Button intent="default" onClick={start} disabled={!connection}>Load</Button>
+          <Button intent="default" onClick={start} disabled={!chosen.length}>
+            {chosen.length > 1 ? `Load into ${chosen.length}` : 'Load'}
+          </Button>
         </>
       }
     >
       <div className="studio-form">
-        {!connections ? <Loading label="Reading the connections" /> : writable.length === 0 ? (
-          <p className="desk-text-small desk-text-muted">None of your connections allows writes. Allow them in a connection’s settings to load data there.</p>
-        ) : (
-          <PopUpButton
-            label="Into" value={connection} onChange={setConnection}
-            options={writable.map(c => ({ value: c.id, label: `${c.name} · ${DATABASE_NAMES[c.type]}` }))}
-          />
-        )}
-        {there && <p className="desk-text-small desk-text-muted">Scale {there.scale} was loaded here on {new Date(there.at).toLocaleDateString()}. Loading again needs an empty graph.</p>}
-        <SegmentedControl label="Scale" size="small" value={String(scale)} onChange={v => setScale(Number(v))} options={SCALES.map(s => ({ value: String(s), label: String(s) }))} />
-        <p className="desk-text-small">
-          About {size.nodes.toLocaleString()} nodes and {(size.nodes * 4).toLocaleString()} relationships.
-        </p>
-        {scale > SLOW_SCALE && (
-          <p className="desk-text-small studio-warn" role="note">
-            A big load. Through Cypher it can take hours{scale >= 3 ? ', and several gigabytes of disk' : ''}; Graph Bench’s own bulk loader is quicker for Postgres and Oracle. Bench runs on this connection meanwhile would time a graph half made.
+        <section className="studio-bench-size" data-heat={step} style={{ '--heat': HEAT[step], '--heat-next': HEAT[Math.min(HEAT.length - 1, step + 1)] } as React.CSSProperties}>
+          <h4>How big</h4>
+          <p className="desk-text-small desk-text-muted">Graph Bench’s scale: 1 is about a million nodes. Start small to try it; go big to see where the stores part ways.</p>
+          <Slider label="Scale" min={0} max={SCALES.length - 1} step={1} value={step} onChange={setStep} format={i => String(SCALES[i])} />
+          <div className="studio-bench-size-stops desk-text-caption desk-text-muted" aria-hidden="true">
+            {SCALES.map((s, i) => <span key={s} data-on={i === step ? '' : undefined}>{s}</span>)}
+          </div>
+          <p className="studio-bench-size-says">
+            <strong>{size.nodes.toLocaleString()}</strong> nodes and about <strong>{(size.nodes * 4).toLocaleString()}</strong> relationships
           </p>
-        )}
+          {scale > SLOW_SCALE && (
+            <p className="desk-text-small studio-warn" role="note">
+              A big load. Through Cypher it can take hours{scale >= 3 ? ', and several gigabytes of disk' : ''}; Graph Bench’s own bulk loader is quicker for Postgres and Oracle. Bench runs on these databases meanwhile would time a graph half made.
+            </p>
+          )}
+        </section>
+        <fieldset className="studio-bench-pick">
+          <legend className="desk-text-small">Into</legend>
+          {!connections ? <Loading label="Reading the connections" /> : listed.map(c => {
+            const there = loaded[c.id]
+            return (
+              <div key={c.id} className="studio-bench-target">
+                <Checkbox
+                  label={`${c.name} · ${DATABASE_NAMES[c.type]}`}
+                  checked={picked.has(c.id) && usable(c)}
+                  disabled={!usable(c)}
+                  onChange={on => {
+                    const next = new Set(picked)
+                    if (on) next.add(c.id)
+                    else next.delete(c.id)
+                    setPicked(next)
+                  }}
+                />
+                <span className="desk-text-caption desk-text-muted">
+                  {!c.allowWrites ? 'doesn’t allow writes' : up[c.id] === undefined ? 'checking…' : !up[c.id] ? 'not running' : there ? `has scale ${there.scale}: load again into an empty graph` : ''}
+                </span>
+              </div>
+            )
+          })}
+          <div className="studio-bench-target-new">
+            <Button size="small" onClick={() => perform(null, 'studio.connections')}>Set Up a Database…</Button>
+            <span className="desk-text-caption desk-text-muted">A fresh one in Docker is best: loading changes the database. Tick “Allows writes”, and it shows up here.</span>
+          </div>
+        </fieldset>
         {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
       </div>
     </Sheet>
+  )
+}
+
+const percent = (done: number, total: number) => `${Math.min(100, (done / Math.max(1, total)) * 100)}%`
+
+/** A load going on, in place of the report: each database's turn, how far it has got, and what it took. */
+function LoadProgress({ batch, onClose }: { batch: LoadBatch; onClose: () => void }) {
+  const over = batch.state === 'done'
+  return (
+    <section className="studio-bench-busy" aria-live="polite">
+      <h3>{over ? `Loaded scale ${batch.scale}` : `Loading scale ${batch.scale}`}</h3>
+      <p className="desk-text-small desk-text-muted">
+        {over ? 'Bench runs on these databases now say what they ran on.' : `Graph Bench’s data, into ${batch.loads.length === 1 ? 'one database' : `${batch.loads.length} databases, one after another`}.`}
+      </p>
+      <ul className="studio-bench-busy-rows">
+        {batch.loads.map(l => <LoadRow key={l.connection} load={l} />)}
+      </ul>
+      {over && <Button onClick={onClose}>Done</Button>}
+    </section>
+  )
+}
+
+function LoadRow({ load }: { load: LoadJob }) {
+  learn([{ engine: load.name, type: load.type } as EngineResults])
+  const took = load.loaded ? Math.round(load.loaded.load.schemaSeconds + load.loaded.load.nodeSeconds + load.loaded.load.edgeSeconds) : 0
+  return (
+    <li className="studio-bench-busy-row" data-state={load.state} style={{ '--bench-colour': colourOf(load.name) } as React.CSSProperties}>
+      <span className="studio-bench-busy-name"><EngineName engine={load.name} /></span>
+      <span className="studio-bench-progress"><span style={{ width: load.state === 'done' ? '100%' : percent(load.done, load.total) }} /></span>
+      <span className="desk-text-small studio-bench-busy-says">
+        {load.state === 'waiting' && 'Waiting its turn'}
+        {load.state === 'running' && <><Spinner label="Loading" size="small" /> {load.now}</>}
+        {load.state === 'done' && load.loaded && `✓ ${load.loaded.load.nodes.toLocaleString()} nodes, ${load.loaded.load.edges.toLocaleString()} relationships in ${took} s`}
+        {load.state === 'failed' && <span className="studio-bad">Stopped: {load.error}</span>}
+      </span>
+    </li>
+  )
+}
+
+/** A bench run going on, in place of the last report, until its own report opens. */
+function RunProgress({ job, onClose }: { job: RunJob; onClose: () => void }) {
+  return (
+    <section className="studio-bench-busy" aria-live="polite">
+      <h3>{job.state === 'failed' ? `${job.name} stopped` : job.done === 0 ? `Preparing ${job.name}` : `Running ${job.name}`}</h3>
+      <p className="desk-text-small desk-text-muted">Each query is warmed up, then timed, on each database in turn. Its report opens here when it’s done.</p>
+      <div className="studio-bench-busy-row" data-state={job.state}>
+        <span className="studio-bench-busy-name desk-text-small">{job.done} of {job.total}</span>
+        <span className="studio-bench-progress"><span style={{ width: percent(job.done, job.total) }} /></span>
+        <span className="desk-text-small studio-bench-busy-says">
+          {job.state === 'running' && <><Spinner label="Running" size="small" /> {job.now || 'Connecting'}</>}
+          {job.state === 'failed' && <span className="studio-bad">{job.error}</span>}
+        </span>
+      </div>
+      {job.state === 'failed' && <Button onClick={onClose}>Done</Button>}
+    </section>
   )
 }

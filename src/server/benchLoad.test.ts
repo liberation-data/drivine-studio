@@ -5,11 +5,11 @@ import { compilerFor, readCypher } from './sqlCypher'
 
 describe('Loading Graph Bench’s data', () => {
   it('takes a connection and a scale within bounds', () => {
-    expect(validateLoad({ connection: 'pg', scale: 0.01 })).toEqual({ connection: 'pg', scale: 0.01 })
-    expect(() => validateLoad({ scale: 1 })).toThrow(/connection/)
-    expect(() => validateLoad({ connection: 'pg', scale: SMALLEST / 2 })).toThrow(/scale/)
-    expect(() => validateLoad({ connection: 'pg', scale: LARGEST * 2 })).toThrow(/scale/)
-    expect(() => validateLoad({ connection: 'pg', scale: 'big' })).toThrow(/scale/)
+    expect(validateLoad({ connections: ['pg', 'neo', 'pg'], scale: 0.01 })).toEqual({ connections: ['pg', 'neo'], scale: 0.01 })
+    expect(() => validateLoad({ connections: [], scale: 1 })).toThrow(/connection/)
+    expect(() => validateLoad({ connections: ['pg'], scale: SMALLEST / 2 })).toThrow(/scale/)
+    expect(() => validateLoad({ connections: ['pg'], scale: LARGEST * 2 })).toThrow(/scale/)
+    expect(() => validateLoad({ connections: ['pg'], scale: 'big' })).toThrow(/scale/)
   })
 
   it('writes in batches, the last one what is left', () => {
