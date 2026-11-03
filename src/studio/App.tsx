@@ -11,7 +11,7 @@ import { Canvas } from './Canvas'
 import { Catalogue } from './Catalogue'
 import { Connections } from './Connections'
 import { Cypher } from './Cypher'
-import { listConnections } from './database'
+import { ALLOWS_WRITES, listConnections } from './database'
 import type { StudioConnection } from './database'
 import { inCatalog, nextSubject } from './model'
 import { nativeMenus, useNativeMenus } from './nativeMenu'
@@ -29,6 +29,29 @@ const LIMITS: Record<string, WindowLimits> = {
   explore: { minWidth: 640, minHeight: 360 },
   cypher: { minWidth: 520, minHeight: 360 },
   connections: { minWidth: 560, minHeight: 360 },
+}
+
+/** What each window is, behind the (i) in its title bar. */
+function infoOf(id: string, connection: StudioConnection | null): ReactNode {
+  if (id === 'explore') {
+    return 'The views and fragments your code declares, read from its model files. Drag one onto the canvas, or choose it, to load it as Drivine would. Loading only ever reads.'
+  }
+  if (id === 'cypher') {
+    return (
+      <>
+        <p>Cypher run on the connection chosen: as it is on Neo4j, Memgraph and FalkorDB, and compiled to SQL by Drivine on Postgres and Oracle.</p>
+        <p>
+          {connection?.allowWrites
+            ? `${ALLOWS_WRITES} There is no undo.`
+            : 'Each statement runs where it cannot write. To change the database, turn on Allow writes for the connection in Connections.'}
+        </p>
+      </>
+    )
+  }
+  if (id === 'connections') {
+    return 'The databases the studio reads, kept in connections.json in its home, passwords too, readable by you alone. One from the environment is set where the studio was started.'
+  }
+  return null
 }
 
 const TITLES: Record<string, string> = { explore: 'Explore', cypher: 'Cypher', connections: 'Connections' }
@@ -195,7 +218,12 @@ export function App() {
             <Desktop
               title={title}
               renderWindow={renderWindow}
-              note={id => (id === 'explore' ? 'read-only' : null)}
+              // What each window is looking at: Explore only reads; Cypher on a connection that allows writes changes it.
+              note={id =>
+                id === 'explore' ? 'read-only'
+                  : id === 'cypher' && connection?.allowWrites ? <span className="studio-warn">writes allowed</span>
+                  : null}
+              info={id => infoOf(id, connection)}
               limits={id => LIMITS[id] ?? null}
               // The studio opens on nothing: one person came to explore the model, another to run a statement.
               empty={
