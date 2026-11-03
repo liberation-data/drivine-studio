@@ -1,4 +1,7 @@
-import { Alert, Button, Checkbox, CodeBlock, Disclosure, Loading, Pane, PaneHeader, PopUpButton, Split, TextField, Toolbar } from '@liberation-data/desk/react'
+import {
+  Alert, Button, Checkbox, CodeBlock, Disclosure, Loading, menuAction, menuSeparator, Pane, PaneHeader, PopUpButton, Split, TextField, Toolbar,
+  useContextMenu,
+} from '@liberation-data/desk/react'
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useStudio } from './App'
@@ -89,23 +92,17 @@ export function Connections() {
       )}
       <ul className="studio-entries" aria-label="Connections">
         {connections.map(c => (
-          <li key={c.id}>
-            <button
-              type="button"
-              className="studio-entry studio-connection-entry"
-              aria-current={shown !== 'new' && shown?.id === c.id ? 'true' : undefined}
-              onClick={() => choose(c.id)}
-            >
-              <span className="studio-entry-name">
-                {c.name}
-                {active?.id === c.id && <span className="studio-tag">In use</span>}
-              </span>
-              <span className="studio-entry-detail desk-text-caption desk-text-muted">
-                {DATABASE_NAMES[c.type]} · {c.host}{c.port ? `:${c.port}` : ''}
-              </span>
-              {c.allowWrites && <span className="desk-text-caption studio-warn">Allows writes</span>}
-            </button>
-          </li>
+          <ConnectionEntry
+            key={c.id}
+            connection={c}
+            chosen={shown !== 'new' && shown?.id === c.id}
+            inUse={active?.id === c.id}
+            test={tests[c.id]}
+            onChoose={() => choose(c.id)}
+            onUse={() => chooseConnection(c.id)}
+            onTest={() => test(c)}
+            onRemove={() => setRemoving(c)}
+          />
         ))}
         {shown === 'new' && (
           <li>
@@ -233,6 +230,73 @@ export function inputOf(draft: Draft): ConnectionInput {
   }
 }
 
+/** How the last test went, after a connection's name: a tick and how long it took, or a cross. */
+function TestMark({ test }: { test: Test }) {
+  if (test.state === 'testing') return <span className="studio-test desk-text-small desk-text-muted" role="status">Testing…</span>
+  return test.state === 'passed' ? (
+    <span className="studio-test desk-text-small" role="status" aria-label={`Connected in ${test.milliseconds} ms`}>
+      <span className="studio-test-passed" aria-hidden="true">✓</span>
+      <span className="desk-text-muted">({test.milliseconds} ms)</span>
+    </span>
+  ) : (
+    // Why, in full, is under the title: a driver's reason runs to sentences.
+    <span className="studio-test desk-text-small" role="status" aria-label="Failed to connect">
+      <span className="studio-bad" aria-hidden="true">✕</span>
+      <span className="desk-text-muted">(failed)</span>
+    </span>
+  )
+}
+
+interface EntryProps {
+  readonly connection: StudioConnection
+  readonly chosen: boolean
+  readonly inUse: boolean
+  readonly test: Test | undefined
+  readonly onChoose: () => void
+  readonly onUse: () => void
+  readonly onTest: () => void
+  readonly onRemove: () => void
+}
+
+/** A connection in the list: a click shows it, a double-click uses it, and its menu holds what can be done to it. */
+function ConnectionEntry({ connection: c, chosen, inUse, test, onChoose, onUse, onTest, onRemove }: EntryProps) {
+  const { target, menu } = useContextMenu({
+    label: `Actions for ${c.name}`,
+    items: () => [
+      menuAction('Use', onUse, { disabled: inUse }),
+      ...(RUNS_CYPHER.includes(c.type) ? [menuAction('Test', onTest, { disabled: test?.state === 'testing' })] : []),
+      ...(c.source === 'studio' ? [menuSeparator(), menuAction('Remove…', onRemove)] : []),
+    ],
+  })
+  return (
+    <li>
+      <button
+        type="button"
+        className="studio-entry studio-connection-entry"
+        aria-current={chosen ? 'true' : undefined}
+        onClick={onChoose}
+        onDoubleClick={onUse}
+        {...target}
+      >
+        <span className="studio-entry-name">
+          {c.name}
+          {test && test.state !== 'testing' && (
+            <span className={test.state === 'passed' ? 'studio-test-passed' : 'studio-bad'} aria-label={test.state === 'passed' ? 'Connected' : 'Failed'}>
+              {test.state === 'passed' ? '✓' : '✕'}
+            </span>
+          )}
+          {inUse && <span className="studio-tag">In use</span>}
+        </span>
+        <span className="studio-entry-detail desk-text-caption desk-text-muted">
+          {DATABASE_NAMES[c.type]} · {c.host}{c.port ? `:${c.port}` : ''}
+        </span>
+        {c.allowWrites && <span className="desk-text-caption studio-warn">Allows writes</span>}
+      </button>
+      {menu}
+    </li>
+  )
+}
+
 interface EditorProps {
   readonly editing: StudioConnection | 'new'
   readonly inUse: boolean
@@ -280,7 +344,7 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
 
   const header = (
     <PaneHeader
-      title={isNew ? 'New Connection' : editing.name}
+      title={isNew ? 'New Connection' : <>{editing.name}{test && <TestMark test={test} />}</>}
       actions={
         isNew ? undefined : (
           <>
@@ -317,13 +381,8 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
 
   return (
     <Pane header={header} footer={footer} padded label={isNew ? 'New Connection' : editing.name}>
-      {test && (
-        <p className={`desk-text-small ${test.state === 'failed' ? 'studio-bad' : 'desk-text-muted'}`} role="status">
-          {test.state === 'testing' && 'Testing…'}
-          {test.state === 'passed' && `Connected in ${test.milliseconds} ms.`}
-          {test.state === 'failed' && test.message}
-        </p>
-      )}
+      {/* The mark by the title says how it went; why one failed is worth its own lines. */}
+      {test?.state === 'failed' && <p className="desk-text-small studio-bad" role="alert">{test.message}</p>}
       {fixed && (
         <p className="desk-text-small desk-text-muted">
           From the environment the studio was started in, by Drivine&apos;s DATABASE_TYPE, DATABASE_HOST and the rest. Change
