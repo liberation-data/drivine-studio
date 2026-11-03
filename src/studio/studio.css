@@ -124,6 +124,8 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-connection-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 18ch; overflow-wrap: anywhere; }
 .studio-connection-entry { cursor: default; }
 .studio-connection-entry .studio-entry-name { display: flex; align-items: baseline; gap: var(--desk-space-2); }
+.studio-test { display: inline-flex; align-items: baseline; gap: var(--desk-space-1); margin-inline-start: var(--desk-space-2); font-weight: 400; min-width: 0; }
+.studio-test-passed { color: var(--desk-ok); }
 .studio-tag {
   padding: 0 var(--desk-space-1); border-radius: 4px; font-size: var(--desk-text-caption); font-weight: 500;
   color: var(--desk-accent); background: color-mix(in srgb, var(--desk-accent) 14%, transparent);
