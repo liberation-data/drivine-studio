@@ -116,6 +116,23 @@ export function Bench() {
 const SLOT: Record<string, number> = { neo4j: 1, falkordb: 2, oracle: 3, postgres: 4 }
 const colourOf = (engine: string) => `var(--bench-${SLOT[engine] ?? 1})`
 
+/** Lucide's trophy, in the colour around it: the winner of a row, and the scoreboard's leader. */
+function Trophy({ size, label }: { size: number; label?: string }) {
+  return (
+    <svg
+      className="studio-bench-trophy" viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round" role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true}
+    >
+      <path d="M10 14.66V17a1 1 0 0 1-1 1 2 2 0 0 0-2 2v2" />
+      <path d="M14 14.66V17a1 1 0 0 0 1 1 2 2 0 0 1 2 2v2" />
+      <path d="M17.916 10H19.5A2.5 2.5 0 0 0 22 7.5V5a1 1 0 0 0-1-1h-3" />
+      <path d="M4 22h16" />
+      <path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z" />
+      <path d="M6.084 10H4.5A2.5 2.5 0 0 1 2 7.5V5a1 1 0 0 1 1-1h3" />
+    </svg>
+  )
+}
+
 function EngineName({ engine }: { engine: string }) {
   return (
     <span className="studio-bench-engine">
@@ -211,7 +228,7 @@ function Report({ results, base, baseName }: { results: EngineResults[]; base: E
                               ? `${e}: ${Math.round(value).toLocaleString()} calls a second, middle ${f.p50.toFixed(2)} ms`
                               : `${e}: middle ${f.p50.toFixed(2)} ms, slowest 5% ${f.p95.toFixed(2)} ms, fastest ${f.min.toFixed(2)} ms, over ${f.calls} calls`}
                           >
-                            {value === best && <span className="studio-bench-crown" aria-label="best">★ </span>}
+                            {value === best && <span className="studio-bench-crown"><Trophy size={11} label="best" /> </span>}
                             {concurrent ? `${Math.round(value).toLocaleString()}/s` : <>{value.toFixed(2)} <span className="desk-text-muted">({f.p95.toFixed(2)})</span></>}
                             <span className="studio-bench-bar" aria-hidden="true"><span style={{ width: `${most ? Math.max(4, (value / most) * 100) : 0}%` }} /></span>
                             {change !== null && (
@@ -289,6 +306,7 @@ function Scoreboard({ results, keys, find }: {
     <div className="studio-bench-scores" role="list" aria-label="Fastest, by engine">
       {results.map(r => (
         <div key={r.engine} className="studio-bench-score" role="listitem" style={{ '--bench-colour': colourOf(r.engine) } as React.CSSProperties} data-leader={wins.get(r.engine) === leader ? '' : undefined}>
+          {wins.get(r.engine) === leader && <span className="studio-bench-score-trophy"><Trophy size={28} label="leads" /></span>}
           <span className="studio-bench-score-number">{wins.get(r.engine)}</span>
           <EngineName engine={r.engine} />
           <span className="desk-text-caption desk-text-muted">fastest of {keys.length} workloads</span>
