@@ -1,6 +1,6 @@
 import {
   Alert, Button, CodeBlock, IconView, Loading, menuAction, menuSeparator, SegmentedControl, Sheet, Sidebar, Split, Table, TextField,
-  useContextMenu,
+  useContextMenu, useDragSource,
 } from '@liberation-data/desk/react'
 import type { IconViewItem, MenuItem } from '@liberation-data/desk/react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
@@ -9,8 +9,8 @@ import { addModelPath, listModelFiles, listModelPaths, readModelFile, removeMode
 import type { ModelFileEntry, ModelPath } from './api'
 import { folderPicker } from './nativeMenu'
 import { useStudio } from './App'
-import { addFolder, firstLine, listQueries, removeFolder, removeQuery } from './savedQueries'
-import type { QueryFolder, QueryShelf, SavedQuery } from './savedQueries'
+import { addFolder, dragOf, firstLine, listQueries, QUERY_DRAG, removeFolder, removeQuery } from './savedQueries'
+import type { QueryDrag, QueryFolder, QueryShelf, SavedQuery } from './savedQueries'
 
 /*
  * The studio's files, as a Finder shows them: places down the side, what is in the one chosen as icons or a list, and
@@ -247,6 +247,8 @@ export function Files() {
                   onSelectionChange={setSelected}
                   onOpen={open}
                   contextMenu={menuFor}
+                  // A query is carried to Cypher, to open it, or to the dock, to keep it there.
+                  drag={{ type: QUERY_DRAG, payload: entry => (entry.kind === 'query' ? dragOf(entry.query) : null) }}
                   empty={<Empty place={place} finding={find.trim() !== ''} />}
                 />
               ) : (
@@ -319,6 +321,7 @@ function ListView({ entries, selected, onSelect, onOpen, menuFor, empty }: {
   // One menu for the list, filled with the row it was asked over.
   const over = useRef<Entry | null>(null)
   const { target, menu } = useContextMenu({ label: 'Actions', items: () => (over.current ? menuFor(over.current) : []) })
+  const source = useDragSource<QueryDrag>({ type: QUERY_DRAG })
   return (
     <>
       <Table
@@ -330,6 +333,7 @@ function ListView({ entries, selected, onSelect, onOpen, menuFor, empty }: {
         onActivate={(_id, entry) => onOpen(entry)}
         empty={empty}
         rowProps={entry => ({
+          ...(entry.kind === 'query' ? source.dragProps(dragOf(entry.query), entry.label) : {}),
           onContextMenu: (event: MouseEvent<HTMLElement>) => {
             over.current = entry
             onSelect(entry.id)
@@ -532,5 +536,5 @@ function LinkedFolder({ small }: { small?: boolean }) {
 
 const LinkedFolderIcon = LinkedFolder
 const FolderIcon = Folder
-const QueryIcon = Query
+export const QueryIcon = Query
 const ModelIcon = Model
