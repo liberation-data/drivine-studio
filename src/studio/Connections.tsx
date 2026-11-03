@@ -2,7 +2,7 @@ import { Alert, Button, Checkbox, CodeBlock, Disclosure, Loading, Pane, PaneHead
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useStudio } from './App'
-import { dockerCommand } from './docker'
+import { dockerCommand, fillFor, listed } from './docker'
 import { addConnection, DATABASE_NAMES, DATABASE_TYPES, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
 
@@ -384,7 +384,7 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
         <button type="submit" hidden />
       </form>
       {!fixed && (
-        <RunInDocker draft={draft} onFill={fill => set(Object.fromEntries(Object.entries(fill).filter(([key]) => !draft[key as keyof Draft])))} />
+        <RunInDocker draft={draft} passwordKept={hadPassword && !draft.clearPassword} onFill={set} />
       )}
     </Pane>
   )
@@ -394,9 +394,12 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
  * No database yet: the command that runs one of this kind here, in Docker, as Drivine's own tests do, to copy into a
  * terminal. The studio does not run it; what it starts is the person's to see first.
  */
-function RunInDocker({ draft, onFill }: { draft: Draft; onFill: (fill: Partial<Draft>) => void }) {
+function RunInDocker({ draft, passwordKept, onFill }: { draft: Draft; passwordKept: boolean; onFill: (fill: Partial<Draft>) => void }) {
   const [open, setOpen] = useState(false)
   const made = dockerCommand(draft)
+  const fill = made.kind === 'command' ? fillFor(made.fill, draft, passwordKept) : {}
+  const names: Record<string, string> = { port: 'Port', user: 'User', password: 'Password', database: DATABASE_FIELD[draft.type]?.label ?? 'Database' }
+  const filled = Object.keys(fill).map(key => names[key] ?? key)
   return (
     <Disclosure label="Run it in Docker" open={open} onOpenChange={setOpen}>
       {made.kind === 'none' ? (
@@ -408,9 +411,12 @@ function RunInDocker({ draft, onFill }: { draft: Draft; onFill: (fill: Partial<D
           </p>
           <CodeBlock code={made.command} language="shell" />
           {made.note && <p className="desk-text-small desk-text-muted">{made.note}</p>}
-          <div>
-            <Button size="small" onClick={() => onFill(made.fill)}>Use These Settings</Button>
-          </div>
+          {/* Only what is empty, and said: a button that changed fields it did not name would be a surprise. */}
+          {filled.length > 0 && (
+            <div>
+              <Button size="small" onClick={() => onFill(fill)}>Fill In {listed(filled)}</Button>
+            </div>
+          )}
         </div>
       )}
     </Disclosure>

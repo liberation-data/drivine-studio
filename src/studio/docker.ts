@@ -98,3 +98,20 @@ export function dockerCommand(draft: DockerDraft): DockerCommand {
       }
   }
 }
+
+type Fill = Extract<DockerCommand, { kind: 'command' }>['fill']
+
+/**
+ * What filling the form from the command would set: the container's settings for the fields still empty, and nothing
+ * the form has. A password the studio already keeps (shown as Unchanged) is not empty, so the test password never
+ * replaces it.
+ */
+export function fillFor(fill: Fill, draft: DockerDraft, passwordKept: boolean): Fill {
+  return Object.fromEntries(
+    Object.entries(fill).filter(([key, value]) => value && !draft[key as keyof Fill] && !(key === 'password' && passwordKept)),
+  ) as Fill
+}
+
+/** The fields named as a person reads a list: "Port", "Port and User", "Port, User and Password". */
+export const listed = (names: readonly string[]): string =>
+  names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
