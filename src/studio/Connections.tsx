@@ -290,11 +290,11 @@ function ConnectionEntry({ connection: c, chosen, inUse, test, onChoose, onUse, 
             </span>
           )}
           {inUse && <span className="studio-tag">In use</span>}
+          {c.allowWrites && <span className="studio-tag studio-tag-warn">Writes allowed</span>}
         </span>
         <span className="studio-entry-detail desk-text-caption desk-text-muted">
           {DATABASE_NAMES[c.type]} · {c.host}{c.port ? `:${c.port}` : ''}
         </span>
-        {c.allowWrites && <span className="desk-text-caption studio-warn">Allows writes</span>}
       </button>
       {menu}
     </li>
