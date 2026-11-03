@@ -1,8 +1,12 @@
-import { Button, PopUpButton, Spinner, Split, Table, Tabs, TextField } from '@liberation-data/desk/react'
+import { addCommandHandler, windowElement } from '@liberation-data/desk'
+import { Button, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField, useWindowId } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
-import { useStudio } from './App'
-import { DATABASE_NAMES, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
+import { StudioCommands, useStudio } from './App'
+import type { SavedAs } from './App'
+import { addQuery, firstLine, updateQuery } from './savedQueries'
+import type { SavedQuery } from './savedQueries'
+import { DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
 import type { Cell, CypherResult } from './database'
 import { GraphView, LiveLayoutToggle, useLiveLayout } from './GraphView'
 import type { Selection } from './GraphView'
@@ -11,6 +15,13 @@ import { cellText, graphOf, parametersOf, writtenText } from './results'
 
 type Run = { state: 'idle' } | { state: 'running' } | { state: 'failed'; message: string }
 type View = 'graph' | 'rows'
+/** What the editor shows: the statement, or the parameters it is run with. */
+type Pane = 'statement' | 'parameters'
+/**
+ * How much of the window the editor takes: a line, to see the results whole; its share above the edge; or all of it,
+ * for a long statement. Running from all of it brings the results back.
+ */
+type Size = 'line' | 'split' | 'full'
 
 // What was typed last, kept in this browser only: a convenience, and lost without harm.
 const remembered = (key: string, fallback: string): string => {
@@ -32,17 +43,21 @@ const STATEMENT = 'drivine-studio.cypher.statement'
 const PARAMETERS = 'drivine-studio.cypher.parameters'
 
 export function Cypher() {
-  const { connections, connection, chooseConnection, pendingCypher, takeCypher } = useStudio()
+  const { connection, pendingCypher, takeCypher, savedQuery } = useStudio()
+  // The saved query the editor holds, when it was opened from one or saved as one: Save saves over it.
+  const [savedAs, setSavedAs] = useState<SavedAs | null>(null)
+  // The name sheet, open to save under a name, or to save a copy under a new one.
+  const [saving, setSaving] = useState<'save' | 'copy' | null>(null)
+  const [savedNote, setSavedNote] = useState<string | null>(null)
   const [statement, setStatement] = useState(() => remembered(STATEMENT, 'MATCH (n) RETURN n LIMIT 25'))
   const [parameters, setParameters] = useState(() => remembered(PARAMETERS, ''))
-  const [showParameters, setShowParameters] = useState(() => parameters.trim() !== '')
+  const [pane, setPane] = useState<Pane>('statement')
   const [limit, setLimit] = useState(String(DEFAULT_LIMIT))
   const [result, setResult] = useState<CypherResult | null>(null)
   const [run, setRun] = useState<Run>({ state: 'idle' })
   const [view, setView] = useState<View>('graph')
   const [selection, setSelection] = useState<Selection>(null)
-  // The editor given the whole window, for a long statement; running it brings the results back.
-  const [expanded, setExpanded] = useState(false)
+  const [size, setSize] = useState<Size>('split')
   const inFlight = useRef<AbortController | null>(null)
 
   useEffect(() => remember(STATEMENT, statement), [statement])
@@ -53,9 +68,11 @@ export function Cypher() {
   useEffect(() => {
     if (!pendingCypher) return
     setStatement(pendingCypher.statement)
-    const parameters = Object.keys(pendingCypher.parameters).length ? JSON.stringify(pendingCypher.parameters, null, 2) : ''
+    const given = pendingCypher.parameters
+    const parameters = typeof given === 'string' ? given : Object.keys(given).length ? JSON.stringify(given, null, 2) : ''
     setParameters(parameters)
-    setShowParameters(parameters !== '')
+    setSavedAs(pendingCypher.saved ?? null)
+    setPane('statement')
     takeCypher()
   }, [pendingCypher, takeCypher])
 
@@ -63,11 +80,12 @@ export function Cypher() {
     if (!connection) return
     const parsed = parametersOf(parameters)
     if ('problem' in parsed) {
-      setShowParameters(true)
+      setPane('parameters')
       setRun({ state: 'failed', message: parsed.problem })
       return
     }
-    setExpanded(false)
+    // Run from the whole window, and the results come back; from a line, they were in sight already.
+    setSize(current => (current === 'full' ? 'split' : current))
     const rows = Number.parseInt(limit, 10)
     inFlight.current?.abort()
     const controller = new AbortController()
@@ -103,28 +121,69 @@ export function Cypher() {
     }
   }
 
+  const kept = useCallback((saved: SavedQuery) => {
+    setSavedAs({ id: saved.id, name: saved.name })
+    savedQuery()
+    setSavedNote('Saved')
+  }, [savedQuery])
+  useEffect(() => {
+    if (!savedNote) return
+    const timer = setTimeout(() => setSavedNote(null), 2000)
+    return () => clearTimeout(timer)
+  }, [savedNote])
+
+  /*
+   * File ▸ Save and Save As…, answered by this window while it is the one in front. A query already saved is saved
+   * over at once, as a document is; one not saved yet, or a copy, asks for its name first.
+   */
+  const windowId = useWindowId()
+  const now = useRef({ statement, parameters, savedAs })
+  now.current = { statement, parameters, savedAs }
+  useEffect(() => {
+    const element = windowId ? windowElement(document, windowId) : null
+    if (!element) return
+    const something = () => now.current.statement.trim() !== ''
+    const save = () => {
+      const { statement, parameters, savedAs } = now.current
+      if (!savedAs) return setSaving('save')
+      updateQuery(savedAs.id, { name: savedAs.name, statement, parameters }).then(kept, () => setSaving('save'))
+    }
+    const removers = [
+      addCommandHandler(element, StudioCommands.save, save, { enabled: something }),
+      addCommandHandler(element, StudioCommands.saveAs, () => setSaving('copy'), { enabled: something }),
+    ]
+    return () => removers.forEach(remove => remove())
+  }, [windowId, kept])
+
   const drawn = useMemo(() => (result ? graphOf(result.graph) : null), [result])
   const [live, setLive] = useLiveLayout(drawn?.graph)
+
+  const given = parameters.trim() !== ''
+  const firstLine = statement.split('\n').find(line => line.trim() !== '')?.trim() ?? ''
 
   const editor = (
     <form className="studio-query studio-query-fill" onSubmit={submit} aria-label="Cypher">
       <div className="studio-query-row">
-        <PopUpButton
-          label="Connection" labelHidden size="small"
-          value={connection?.id ?? null}
-          placeholder={connections?.length ? 'Choose a connection' : 'No connections yet'}
-          disabled={!connections?.length}
-          onChange={chooseConnection}
-          options={(connections ?? []).map(c => ({ value: c.id, label: `${c.name} · ${DATABASE_NAMES[c.type]}` }))}
+        <SegmentedControl
+          label="Edit" size="small"
+          value={pane}
+          onChange={next => {
+            setPane(next)
+            if (size === 'line') setSize('split')
+          }}
+          // A dot says there are parameters when the statement is what is shown.
+          options={[{ value: 'statement', label: 'Statement' }, { value: 'parameters', label: given ? 'Parameters •' : 'Parameters' }]}
         />
+        <SegmentedControl
+          label="Editor size" size="small"
+          value={size}
+          onChange={setSize}
+          options={[{ value: 'line', label: 'Line' }, { value: 'split', label: 'Split' }, { value: 'full', label: 'Full' }]}
+        />
+        {savedAs && <span className="studio-saved-as desk-text-small desk-text-muted" title="The saved query this is">{savedAs.name}</span>}
+        {savedNote && <span className="desk-text-small studio-ok" role="status">{savedNote}</span>}
         <span className="desk-grow" />
         {run.state === 'running' && <Spinner label="Running" size="small" />}
-        <Button type="button" size="small" intent="quiet" onClick={() => setExpanded(!expanded)} aria-pressed={expanded}>
-          {expanded ? 'Show Results' : 'Expand Editor'}
-        </Button>
-        <Button type="button" size="small" intent="quiet" onClick={() => setShowParameters(!showParameters)} aria-expanded={showParameters}>
-          Parameters
-        </Button>
         <span className="studio-query-word desk-text-small desk-text-muted">at most</span>
         <span className="studio-limit">
           <TextField label="Rows to read, at most" labelHidden type="number" min={1} max={MAX_LIMIT} value={limit} onChange={e => setLimit(e.target.value)} />
@@ -132,28 +191,35 @@ export function Cypher() {
         <span className="desk-text-small desk-text-muted">rows</span>
         <Button type="submit" intent="default" disabled={!connection || run.state === 'running'} title="⌘↵">Run</Button>
       </div>
-      <label className="desk-label" htmlFor="studio-statement" data-hidden>Statement</label>
-      {/* The editor fills what the edge below leaves it, so it is sized by dragging the edge, not by a corner of its own. */}
-      <textarea
-        id="studio-statement"
-        className="desk-input studio-editor studio-statement"
-        spellCheck={false}
-        value={statement}
-        onChange={e => setStatement(e.target.value)}
-        onKeyDown={keys}
-      />
-      {showParameters && (
+      {size === 'line' ? (
+        // Folded to a line: the statement's start, which opens the editor again.
+        <button type="button" className="studio-statement-line desk-text-small" onClick={() => setSize('split')} title="Show the editor">
+          {firstLine || 'No statement yet'}
+        </button>
+      ) : pane === 'statement' ? (
         <>
-          <label className="desk-label desk-text-small" htmlFor="studio-parameters">Parameters, as a JSON object</label>
+          <label className="desk-label" htmlFor="studio-statement" data-hidden>Statement</label>
+          {/* The editor fills what the edge below leaves it, so it is sized by dragging the edge, not by a corner of its own. */}
+          <textarea
+            id="studio-statement"
+            className="desk-input studio-editor studio-statement"
+            spellCheck={false}
+            value={statement}
+            onChange={e => setStatement(e.target.value)}
+            onKeyDown={keys}
+          />
+        </>
+      ) : (
+        <>
+          <label className="desk-label" htmlFor="studio-parameters" data-hidden>Parameters, as a JSON object</label>
           <textarea
             id="studio-parameters"
-            className="desk-input studio-editor"
+            className="desk-input studio-editor studio-statement"
             spellCheck={false}
-            placeholder='{"name": "Ada"}'
+            placeholder={'Parameters, as a JSON object:\n{"name": "Ada"}'}
             value={parameters}
             onChange={e => setParameters(e.target.value)}
             onKeyDown={keys}
-            rows={3}
           />
         </>
       )}
@@ -166,7 +232,7 @@ export function Cypher() {
       {!connection ? (
         <div className="studio-hint">
           <h2>No connection in use</h2>
-          <p>Add one in Connections, or choose one above. The studio runs each statement where it cannot write.</p>
+          <p>Choose one from the connection menu at the end of the menu bar, or add one in Connections.</p>
         </div>
       ) : result && drawn ? (
         <Tabs
@@ -216,10 +282,21 @@ export function Cypher() {
         max="80%"
         remember="drivine-studio.cypher"
         label="Resize the editor"
-        className={expanded ? 'studio-cypher-split studio-expanded' : 'studio-cypher-split'}
+        className={`studio-cypher-split${size === 'full' ? ' studio-expanded' : size === 'line' ? ' studio-line' : ''}`}
       >
         {results}
       </Split>
+      {saving && (
+        <SaveQuery
+          statement={statement}
+          parameters={parameters}
+          savedAs={saving === 'copy' ? null : savedAs}
+          onDone={saved => {
+            setSaving(null)
+            if (saved) kept(saved)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -260,5 +337,55 @@ function Rows({ result }: { result: CypherResult }) {
         }))}
       />
     </div>
+  )
+}
+
+/**
+ * Asks for a name to keep the statement under, its parameters with it: the simple question a sheet is for. A query
+ * opened from Queries is saved over, under the name given; Save as New keeps it and makes another.
+ */
+function SaveQuery({ statement, parameters, savedAs, onDone }: {
+  statement: string
+  parameters: string
+  savedAs: SavedAs | null
+  onDone: (saved: SavedQuery | null) => void
+}) {
+  const [name, setName] = useState(() => savedAs?.name ?? firstLine(statement).slice(0, 60))
+  const [problem, setProblem] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const save = (asNew: boolean) => {
+    setBusy(true)
+    setProblem(null)
+    const input = { name, statement, parameters }
+    const saved = savedAs && !asNew ? updateQuery(savedAs.id, input) : addQuery(input)
+    saved.then(onDone, (e: unknown) => {
+      setBusy(false)
+      setProblem(e instanceof Error ? e.message : String(e))
+    })
+  }
+  return (
+    <Sheet
+      open
+      onDismiss={() => onDone(null)}
+      title={savedAs ? `Save ${savedAs.name}` : 'Save Query'}
+      description="Kept as a .cypher file in the studio's home, with its parameters, to open again from Queries."
+      actions={
+        <>
+          <Button onClick={() => onDone(null)}>Cancel</Button>
+          {savedAs && <Button onClick={() => save(true)} disabled={busy || !name.trim()}>Save as New</Button>}
+          <Button intent="default" onClick={() => save(false)} disabled={busy || !name.trim()}>Save</Button>
+        </>
+      }
+    >
+      <form
+        onSubmit={event => {
+          event.preventDefault()
+          save(false)
+        }}
+      >
+        <TextField label="Name" value={name} onChange={e => setName(e.target.value)} autoFocus />
+        {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
+      </form>
+    </Sheet>
   )
 }

@@ -170,6 +170,15 @@ html, body, #root { height: 100%; margin: 0; }
 /* Expanded: the editor has the window, and the edge and results wait out of sight. */
 .desk-split.studio-expanded[data-orientation] { grid-template-rows: minmax(0, 1fr); }
 .desk-split.studio-expanded > .desk-split-edge, .desk-split.studio-expanded > .desk-split-panel:last-child { display: none; }
+/* Folded to a line: the toolbar and the statement's first line, and the results below take the rest. */
+.desk-split.studio-line[data-orientation] { grid-template-rows: auto minmax(0, 1fr); }
+.desk-split.studio-line > .desk-split-edge { display: none; }
+.studio-statement-line {
+  display: block; width: 100%; padding: var(--desk-space-1) var(--desk-space-2); border: 1px solid var(--desk-rule);
+  border-radius: var(--desk-control-radius); background: var(--desk-field-bg); color: var(--desk-ink); text-align: start;
+  font-family: var(--desk-font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text;
+}
+.studio-statement-line:hover { border-color: color-mix(in srgb, var(--desk-accent) 45%, var(--desk-rule)); }
 .studio-tabs { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .studio-tabs [role='tabpanel'] { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 /* What came back and how long it took, at the end of the strip, clear of the window's edge as the tabs are of its start. */
@@ -191,3 +200,9 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-docker { display: flex; flex-wrap: wrap; align-items: center; gap: var(--desk-space-2); }
 .studio-docker-job { display: flex; align-items: center; gap: var(--desk-space-2); overflow-wrap: anywhere; }
 .studio-test-failed { display: flex; flex-direction: column; align-items: flex-start; gap: var(--desk-space-2); margin-bottom: var(--desk-space-3); }
+
+/* Saved queries */
+.studio-saved-as { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio-query-line { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--desk-font-mono); }
+.studio-queries { margin-top: var(--desk-space-2); }
+.studio-queries-heading { margin: var(--desk-space-3) 0 var(--desk-space-1); font-weight: 600; }
