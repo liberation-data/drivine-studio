@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { benchResults, benchSets, linkBench, PUBLISHED } from './bench'
+import { benchResults, benchSets, linkBench, PUBLISHED, STUDIO } from './bench'
+import { slug, validateRun } from './benchRun'
 
 let dir: string
 const saved = { ...process.env }
@@ -53,5 +54,49 @@ describe('Graph Bench results', () => {
     await expect(benchResults(bench, '../..', 1)).rejects.toThrow(/no set/)
     await expect(linkBench(join(dir, 'nowhere'))).rejects.toThrow(/no run.sh/)
     await expect(linkBench('relative/path')).rejects.toThrow(/full path/)
+  })
+})
+
+describe('The studio’s own runs', () => {
+  it('lists each run newest first, by the name it was given or its folder’s without the id, its connections as engines, and reads them', async () => {
+    const own = join(dir, 'home', 'bench')
+    for (const run of ['m1a-monday', 'm2b-tuesday']) await mkdir(join(own, run), { recursive: true })
+    await writeFile(join(own, 'm1a-monday', 'local-pg-sf1.0.json'), engine('Local PG', 1, 2))
+    await writeFile(join(own, 'm2b-tuesday', 'local-pg-sf1.0.json'), engine('Local PG', 1, 3))
+    await writeFile(join(own, 'm2b-tuesday', 'neo-sf1.0.json'), engine('Neo', 1, 1))
+    await writeFile(join(own, 'm2b-tuesday', 'run.json'), JSON.stringify({ name: 'Tuesday: Neo v PG' }))
+    const sets = (await benchSets(github({}))).filter(s => s.source === STUDIO)
+    expect(sets.map(s => [s.set, s.label, s.engines.sort()])).toEqual([
+      ['m2b-tuesday', 'Tuesday: Neo v PG', ['local-pg', 'neo']],
+      ['m1a-monday', 'monday', ['local-pg']],
+    ])
+    const results = await benchResults(STUDIO, 'm2b-tuesday', 1, github({}))
+    expect(results.map(r => r.engine).sort()).toEqual(['Local PG', 'Neo'])
+  })
+
+  it('reads a run by its folder’s name, never a path that reaches elsewhere', async () => {
+    await expect(benchResults(STUDIO, '../secrets', 1)).rejects.toThrow(/no run/)
+    await expect(benchResults(STUDIO, '', 1)).rejects.toThrow(/no run/)
+  })
+})
+
+describe('A run’s settings', () => {
+  it('takes the connections and queries chosen, with warm-ups and timed runs that default', () => {
+    const run = validateRun({ connections: ['a'], queries: ['Bench/q.cypher'], name: ' Mine ' })
+    expect(run).toMatchObject({ name: 'Mine', connections: ['a'], queries: ['Bench/q.cypher'], warmup: 3, runs: 20 })
+    expect(validateRun({ connections: ['a'], queries: ['q'] }).name).toMatch(/^\d{4}-\d\d-\d\d \d\d:\d\d$/)
+  })
+
+  it('refuses a run with nothing to run, or counts out of bounds', () => {
+    expect(() => validateRun({ connections: [], queries: ['q'] })).toThrow(/connection/)
+    expect(() => validateRun({ connections: ['a'], queries: [] })).toThrow(/query/)
+    expect(() => validateRun({ connections: ['a'], queries: ['q'], runs: 0 })).toThrow(/at least once/)
+    expect(() => validateRun({ connections: ['a'], queries: ['q'], warmup: 101 })).toThrow(/0 to 100/)
+    expect(() => validateRun({ connections: ['a'], queries: ['q'], runs: 2.5 })).toThrow(/whole number/)
+  })
+
+  it('names a run’s folder and files as a path can carry them', () => {
+    expect(slug('Local PG / prod!')).toBe('local-pg-prod')
+    expect(slug('***')).toBe('run')
   })
 })

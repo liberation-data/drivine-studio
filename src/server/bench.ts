@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 
-import { readHomeFile, serially, writeHomeFile } from './home'
+import { readHomeFile, serially, studioHome, writeHomeFile } from './home'
 
 /*
  * Graph Bench's results, to read and compare in the studio: the ones it publishes, fetched from its repository, and
@@ -38,6 +38,8 @@ export interface RunDetails {
 
 export interface EngineResults {
   engine: string
+  /** The kind of database, for a run of the studio's own, whose engines are its connections by name. */
+  type?: string
   scale: number
   load: { nodes: number; edges: number; schemaSeconds: number; nodeSeconds: number; edgeSeconds: number } | null
   outcomes: Outcome[]
@@ -54,10 +56,14 @@ export interface BenchSet {
 }
 
 export const PUBLISHED = 'published'
+/** The studio's own runs, kept in its home's bench folder. */
+export const STUDIO = 'studio'
 const REPO = 'liberation-data/graph-bench'
 const ENGINES = ['neo4j', 'falkordb', 'oracle', 'postgres'] as const
-const FILE = /^([a-z0-9]+)-sf([0-9.]+)\.json$/
+const FILE = /^(.+)-sf([0-9.]+)\.json$/
 const LINKS = 'bench.json'
+/** In a run of the studio's own, beside its results: the name it was given. */
+export const RUN_FILE = 'run.json'
 
 /** The Graph Bench checkouts linked, by path. */
 export async function linkedBenches(): Promise<string[]> {
@@ -86,6 +92,15 @@ export async function benchSets(fetchText: (url: string) => Promise<string> = pu
   const sets: BenchSet[] = []
   const files = await publishedFiles(fetchText).catch(() => [])
   if (files.length) sets.push({ source: PUBLISHED, set: '', label: 'Published', ...inventory(files) })
+  // The studio's own runs, newest first: each a folder of a file a connection.
+  const own = join(studioHome(), 'bench')
+  const runs = (await readdir(own, { withFileTypes: true }).catch(() => [])).filter(e => e.isDirectory() && !e.name.startsWith('.')).map(e => e.name).sort().reverse()
+  for (const run of runs) {
+    const inside = await jsonFiles(join(own, run))
+    if (!inside.length) continue
+    const given = await readFile(join(own, run, RUN_FILE), 'utf8').then(text => (JSON.parse(text) as { name?: unknown }).name, () => null)
+    sets.push({ source: STUDIO, set: run, label: typeof given === 'string' && given ? given : run.replace(/^[a-z0-9]+-/, ''), ...inventory(inside), engines: inside.map(f => FILE.exec(f)![1]!) })
+  }
   for (const root of await linkedBenches()) {
     const results = join(root, 'results')
     const here = await jsonFiles(results)
@@ -111,6 +126,12 @@ export async function benchResults(source: string, set: string, scale: number, f
     }
     return out
   }
+  if (source === STUDIO) {
+    if (!set || set.includes('/') || set.includes('\\') || set.startsWith('.')) throw new BenchError(`There is no run ${set}.`)
+    const folder = join(studioHome(), 'bench', set)
+    const files = (await jsonFiles(folder)).filter(f => FILE.exec(f)![2] === scaleText(scale))
+    return Promise.all(files.map(async f => JSON.parse(await readFile(join(folder, f), 'utf8')) as EngineResults))
+  }
   if (!(await linkedBenches()).includes(source)) throw new BenchError('That is not a linked Graph Bench checkout.')
   // A set is a folder's name, in results/ itself: never a path that reaches anywhere else.
   if (set && (set.includes('/') || set.includes('\\') || set.startsWith('.'))) throw new BenchError(`There is no set ${set}.`)
@@ -134,7 +155,7 @@ function inventory(files: string[]): { scales: number[]; engines: string[] } {
     engines.add(match[1]!)
     scales.add(Number(match[2]))
   }
-  return { scales: [...scales].sort((a, b) => b - a), engines: ENGINES.filter(e => engines.has(e)) }
+  return { scales: [...scales].sort((a, b) => b - a), engines: ENGINES.filter(e => engines.has(e)) as string[] }
 }
 
 async function jsonFiles(folder: string): Promise<string[]> {
