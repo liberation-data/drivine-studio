@@ -185,3 +185,43 @@ export async function readCatalog(paths: string[]): Promise<Catalog> {
   catalog.views = sorted(views.values())
   return catalog
 }
+
+/** A model file found under a path the studio reads: its module, and what it declares. */
+export interface ModelFileEntry {
+  path: string
+  /** The path it was found under, as the studio was given it. */
+  under: string
+  module: string
+  views: number
+  fragments: number
+  modified: string
+  /** Why the studio cannot read it, when it cannot. */
+  problem?: string
+}
+
+/** Every model file under the paths the studio reads, as a list of files rather than a catalogue. */
+export async function listModelFiles(): Promise<ModelFileEntry[]> {
+  const entries: ModelFileEntry[] = []
+  for (const { path: under } of await listModelPaths()) {
+    const files = await findModelFiles(under).catch(() => [])
+    for (const path of files) {
+      const [text, info] = await Promise.all([readFile(path, 'utf8'), stat(path)])
+      const modified = info.mtime.toISOString()
+      try {
+        const model = parseModel(text)
+        entries.push({ path, under, module: model.module, views: model.views.length, fragments: model.fragments.length + model.relationshipFragments.length, modified })
+      } catch (e) {
+        entries.push({ path, under, module: path, views: 0, fragments: 0, modified, problem: e instanceof Error ? e.message : String(e) })
+      }
+    }
+  }
+  return entries
+}
+
+/** A model file's text: only one the studio found itself, so this reads nothing else on the machine. */
+export async function readModelFile(path: unknown): Promise<string> {
+  if (typeof path !== 'string' || !(await listModelFiles()).some(f => f.path === path)) {
+    throw new ModelPathError('That is not a model file the studio reads.')
+  }
+  return readFile(path, 'utf8')
+}

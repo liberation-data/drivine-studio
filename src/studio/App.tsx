@@ -11,7 +11,7 @@ import { Canvas } from './Canvas'
 import { Catalogue } from './Catalogue'
 import { Connections } from './Connections'
 import { Cypher } from './Cypher'
-import { Queries } from './Queries'
+import { Files } from './Files'
 import { ALLOWS_WRITES, DATABASE_NAMES, listConnections } from './database'
 import type { StudioConnection } from './database'
 import { inCatalog, nextSubject } from './model'
@@ -36,7 +36,7 @@ const LIMITS: Record<string, WindowLimits> = {
   explore: { minWidth: 640, minHeight: 360 },
   cypher: { minWidth: 520, minHeight: 360 },
   connections: { minWidth: 560, minHeight: 360 },
-  queries: { minWidth: 520, minHeight: 320 },
+  files: { minWidth: 640, minHeight: 360 },
 }
 
 /**
@@ -67,8 +67,8 @@ function infoOf(id: string, connection: StudioConnection | null): ReactNode {
       </>
     )
   }
-  if (id === 'queries') {
-    return 'The statements saved from Cypher, each a .cypher file in the queries folder of the studio’s home, so an editor opens them too. Double-click one to open it in Cypher.'
+  if (id === 'files') {
+    return 'Queries saved from Cypher, each a .cypher file in the queries folder of the studio’s home, in folders of your own, so an editor opens them too; and the model files the studio reads, one for each module. Double-click a query to open it in Cypher.'
   }
   if (id === 'connections') {
     return 'The databases the studio reads, kept in connections.json in its home, passwords too, readable by you alone. One from the environment is set where the studio was started.'
@@ -76,13 +76,14 @@ function infoOf(id: string, connection: StudioConnection | null): ReactNode {
   return null
 }
 
-const TITLES: Record<string, string> = { explore: 'Explore', cypher: 'Cypher', queries: 'Queries', connections: 'Connections' }
+const TITLES: Record<string, string> = { files: 'Files', explore: 'Explore', cypher: 'Cypher', connections: 'Connections' }
 const title = (id: string) => TITLES[id] ?? id
 
 /** A saved query as the Cypher window knows the one it holds. */
 export interface SavedAs {
   id: string
   name: string
+  folder: string
 }
 
 export interface PendingCypher {
@@ -116,6 +117,9 @@ interface Studio {
   /** Counts the saves, so a list of saved queries reads them again after one. */
   queriesChanged: number
   savedQuery: () => void
+  /** The folder the Files window is in, which a new query is saved to unless another is chosen. */
+  browsing: string
+  browse: (folder: string) => void
   /** The Cypher window has taken up the statement. */
   takeCypher: () => void
 }
@@ -140,7 +144,7 @@ function renderWindow(id: string): ReactNode {
   }
   if (id === 'cypher') return <Cypher />
   if (id === 'connections') return <Connections />
-  if (id === 'queries') return <Queries />
+  if (id === 'files') return <Files />
   return null
 }
 
@@ -161,7 +165,7 @@ const rememberedConnection = (): string | null => {
 
 const DOCK = [
   // First, as the Finder is in a Mac's dock: what has been kept, to open again.
-  dockItem({ id: 'queries', label: 'Queries', description: 'The statements saved from Cypher, to open again', icon: icon('M4 5a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM8 11l-2 2 2 2M16 11l2 2-2 2M13 10l-2 6') }),
+  dockItem({ id: 'files', label: 'Files', description: 'Saved queries, in folders, and the model files the studio reads', icon: icon('M4 5a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM8 11l-2 2 2 2M16 11l2 2-2 2M13 10l-2 6') }),
   dockItem({ id: 'explore', label: 'Explore', description: 'Views and fragments, loaded and seen as a graph', icon: icon('M6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7.7 7l8.5 2.4M16.6 11.5l-7.2 5.3M6.4 8l1.2 8') }),
   dockItem({ id: 'cypher', label: 'Cypher', description: 'Run Cypher, see a graph or rows', icon: icon('M8 6l-5 6 5 6M16 6l5 6-5 6M14 4l-4 16') }),
   dockItem({ id: 'connections', label: 'Connections', description: 'The databases to read', icon: icon('M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2zM4 6v12c0 1.1 3.6 2 8 2s8-.9 8-2V6M4 12c0 1.1 3.6 2 8 2s8-.9 8-2') }),
@@ -181,6 +185,7 @@ export function App() {
   }, [])
   const [queriesChanged, setQueriesChanged] = useState(0)
   const savedQuery = useCallback(() => setQueriesChanged(n => n + 1), [])
+  const [browsing, browse] = useState('')
   const takeCypher = useCallback(() => setPendingCypher(null), [])
 
   const reload = useCallback(() => {
@@ -225,11 +230,11 @@ export function App() {
   const studio = useMemo(
     () => ({
       catalog, problem, reload, subject, show, connections, connectionProblem, reloadConnections, connection, chooseConnection,
-      pendingCypher, openInCypher, takeCypher, queriesChanged, savedQuery,
+      pendingCypher, openInCypher, takeCypher, queriesChanged, savedQuery, browsing, browse,
     }),
     [
       catalog, problem, reload, subject, show, connections, connectionProblem, reloadConnections, connection, chooseConnection,
-      pendingCypher, openInCypher, takeCypher, queriesChanged, savedQuery,
+      pendingCypher, openInCypher, takeCypher, queriesChanged, savedQuery, browsing,
     ],
   )
 
@@ -240,7 +245,7 @@ export function App() {
         menuSeparator(),
         menuAction('Explore', () => desk.open('explore')),
         menuAction('Cypher', () => desk.open('cypher')),
-        menuAction('Queries', () => desk.open('queries')),
+        menuAction('Files', () => desk.open('files')),
         menuAction('Connections', () => desk.open('connections')),
       ] },
     {
@@ -248,7 +253,7 @@ export function App() {
       label: 'File',
       items: [
         menuAction('New Query', () => openInCypher('', '')),
-        menuAction('Open…', () => desk.open('queries')),
+        menuAction('Open…', () => desk.open('files')),
         menuSeparator(),
         // The Cypher window answers these, when it is the one in front: dimmed otherwise, as a Mac's are.
         menuCommand('Save', StudioCommands.save, { shortcut: 'mod+s' }),
