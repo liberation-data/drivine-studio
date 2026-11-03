@@ -259,12 +259,16 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
           style: {
             width: 1.5, 'line-color': muted, 'target-arrow-color': muted, 'curve-style': 'bezier',
             label: 'data(type)', 'font-size': 9, color: muted, 'text-rotation': 'autorotate',
-            'text-background-color': surface, 'text-background-opacity': 0.85, 'text-background-padding': '1px',
+            // A label stands on its line in the graph's own colour, so the line stops either side of it, as in Neo4j
+            // Browser, rather than running through the words.
+            'text-background-color': surface, 'text-background-opacity': 1, 'text-background-padding': '2px',
+            'text-background-shape': 'roundrectangle',
           },
         },
         { selector: 'edge[?directed]', style: { 'target-arrow-shape': 'triangle' } },
         // Not given back by the query, only connecting what was: drawn, but lighter, so it's told apart.
-        { selector: 'edge[?added]', style: { 'line-style': 'dashed', 'line-dash-pattern': [6, 4], opacity: 0.55 } },
+        // The line and its arrow are faded, not the label: a faded label's backing would let the line show through it.
+        { selector: 'edge[?added]', style: { 'line-style': 'dashed', 'line-dash-pattern': [6, 4], 'line-opacity': 0.55, 'text-opacity': 0.8 } },
         // Put down by hand, and held there while the rest move: a dashed ring says so.
         { selector: 'node.pinned', style: { 'border-width': 2, 'border-style': 'dashed', 'border-color': muted } },
         // Chosen: a ring of the accent outside a gap of the ground, so it never sits against the node's own colour.
