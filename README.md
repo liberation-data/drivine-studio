@@ -11,7 +11,7 @@ same build runs from `npm start`, as a desktop app in Electron, and is meant to 
 
 ![Drivine Studio's Cypher window on Postgres: a statement above, and below it a metro network drawn as a graph of stations and their routes, with the station Bastille chosen and its properties shown beside the graph](docs/studio-cypher.png)
 
-*Cypher on Postgres, compiled to SQL by Drivine: a metro network drawn as a graph, the station chosen shown beside it.*
+*Cypher on Postgres, compiled to SQL by Drivine: the metro network from [Rock ’n’ Roll Traffic Routing, with Neo4j](https://liberation-data.com/saxeburg-series/2018/11/28/rock-n-roll-traffic-routing.html), now on any store. The station chosen is shown beside it.*
 
 ## Model files
 
