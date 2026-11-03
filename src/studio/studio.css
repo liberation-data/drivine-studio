@@ -141,6 +141,7 @@ html, body, #root { height: 100%; margin: 0; }
   padding: 0 var(--desk-space-1); border-radius: 4px; font-size: var(--desk-text-caption); font-weight: 500;
   color: var(--desk-accent); background: color-mix(in srgb, var(--desk-accent) 14%, transparent);
 }
+.studio-tag-warn { color: color-mix(in srgb, var(--desk-warn) 80%, var(--desk-ink)); background: color-mix(in srgb, var(--desk-warn) 16%, transparent); }
 /* The editor's fields, two to a row where they belong together: host and port, user and password. */
 .studio-fields fieldset {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--desk-space-3);
