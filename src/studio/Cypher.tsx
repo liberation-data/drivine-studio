@@ -1,4 +1,4 @@
-import { Button, Spinner, Split, Table, Tabs, TextField } from '@liberation-data/desk/react'
+import { Button, SegmentedControl, Spinner, Split, Table, Tabs, TextField } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { useStudio } from './App'
@@ -11,6 +11,13 @@ import { cellText, graphOf, parametersOf, writtenText } from './results'
 
 type Run = { state: 'idle' } | { state: 'running' } | { state: 'failed'; message: string }
 type View = 'graph' | 'rows'
+/** What the editor shows: the statement, or the parameters it is run with. */
+type Pane = 'statement' | 'parameters'
+/**
+ * How much of the window the editor takes: a line, to see the results whole; its share above the edge; or all of it,
+ * for a long statement. Running from all of it brings the results back.
+ */
+type Size = 'line' | 'split' | 'full'
 
 // What was typed last, kept in this browser only: a convenience, and lost without harm.
 const remembered = (key: string, fallback: string): string => {
@@ -35,14 +42,13 @@ export function Cypher() {
   const { connection, pendingCypher, takeCypher } = useStudio()
   const [statement, setStatement] = useState(() => remembered(STATEMENT, 'MATCH (n) RETURN n LIMIT 25'))
   const [parameters, setParameters] = useState(() => remembered(PARAMETERS, ''))
-  const [showParameters, setShowParameters] = useState(() => parameters.trim() !== '')
+  const [pane, setPane] = useState<Pane>('statement')
   const [limit, setLimit] = useState(String(DEFAULT_LIMIT))
   const [result, setResult] = useState<CypherResult | null>(null)
   const [run, setRun] = useState<Run>({ state: 'idle' })
   const [view, setView] = useState<View>('graph')
   const [selection, setSelection] = useState<Selection>(null)
-  // The editor given the whole window, for a long statement; running it brings the results back.
-  const [expanded, setExpanded] = useState(false)
+  const [size, setSize] = useState<Size>('split')
   const inFlight = useRef<AbortController | null>(null)
 
   useEffect(() => remember(STATEMENT, statement), [statement])
@@ -55,7 +61,7 @@ export function Cypher() {
     setStatement(pendingCypher.statement)
     const parameters = Object.keys(pendingCypher.parameters).length ? JSON.stringify(pendingCypher.parameters, null, 2) : ''
     setParameters(parameters)
-    setShowParameters(parameters !== '')
+    setPane('statement')
     takeCypher()
   }, [pendingCypher, takeCypher])
 
@@ -63,11 +69,12 @@ export function Cypher() {
     if (!connection) return
     const parsed = parametersOf(parameters)
     if ('problem' in parsed) {
-      setShowParameters(true)
+      setPane('parameters')
       setRun({ state: 'failed', message: parsed.problem })
       return
     }
-    setExpanded(false)
+    // Run from the whole window, and the results come back; from a line, they were in sight already.
+    setSize(current => (current === 'full' ? 'split' : current))
     const rows = Number.parseInt(limit, 10)
     inFlight.current?.abort()
     const controller = new AbortController()
@@ -106,17 +113,30 @@ export function Cypher() {
   const drawn = useMemo(() => (result ? graphOf(result.graph) : null), [result])
   const [live, setLive] = useLiveLayout(drawn?.graph)
 
+  const given = parameters.trim() !== ''
+  const firstLine = statement.split('\n').find(line => line.trim() !== '')?.trim() ?? ''
+
   const editor = (
     <form className="studio-query studio-query-fill" onSubmit={submit} aria-label="Cypher">
       <div className="studio-query-row">
+        <SegmentedControl
+          label="Edit" size="small"
+          value={pane}
+          onChange={next => {
+            setPane(next)
+            if (size === 'line') setSize('split')
+          }}
+          // A dot says there are parameters when the statement is what is shown.
+          options={[{ value: 'statement', label: 'Statement' }, { value: 'parameters', label: given ? 'Parameters •' : 'Parameters' }]}
+        />
+        <SegmentedControl
+          label="Editor size" size="small"
+          value={size}
+          onChange={setSize}
+          options={[{ value: 'line', label: 'Line' }, { value: 'split', label: 'Split' }, { value: 'full', label: 'Full' }]}
+        />
         <span className="desk-grow" />
         {run.state === 'running' && <Spinner label="Running" size="small" />}
-        <Button type="button" size="small" intent="quiet" onClick={() => setExpanded(!expanded)} aria-pressed={expanded}>
-          {expanded ? 'Show Results' : 'Expand Editor'}
-        </Button>
-        <Button type="button" size="small" intent="quiet" onClick={() => setShowParameters(!showParameters)} aria-expanded={showParameters}>
-          Parameters
-        </Button>
         <span className="studio-query-word desk-text-small desk-text-muted">at most</span>
         <span className="studio-limit">
           <TextField label="Rows to read, at most" labelHidden type="number" min={1} max={MAX_LIMIT} value={limit} onChange={e => setLimit(e.target.value)} />
@@ -124,28 +144,35 @@ export function Cypher() {
         <span className="desk-text-small desk-text-muted">rows</span>
         <Button type="submit" intent="default" disabled={!connection || run.state === 'running'} title="⌘↵">Run</Button>
       </div>
-      <label className="desk-label" htmlFor="studio-statement" data-hidden>Statement</label>
-      {/* The editor fills what the edge below leaves it, so it is sized by dragging the edge, not by a corner of its own. */}
-      <textarea
-        id="studio-statement"
-        className="desk-input studio-editor studio-statement"
-        spellCheck={false}
-        value={statement}
-        onChange={e => setStatement(e.target.value)}
-        onKeyDown={keys}
-      />
-      {showParameters && (
+      {size === 'line' ? (
+        // Folded to a line: the statement's start, which opens the editor again.
+        <button type="button" className="studio-statement-line desk-text-small" onClick={() => setSize('split')} title="Show the editor">
+          {firstLine || 'No statement yet'}
+        </button>
+      ) : pane === 'statement' ? (
         <>
-          <label className="desk-label desk-text-small" htmlFor="studio-parameters">Parameters, as a JSON object</label>
+          <label className="desk-label" htmlFor="studio-statement" data-hidden>Statement</label>
+          {/* The editor fills what the edge below leaves it, so it is sized by dragging the edge, not by a corner of its own. */}
+          <textarea
+            id="studio-statement"
+            className="desk-input studio-editor studio-statement"
+            spellCheck={false}
+            value={statement}
+            onChange={e => setStatement(e.target.value)}
+            onKeyDown={keys}
+          />
+        </>
+      ) : (
+        <>
+          <label className="desk-label" htmlFor="studio-parameters" data-hidden>Parameters, as a JSON object</label>
           <textarea
             id="studio-parameters"
-            className="desk-input studio-editor"
+            className="desk-input studio-editor studio-statement"
             spellCheck={false}
-            placeholder='{"name": "Ada"}'
+            placeholder={'Parameters, as a JSON object:\n{"name": "Ada"}'}
             value={parameters}
             onChange={e => setParameters(e.target.value)}
             onKeyDown={keys}
-            rows={3}
           />
         </>
       )}
@@ -208,7 +235,7 @@ export function Cypher() {
         max="80%"
         remember="drivine-studio.cypher"
         label="Resize the editor"
-        className={expanded ? 'studio-cypher-split studio-expanded' : 'studio-cypher-split'}
+        className={`studio-cypher-split${size === 'full' ? ' studio-expanded' : size === 'line' ? ' studio-line' : ''}`}
       >
         {results}
       </Split>
