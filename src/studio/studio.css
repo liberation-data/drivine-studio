@@ -135,7 +135,11 @@ html, body, #root { height: 100%; margin: 0; }
 }
 .studio-fields p, .studio-fields + * { margin: 0; }
 .studio-wide { grid-column: 1 / -1; }
-.studio-fields { margin-bottom: var(--desk-space-3); }
+.studio-fields { margin-bottom: var(--desk-space-3); container-type: inline-size; }
+/* Too narrow for two side by side, as when the list is dragged wide: one to a row. */
+@container (max-width: 440px) {
+  .studio-fields fieldset { grid-template-columns: minmax(0, 1fr); }
+}
 .studio-form { display: flex; flex-direction: column; gap: var(--desk-space-3); }
 .studio-form p { margin: 0; }
 .studio-bad { color: var(--desk-bad); margin: 0; }
