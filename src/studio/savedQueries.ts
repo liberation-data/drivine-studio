@@ -25,3 +25,17 @@ export const removeQuery = (id: string): Promise<void> =>
 
 /** A statement's first line that says anything, for a list or a name to start from. */
 export const firstLine = (statement: string): string => statement.split('\n').find(line => line.trim() !== '')?.trim() ?? ''
+
+/** The drag type of a saved query picked up in Files: dropped on Cypher it opens there, on the dock it is kept. */
+export const QUERY_DRAG = 'drivine-studio.query'
+
+/** What a saved query carries when it is picked up: enough to open it, and to find it again by its id. */
+export interface QueryDrag {
+  id: string
+  name: string
+  folder: string
+  statement: string
+  parameters: string
+}
+
+export const dragOf = (q: SavedQuery): QueryDrag => ({ id: q.id, name: q.name, folder: q.folder, statement: q.statement, parameters: q.parameters })
