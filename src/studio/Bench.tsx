@@ -1,11 +1,14 @@
 import { perform } from '@liberation-data/desk'
-import { Button, Checkbox, Loading, PopUpButton, SegmentedControl, Sheet, Slider, Spinner, Split, TextField } from '@liberation-data/desk/react'
+import {
+  Button, Checkbox, Led, Loading, menuAction, PopUpButton, SegmentedControl, Sheet, Slider, Spinner, Split, TextField, useContextMenu,
+} from '@liberation-data/desk/react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { BenchSet, EngineResults, Outcome } from '../server/bench'
 import type { RunJob } from '../server/benchRun'
 import type { Loaded, LoadBatch, LoadJob } from '../server/benchLoad'
 import { Scale } from '../server/benchData'
-import { listConnections, DATABASE_NAMES, testConnection } from './database'
+import { listConnections, DATABASE_NAMES } from './database'
+import { useOnline } from './online'
 import type { StudioConnection } from './database'
 import { listQueries } from './savedQueries'
 import type { SavedQuery } from './savedQueries'
@@ -121,8 +124,7 @@ export function Bench() {
         ))}
       </ul>
       <Button size="small" intent="default" onClick={() => setRunning(true)}>New Run…</Button>
-      <Button size="small" onClick={() => setLoading(true)}>Load Graph Bench Data…</Button>
-      <Button size="small" onClick={link}>Link Graph Bench…</Button>
+      <GraphBenchMenu onLoad={() => setLoading(true)} onLink={link} />
     </div>
   )
 
@@ -559,16 +561,16 @@ function ScalingChart({ title, lines, sizes, crossings }: { title: string; lines
  */
 function NewRun({ onStarted, onCancel }: { onStarted: (job: RunJob) => void; onCancel: () => void }) {
   const [queries, setQueries] = useState<SavedQuery[] | null>(null)
-  const [connections, setConnections] = useState<StudioConnection[] | null>(null)
   const [pickedQueries, setPickedQueries] = useState<Set<string>>(new Set())
-  const [pickedConnections, setPickedConnections] = useState<Set<string>>(new Set())
+  const [chosen, setChosen] = useState<string[]>([])
+  const [loaded, setLoaded] = useState<Record<string, Loaded>>({})
   const [name, setName] = useState('')
   const [warmup, setWarmup] = useState('3')
   const [runs, setRuns] = useState('20')
   const [problem, setProblem] = useState<string | null>(null)
   useEffect(() => {
     listQueries().then(shelf => setQueries(shelf.queries), (e: unknown) => setProblem(message(e)))
-    listConnections().then(setConnections, (e: unknown) => setProblem(message(e)))
+    fetch(`${API}/loads`, { cache: 'no-store' }).then(r => read<Record<string, Loaded>>(r)).then(setLoaded, () => undefined)
   }, [])
   const toggle = (set: Set<string>, id: string, on: boolean) => {
     const next = new Set(set)
@@ -578,7 +580,7 @@ function NewRun({ onStarted, onCancel }: { onStarted: (job: RunJob) => void; onC
   }
   const folders = [...new Set((queries ?? []).map(q => q.folder))].sort()
   const start = () =>
-    fetch(`${API}/runs`, json('POST', { name, connections: [...pickedConnections], queries: [...pickedQueries], warmup: Number(warmup), runs: Number(runs) }))
+    fetch(`${API}/runs`, json('POST', { name, connections: chosen, queries: [...pickedQueries], warmup: Number(warmup), runs: Number(runs) }))
       .then(r => read<RunJob>(r))
       .then(onStarted, (e: unknown) => setProblem(message(e)))
   return (
@@ -590,8 +592,8 @@ function NewRun({ onStarted, onCancel }: { onStarted: (job: RunJob) => void; onC
       actions={
         <>
           <Button onClick={onCancel}>Cancel</Button>
-          <Button intent="default" onClick={start} disabled={!pickedQueries.size || !pickedConnections.size}>
-            Run {pickedQueries.size * pickedConnections.size || ''}
+          <Button intent="default" onClick={start} disabled={!pickedQueries.size || !chosen.length}>
+            Run {pickedQueries.size * chosen.length || ''}
           </Button>
         </>
       }
@@ -622,12 +624,7 @@ function NewRun({ onStarted, onCancel }: { onStarted: (job: RunJob) => void; onC
             )
           })}
         </fieldset>
-        <fieldset className="studio-bench-pick">
-          <legend className="desk-text-small">Connections</legend>
-          {!connections ? <Loading label="Reading the connections" /> : connections.map(c => (
-            <Checkbox key={c.id} label={`${c.name} · ${DATABASE_NAMES[c.type]}`} checked={pickedConnections.has(c.id)} onChange={on => setPickedConnections(toggle(pickedConnections, c.id, on))} />
-          ))}
-        </fieldset>
+        <DatabasePicker legend="On" onChosen={setChosen} note={c => (loaded[c.id] ? `Graph Bench scale ${loaded[c.id]!.scale} loaded` : undefined)} />
         <div className="studio-bench-counts">
           <TextField label="Warm-up runs" type="number" min={0} max={100} value={warmup} onChange={e => setWarmup(e.target.value)} />
           <TextField label="Timed runs" type="number" min={1} max={1000} value={runs} onChange={e => setRuns(e.target.value)} />
@@ -649,44 +646,15 @@ const HEAT = ['#3fb8c4', '#45c29b', '#d9c443', '#f0a03a', '#ee6a32', '#e5383b']
  * workloads and saved queries are timed on the same data in each store, and bench runs there say what scale it was.
  */
 function LoadData({ onStarted, onCancel }: { onStarted: (batch: LoadBatch) => void; onCancel: () => void }) {
-  const [connections, setConnections] = useState<StudioConnection[] | null>(null)
   const [loaded, setLoaded] = useState<Record<string, Loaded>>({})
-  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [chosen, setChosen] = useState<string[]>([])
   const [step, setStep] = useState(SCALES.indexOf(0.01))
   const [problem, setProblem] = useState<string | null>(null)
-  // Read again every few seconds while open: a connection set up in Connections meanwhile shows up here.
-  useEffect(() => {
-    const read = () => listConnections().then(setConnections, (e: unknown) => setProblem(message(e)))
-    void read()
-    const timer = setInterval(read, 2000)
-    return () => clearInterval(timer)
-  }, [])
-  // Whether each is up: one that isn't can't be loaded, and says so rather than failing its turn.
-  const [up, setUp] = useState<Record<string, boolean>>({})
-  const ids = (connections ?? []).map(c => c.id).join('|')
-  useEffect(() => {
-    if (!ids) return
-    let live = true
-    const probe = () => {
-      for (const id of ids.split('|')) testConnection(id).then(() => true, () => false).then(ok => live && setUp(was => (was[id] === ok ? was : { ...was, [id]: ok })))
-    }
-    probe()
-    const timer = setInterval(probe, 5000)
-    return () => {
-      live = false
-      clearInterval(timer)
-    }
-  }, [ids])
   useEffect(() => {
     fetch(`${API}/loads`, { cache: 'no-store' }).then(r => read<Record<string, Loaded>>(r)).then(setLoaded, () => undefined)
   }, [])
   const scale = SCALES[step]!
   const size = new Scale(scale)
-  const usable = (c: StudioConnection) => !!c.allowWrites && up[c.id] === true
-  const chosen = [...picked].filter(id => connections?.some(c => c.id === id && usable(c)))
-  // Those that can be loaded first, then those that are down, then those that don't allow writes.
-  const rank = (c: StudioConnection) => (!c.allowWrites ? 2 : up[c.id] === false ? 1 : 0)
-  const listed = [...(connections ?? [])].sort((a, b) => rank(a) - rank(b))
   const start = () =>
     fetch(`${API}/loads`, json('POST', { connections: chosen, scale }))
       .then(r => read<LoadBatch>(r))
@@ -723,37 +691,79 @@ function LoadData({ onStarted, onCancel }: { onStarted: (batch: LoadBatch) => vo
             </p>
           )}
         </section>
-        <fieldset className="studio-bench-pick">
-          <legend className="desk-text-small">Into</legend>
-          {!connections ? <Loading label="Reading the connections" /> : listed.map(c => {
-            const there = loaded[c.id]
-            return (
-              <div key={c.id} className="studio-bench-target">
-                <Checkbox
-                  label={`${c.name} · ${DATABASE_NAMES[c.type]}`}
-                  checked={picked.has(c.id) && usable(c)}
-                  disabled={!usable(c)}
-                  onChange={on => {
-                    const next = new Set(picked)
-                    if (on) next.add(c.id)
-                    else next.delete(c.id)
-                    setPicked(next)
-                  }}
-                />
-                <span className="desk-text-caption desk-text-muted">
-                  {!c.allowWrites ? 'doesn’t allow writes' : up[c.id] === undefined ? 'checking…' : !up[c.id] ? 'not running' : there ? `has scale ${there.scale}: load again into an empty graph` : ''}
-                </span>
-              </div>
-            )
-          })}
-          <div className="studio-bench-target-new">
-            <Button size="small" onClick={() => perform(null, 'studio.connections')}>Set Up a Database…</Button>
-            <span className="desk-text-caption desk-text-muted">A fresh one in Docker is best: loading changes the database. Tick “Allows writes”, and it shows up here.</span>
-          </div>
-        </fieldset>
+        <DatabasePicker
+          legend="Into"
+          writes
+          onChosen={setChosen}
+          note={c => (loaded[c.id] ? `has scale ${loaded[c.id]!.scale}: load again into an empty graph` : undefined)}
+          footer={
+            <div className="studio-bench-target-new">
+              <Button size="small" onClick={() => perform(null, 'studio.connections')}>Set Up a Database…</Button>
+              <span className="desk-text-caption desk-text-muted">A fresh one in Docker is best: loading changes the database. Tick “Allows writes”, and it shows up here.</span>
+            </div>
+          }
+        />
         {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
       </div>
     </Sheet>
+  )
+}
+
+/**
+ * The databases to bench or load, each tried when the sheet opens and every few seconds after: one that isn't up
+ * can't be ticked and says so, and so can't fail its turn later. Read again every few seconds too, so one set up in
+ * Connections meanwhile shows up. Those that can be chosen come first. Tells its sheet what is chosen and usable now.
+ */
+function DatabasePicker({ legend, writes = false, note, footer, onChosen }: {
+  legend: string
+  /** Only those that allow writes can be chosen: a load. */
+  writes?: boolean
+  note?: (connection: StudioConnection) => string | undefined
+  footer?: React.ReactNode
+  onChosen: (ids: string[]) => void
+}) {
+  const [connections, setConnections] = useState<StudioConnection[] | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    const again = () => listConnections().then(setConnections, (e: unknown) => setProblem(message(e)))
+    void again()
+    const timer = setInterval(again, 2000)
+    return () => clearInterval(timer)
+  }, [])
+  const up = useOnline((connections ?? []).map(c => c.id))
+  const why = (c: StudioConnection) => (writes && !c.allowWrites ? 'doesn’t allow writes' : up[c.id] === undefined ? 'checking…' : !up[c.id] ? 'not running' : undefined)
+  const usable = (c: StudioConnection) => !why(c)
+  const chosen = (connections ?? []).filter(c => picked.has(c.id) && usable(c)).map(c => c.id)
+  const key = chosen.join('|')
+  useEffect(() => onChosen(key ? key.split('|') : []), [key])
+  // Those that can be chosen first, then those that are down, then those that don't allow writes.
+  const rank = (c: StudioConnection) => (writes && !c.allowWrites ? 2 : up[c.id] === false ? 1 : 0)
+  const listed = [...(connections ?? [])].sort((a, b) => rank(a) - rank(b))
+  return (
+    <fieldset className="studio-bench-pick">
+      <legend className="desk-text-small">{legend}</legend>
+      {!connections ? (problem ? <p className="studio-bad desk-text-small" role="alert">{problem}</p> : <Loading label="Reading the connections" />) : listed.map(c => (
+        <div key={c.id} className="studio-bench-target">
+          <span className="studio-bench-target-name">
+          <Led color={up[c.id] === undefined ? 'off' : up[c.id] ? 'green' : 'red'} />
+          <Checkbox
+            label={`${c.name} · ${DATABASE_NAMES[c.type]}`}
+            checked={picked.has(c.id) && usable(c)}
+            disabled={!usable(c)}
+            onChange={on => {
+              const next = new Set(picked)
+              if (on) next.add(c.id)
+              else next.delete(c.id)
+              setPicked(next)
+            }}
+          />
+          </span>
+          <span className="desk-text-caption desk-text-muted">{why(c) ?? note?.(c) ?? ''}</span>
+        </div>
+      ))}
+      {footer}
+    </fieldset>
   )
 }
 
@@ -809,5 +819,36 @@ function RunProgress({ job, onClose }: { job: RunJob; onClose: () => void }) {
       </div>
       {job.state === 'failed' && <Button onClick={onClose}>Done</Button>}
     </section>
+  )
+}
+
+/**
+ * What there is of Graph Bench's: its data, to load into databases here, and the results of a checkout's runs, to
+ * read beside the studio's own. One button, as both are Graph Bench's; its menu opens under it.
+ */
+function GraphBenchMenu({ onLoad, onLink }: { onLoad: () => void; onLink: () => void }) {
+  const { target, menu } = useContextMenu({
+    label: 'Graph Bench',
+    items: () => [
+      menuAction('Load Its Data into Databases…', onLoad),
+      menuAction('Read Results from a Checkout…', onLink),
+    ],
+  })
+  return (
+    <>
+      <Button
+        size="small"
+        aria-haspopup="menu"
+        {...target}
+        onClick={event => {
+          // Opened by a click as by a right-click, under the button rather than at the pointer.
+          const box = event.currentTarget.getBoundingClientRect()
+          target.onContextMenu({ ...event, preventDefault: () => event.preventDefault(), currentTarget: event.currentTarget, clientX: box.left, clientY: box.bottom + 4 })
+        }}
+      >
+        Graph Bench ▾
+      </Button>
+      {menu}
+    </>
   )
 }
