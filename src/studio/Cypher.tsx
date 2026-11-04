@@ -10,11 +10,13 @@ import { connectResults, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
 import type { Cell, CypherRelationship, CypherResult } from './database'
 import { GraphView, LiveLayoutToggle, useLiveLayout } from './GraphView'
 import type { Selection } from './GraphView'
+import { GraphView3D } from './GraphView3D'
 import { Inspector } from './Inspector'
 import { cellText, graphOf, parametersOf, writtenText } from './results'
 
 type Run = { state: 'idle' } | { state: 'running' } | { state: 'failed'; message: string }
 type View = 'graph' | 'rows'
+const DEPTH_KEY = 'drivine-studio.graph-depth'
 /** What the editor shows: the statement, or the parameters it is run with. */
 type Pane = 'statement' | 'parameters'
 /**
@@ -196,6 +198,12 @@ export function Cypher() {
   )
   const added = drawn ? drawn.graph.edges.filter(e => e.added).length : 0
   const [live, setLive] = useLiveLayout(drawn?.graph)
+  // 2D or 3D, remembered: a prototype of the graph in three dimensions.
+  const [depth, setDepthNow] = useState<'2d' | '3d'>(() => (typeof localStorage !== 'undefined' && localStorage.getItem(DEPTH_KEY) === '3d' ? '3d' : '2d'))
+  const setDepth = (next: '2d' | '3d') => {
+    setDepthNow(next)
+    localStorage.setItem(DEPTH_KEY, next)
+  }
 
   const given = parameters.trim() !== ''
   const firstLine = statement.split('\n').find(line => line.trim() !== '')?.trim() ?? ''
@@ -290,7 +298,10 @@ export function Cypher() {
                   <Toggle label={added ? `Connect results (${added})` : 'Connect results'} checked={connectOn} onChange={setConnectOn} />
                 </span>
               )}
-              {view === 'graph' && <LiveLayoutToggle live={live} onChange={setLive} />}
+              {view === 'graph' && depth === '2d' && <LiveLayoutToggle live={live} onChange={setLive} />}
+              {view === 'graph' && (
+                <SegmentedControl label="Draw the graph in" size="small" value={depth} onChange={setDepth} options={[{ value: '2d', label: '2D' }, { value: '3d', label: '3D' }]} />
+              )}
               <Summary result={result} />
             </span>
           }
@@ -301,7 +312,11 @@ export function Cypher() {
         >
           {view === 'graph' ? (
             <div className="studio-result">
-              <GraphView graph={drawn.graph} live={live} fragments={drawn.labels} onSelect={setSelection} />
+              {depth === '3d' ? (
+                <GraphView3D graph={drawn.graph} fragments={drawn.labels} onSelect={setSelection} />
+              ) : (
+                <GraphView graph={drawn.graph} live={live} fragments={drawn.labels} onSelect={setSelection} />
+              )}
               {selection && <Inspector selection={selection} nodes={drawn.graph.nodes} fragments={drawn.labels} />}
             </div>
           ) : (

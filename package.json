@@ -29,13 +29,15 @@
     "@huggingface/transformers": "^4.3.1",
     "@liberation-data/desk": "^0.39.1",
     "@liberation-data/drivine": "^3.4.1",
+    "3d-force-graph": "^1.80.1",
     "cytoscape": "^3.30.0",
     "cytoscape-cola": "^2.5.1",
     "lucide-static": "^1.61.0",
     "neo4j-driver": "^5.28.3",
     "next": "^16.4.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "@types/cytoscape": "^3.21.0",
