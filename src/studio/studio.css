@@ -363,3 +363,10 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-bench-busy-row .studio-bench-progress > span { border-radius: 4px; transition: width 0.6s ease; }
 .studio-bench-busy-row[style] .studio-bench-progress > span { background: var(--bench-colour); }
 .studio-bench-busy-row[data-state='waiting'] { opacity: 0.6; }
+
+/* A database's lamp beside its tick: up, not running, or still being tried. */
+.studio-bench-target-name { display: inline-flex; align-items: center; gap: var(--desk-space-2); }
+.studio-connection-entry .studio-entry-name > .desk-led:first-child { margin-right: 6px; }
+
+/* desk draws a context menu into the page's body, outside the desktop that carries desk's font: given it here. */
+.desk-context-menu { font-family: var(--desk-font); color: var(--desk-ink); }

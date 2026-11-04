@@ -1,5 +1,5 @@
 import {
-  Alert, Button, Checkbox, CodeBlock, Disclosure, Loading, menuAction, menuSeparator, Pane, PaneHeader, PopUpButton, Sheet, Spinner, Split, TextField,
+  Alert, Button, Checkbox, CodeBlock, Disclosure, Led, Loading, menuAction, menuSeparator, Pane, PaneHeader, PopUpButton, Sheet, Spinner, Split, TextField,
   Toolbar, useContextMenu,
 } from '@liberation-data/desk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -9,6 +9,7 @@ import { dockerCommand, fillFor, foundName, listed, sameKind } from './docker'
 import type { DockerStatus } from './docker'
 import { addConnection, DATABASE_NAMES, DATABASE_TYPES, dockerAction, dockerStatus, freeDockerPort, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
+import { useOnline } from './online'
 
 type Test = { state: 'testing' } | { state: 'passed'; milliseconds: number } | { state: 'failed'; message: string }
 /** What the editor shows: a connection, a new one not yet added, or nothing. */
@@ -22,6 +23,8 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
  */
 export function Connections() {
   const { connections, connectionProblem, reloadConnections, connection: active, chooseConnection } = useStudio()
+  // A lamp beside each that can be tried: up, or not running.
+  const up = useOnline((connections ?? []).filter(c => RUNS_CYPHER.includes(c.type)).map(c => c.id))
   const [chosen, setChosen] = useState<Chosen>(() => active?.id ?? null)
   // Where to go once unsaved changes are let go of, while that is being asked.
   const [leaving, setLeaving] = useState<{ to: Chosen } | null>(null)
@@ -100,6 +103,7 @@ export function Connections() {
           <ConnectionEntry
             key={c.id}
             connection={c}
+            online={RUNS_CYPHER.includes(c.type) ? up[c.id] : undefined}
             chosen={shown !== 'new' && shown?.id === c.id}
             inUse={active?.id === c.id}
             test={tests[c.id]}
@@ -276,6 +280,8 @@ interface EntryProps {
   readonly chosen: boolean
   readonly inUse: boolean
   readonly test: Test | undefined
+  /** Whether it answers, tried every few seconds: undefined while first tried, or where it can't be. */
+  readonly online: boolean | undefined
   readonly onChoose: () => void
   readonly onUse: () => void
   readonly onTest: () => void
@@ -283,7 +289,7 @@ interface EntryProps {
 }
 
 /** A connection in the list: a click shows it, a double-click uses it, and its menu holds what can be done to it. */
-function ConnectionEntry({ connection: c, chosen, inUse, test, onChoose, onUse, onTest, onRemove }: EntryProps) {
+function ConnectionEntry({ connection: c, chosen, inUse, test, online, onChoose, onUse, onTest, onRemove }: EntryProps) {
   const { target, menu } = useContextMenu({
     label: `Actions for ${c.name}`,
     items: () => [
@@ -303,6 +309,7 @@ function ConnectionEntry({ connection: c, chosen, inUse, test, onChoose, onUse, 
         {...target}
       >
         <span className="studio-entry-name">
+          <Led color={online === undefined ? 'off' : online ? 'green' : 'red'} label={online === undefined ? undefined : online ? 'Up' : 'Not running'} />
           {c.name}
           {test && test.state !== 'testing' && (
             <span className={test.state === 'passed' ? 'studio-test-passed' : 'studio-bad'} aria-label={test.state === 'passed' ? 'Connected' : 'Failed'}>
