@@ -8,12 +8,13 @@ import type { CompletionContext, CompletionResult } from '@codemirror/autocomple
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { json } from '@codemirror/lang-json'
 import { bracketMatching, HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language'
-import type { StringStream } from '@codemirror/language'
+import type { StreamParser, StringStream } from '@codemirror/language'
 import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap, placeholder as placeholderText } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
 import { useEffect, useRef } from 'react'
-import { completionsFor, expecting, isAtom, isKeyword } from './cypherSyntax'
+import { completionsFor, expecting, isAtom, isKeyword, opensSubquery, SUBQUERY } from './cypherSyntax'
+import { EMPTY_SCHEMA } from './schema'
 import type { GraphSchema } from './schema'
 
 interface CypherState {
@@ -21,12 +22,12 @@ interface CypherState {
   comment: boolean
   /** The last thing read: a colon (a label or type follows), a dot (a property key follows), or a map's opening. */
   after: 'colon' | 'dot' | 'key' | null
-  /** The brackets open, innermost last: a colon in a map is a value's, not a label's. */
+  /** The brackets open, innermost last, a subquery's braces as SUBQUERY: a colon in a map is a value's, not a label's. */
   open: string[]
 }
 
 /** Cypher's tokens, as CodeMirror's stream languages read them: line by line, with what carries over in the state. */
-const cypher = StreamLanguage.define<CypherState>({
+export const cypherTokens: StreamParser<CypherState> = {
   name: 'cypher',
   startState: () => ({ comment: false, after: null, open: [] }),
   copyState: s => ({ comment: s.comment, after: s.after, open: [...s.open] }),
@@ -92,8 +93,9 @@ const cypher = StreamLanguage.define<CypherState>({
       return 'operator'
     }
     if (c === '(' || c === '[' || c === '{') {
-      state.open.push(c)
-      if (c === '{') state.after = 'key'
+      const map = c === '{' && !opensSubquery(stream.string.slice(0, stream.start))
+      state.open.push(c === '{' && !map ? SUBQUERY : c)
+      if (map) state.after = 'key'
       return 'bracket'
     }
     if (c === ')' || c === ']' || c === '}') {
@@ -112,7 +114,9 @@ const cypher = StreamLanguage.define<CypherState>({
     punctuation: t.punctuation,
   },
   languageData: { commentTokens: { line: '//', block: { open: '/*', close: '*/' } } },
-})
+}
+
+const cypher = StreamLanguage.define(cypherTokens)
 
 /** desk's code colours, as its CodeBlock draws code: the tokens follow the theme, light and dark. */
 const deskColours = HighlightStyle.define([
@@ -166,7 +170,7 @@ const deskTheme = EditorView.theme({
 const DETAIL: Record<string, string> = { function: 'function' }
 
 /** Completion from the schema the editor holds now: labels, types and keys of the graph, and Cypher's own words. */
-const fromSchema = (schema: () => GraphSchema) => (context: CompletionContext): CompletionResult | null => {
+export const fromSchema = (schema: () => GraphSchema) => (context: CompletionContext): CompletionResult | null => {
   const text = context.state.doc.toString()
   const expected = expecting(text, context.pos)
   if (expected.kind === 'none') return null
@@ -177,14 +181,24 @@ const fromSchema = (schema: () => GraphSchema) => (context: CompletionContext): 
   return { from: expected.from, options, validFor: /^[A-Za-z0-9_]*$/ }
 }
 
+/**
+ * ⌘↵: runs the text the editor holds, not the `value` React last drew it with. CodeMirror reads what was typed but not
+ * yet read, as at the end of a composition, on the keydown itself, so the change and the run come in one event, before
+ * React has drawn the change.
+ */
+export const runCommand = (onRun: (text: string) => void) => (view: { state: EditorState }): boolean => {
+  onRun(view.state.doc.toString())
+  return true
+}
+
 export interface CypherEditorProps {
   id: string
   /** 'cypher' for a statement, 'json' for its parameters. */
   language: 'cypher' | 'json'
   value: string
   onChange: (value: string) => void
-  /** ⌘↵ or Ctrl+↵. */
-  onRun: () => void
+  /** ⌘↵ or Ctrl+↵, with the text as the editor holds it now (see runCommand). */
+  onRun: (text: string) => void
   schema?: GraphSchema
   placeholder?: string
   label: string
@@ -199,10 +213,7 @@ export default function CypherEditor({ id, language, value, onChange, onRun, sch
 
   useEffect(() => {
     if (!host.current) return
-    const run = () => {
-      latest.current.onRun()
-      return true
-    }
+    const run = runCommand(text => latest.current.onRun(text))
     const languages = new Compartment()
     const editor = new EditorView({
       parent: host.current,
@@ -219,7 +230,7 @@ export default function CypherEditor({ id, language, value, onChange, onRun, sch
           deskTheme,
           ...(language === 'cypher'
             ? [
-                autocompletion({ override: [fromSchema(() => latest.current.schema ?? { labels: [], relationshipTypes: [], propertyKeys: [] })], icons: false }),
+                autocompletion({ override: [fromSchema(() => latest.current.schema ?? EMPTY_SCHEMA)], icons: false }),
                 // After a colon or a dot, the names are offered before a letter is typed.
                 EditorView.inputHandler.of((v, _from, _to, text) => {
                   if (text === ':' || text === '.') setTimeout(() => startCompletion(v), 0)

@@ -1,5 +1,6 @@
+import { DrivineError, OracleGraph, PostgresGraph } from '@liberation-data/drivine'
 import type { Connection } from './connections'
-import { readRows, readSql, SQL_STORES } from './datasources'
+import { readRows, readSql, SQL_STORES, StatementError } from './datasources'
 import type { GraphSchema } from '../studio/schema'
 
 /**
@@ -72,14 +73,20 @@ function firstString(row: object): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
-/** A graph name as Drivine takes one: it names tables, so it goes into the SQL as it is, and only one of these may. */
-const GRAPH_NAME = /^[A-Za-z][A-Za-z0-9_]{0,100}$/
-
-/** The SQL that reads a graph's labels and relationship types from its tables, and its property keys from a sample. */
+/**
+ * The SQL that reads a graph's labels and relationship types from its tables, and its property keys from a sample.
+ * The graph's name goes into the SQL as it is, since it names tables: so its tables are named as Drivine names them,
+ * which refuses a name that is more than letters, digits and underscores, or too long for the database.
+ */
 export function schemaSql(type: 'POSTGRES' | 'ORACLE', graph: string): { labels: string; relationshipTypes: string; propertyKeys: string } {
-  if (!GRAPH_NAME.test(graph)) throw new Error(`'${graph}' can't name a graph: it names tables.`)
-  const nodes = `${graph}_node`
-  const edges = `${graph}_edge`
+  let tables: PostgresGraph | OracleGraph
+  try {
+    tables = type === 'POSTGRES' ? new PostgresGraph(graph) : new OracleGraph(graph)
+  } catch (e) {
+    if (e instanceof DrivineError) throw new StatementError(e.message)
+    throw e
+  }
+  const { nodes, edges } = tables
   const first = SAMPLE_ROWS
   if (type === 'POSTGRES') {
     // The first rows, and about one block in a hundred from the rest: a big table's spread, cheaply.

@@ -115,3 +115,43 @@ describe('the schema of a graph on Oracle', () => {
     })
   }, 120_000)
 })
+
+// The graph engines: Neo4j and FalkorDB say what they keep; Memgraph is read from a sample.
+describe.each([
+  { type: 'NEO4J', image: 'neo4j:latest', port: 7687, env: { NEO4J_AUTH: 'neo4j/studio-test-pass' }, user: 'neo4j', wait: Wait.forLogMessage(/Started\./) },
+  { type: 'MEMGRAPH', image: 'memgraph/memgraph:latest', port: 7687, env: {}, user: undefined, wait: Wait.forListeningPorts() },
+  { type: 'FALKORDB', image: 'falkordb/falkordb:latest', port: 6379, env: {}, user: undefined, wait: Wait.forListeningPorts() },
+] as const)('the schema of a graph on $type', ({ type, image, port, env, user, wait }) => {
+  let container: StartedTestContainer
+  let connection: Connection
+
+  beforeAll(async () => {
+    process.env.DRIVINE_STUDIO_HOME ??= await mkdtemp(join(tmpdir(), 'studio-schema-'))
+    container = await new GenericContainer(image).withEnvironment(env as Record<string, string>).withExposedPorts(port).withWaitStrategy(wait).start()
+    connection = {
+      id: `schema-${type}`, name: type, type, host: container.getHost(), port: container.getMappedPort(port), source: 'studio', allowWrites: true,
+      ...(user ? { user, password: 'studio-test-pass' } : {}), ...(type === 'FALKORDB' ? { database: 'studio' } : {}),
+    }
+    // Memgraph may take a moment past its port to answer.
+    for (let tries = 0; ; tries++) {
+      try {
+        await run(connection, "CREATE (:Person {name: 'Keanu', born: 1964})-[:ACTED_IN {roles: ['Neo']}]->(:Movie {title: 'The Matrix'})", {}, 10, { writes: true })
+        break
+      } catch (e) {
+        if (tries > 20) throw e
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+  }, 300_000)
+
+  afterAll(async () => {
+    await forget(connection.id)
+    await container?.stop()
+  })
+
+  it('names its labels, relationship types and property keys', async () => {
+    expect(await readSchema(connection)).toEqual({
+      labels: ['Movie', 'Person'], relationshipTypes: ['ACTED_IN'], propertyKeys: ['born', 'name', 'roles', 'title'],
+    })
+  }, 60_000)
+})

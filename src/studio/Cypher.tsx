@@ -88,9 +88,11 @@ export function Cypher() {
     takeCypher()
   }, [pendingCypher, takeCypher])
 
-  const execute = useCallback(() => {
+  // The editor gives its text as it holds it now, which React may not have drawn yet: see CypherEditor's runCommand.
+  const execute = useCallback((given: { statement?: string; parameters?: string } = {}) => {
     if (!connection) return
-    const parsed = parametersOf(parameters)
+    const text = given.statement ?? statement
+    const parsed = parametersOf(given.parameters ?? parameters)
     if ('problem' in parsed) {
       setPane('parameters')
       setRun({ state: 'failed', message: parsed.problem })
@@ -104,7 +106,7 @@ export function Cypher() {
     inFlight.current = controller
     setRun({ state: 'running' })
     runCypher(
-      { connection: connection.id, statement, parameters: parsed.parameters, ...(Number.isFinite(rows) ? { limit: rows } : {}) },
+      { connection: connection.id, statement: text, parameters: parsed.parameters, ...(Number.isFinite(rows) ? { limit: rows } : {}) },
       controller.signal,
     ).then(
       answered => {
@@ -263,7 +265,7 @@ export function Cypher() {
               <textarea id="studio-statement" aria-label="Statement" className="desk-input studio-editor studio-statement" spellCheck={false} value={statement} onChange={e => setStatement(e.target.value)} onKeyDown={keys} />
             }
           >
-            <CypherEditor key="statement" id="studio-statement" label="Statement" language="cypher" value={statement} onChange={setStatement} onRun={execute} schema={schema} />
+            <CypherEditor key="statement" id="studio-statement" label="Statement" language="cypher" value={statement} onChange={setStatement} onRun={text => execute({ statement: text })} schema={schema} />
           </Suspense>
         </>
       ) : (
@@ -273,7 +275,7 @@ export function Cypher() {
               <textarea id="studio-parameters" aria-label="Parameters, as a JSON object" className="desk-input studio-editor studio-statement" spellCheck={false} placeholder={'Parameters, as a JSON object:\n{"name": "Ada"}'} value={parameters} onChange={e => setParameters(e.target.value)} onKeyDown={keys} />
             }
           >
-            <CypherEditor key="parameters" id="studio-parameters" label="Parameters, as a JSON object" language="json" value={parameters} onChange={setParameters} onRun={execute} placeholder={'Parameters, as a JSON object:\n{"name": "Ada"}'} />
+            <CypherEditor key="parameters" id="studio-parameters" label="Parameters, as a JSON object" language="json" value={parameters} onChange={setParameters} onRun={text => execute({ parameters: text })} placeholder={'Parameters, as a JSON object:\n{"name": "Ada"}'} />
           </Suspense>
         </>
       )}

@@ -31,10 +31,21 @@ export const isAtom = (word: string) => ATOM_SET.has(word.toLowerCase())
 
 /** What may be typed at the cursor: a label, a relationship type, a property key, a word of the language, or nothing. */
 export type Expecting =
-  | { kind: 'label' | 'relationshipType' | 'property' | 'word'; from: number; typed: string }
+  | {
+      kind: 'label' | 'relationshipType' | 'property' | 'word'
+      from: number
+      typed: string
+      /** In a name in backticks: `from` is past the opening one, and the closing one is there already, or still to come. */
+      backtick?: 'open' | 'closed'
+    }
   | { kind: 'none' }
 
 const WORD = /[A-Za-z0-9_]/
+
+/** Braces after CALL, EXISTS, COUNT or COLLECT hold a subquery, read as a statement is, not a map: `text` is before them. */
+export const opensSubquery = (text: string) => /\b(CALL|EXISTS|COUNT|COLLECT)\s*$/i.test(text)
+/** What stands for a subquery's braces among the brackets open, so they aren't taken for a map's. */
+export const SUBQUERY = 'subquery'
 
 /**
  * What the cursor at `pos` in `text` is in, read from the start: inside a string or a comment there is nothing to
@@ -44,6 +55,8 @@ const WORD = /[A-Za-z0-9_]/
 export function expecting(text: string, pos: number): Expecting {
   // The brackets open at the cursor, innermost last; and whether the cursor is in a string or a comment.
   const open: string[] = []
+  // Where the cursor is in a name in backticks, the opening backtick's place.
+  let quote: number | undefined
   let i = 0
   while (i < pos) {
     const c = text[i]!
@@ -70,32 +83,45 @@ export function expecting(text: string, pos: number): Expecting {
     if (c === '`') {
       const end = text.indexOf('`', i + 1)
       // A name in backticks is being typed: its kind is the one before the backtick, read below.
-      if (end === -1 || end >= pos) break
+      if (end === -1 || end >= pos) {
+        quote = i
+        break
+      }
       i = end + 1
       continue
     }
-    if (c === '(' || c === '[' || c === '{') open.push(c)
+    if (c === '(') open.push(c)
+    // A relationship's brackets follow its dash; a list's, as a comprehension's, hold labels after a colon, not types.
+    else if (c === '[') open.push(/-\s*$/.test(text.slice(0, i)) ? c : 'list')
+    else if (c === '{') open.push(opensSubquery(text.slice(0, i)) ? SUBQUERY : c)
     else if (c === ')' || c === ']' || c === '}') open.pop()
     i++
   }
   let from = pos
-  while (from > 0 && WORD.test(text[from - 1]!)) from--
+  if (quote !== undefined) from = quote + 1
+  else while (from > 0 && WORD.test(text[from - 1]!)) from--
   const typed = text.slice(from, pos)
-  let before = from - 1
-  if (text[before] === '`') before--
-  while (before >= 0 && (text[before] === ' ' || text[before] === '\t')) before--
+  const name = (kind: 'label' | 'relationshipType' | 'property'): Expecting =>
+    quote === undefined ? { kind, from, typed } : { kind, from, typed, backtick: text[pos] === '`' ? 'closed' : 'open' }
+  let before = (quote ?? from) - 1
+  // Back past spaces and line breaks: a map's keys, a statement's clauses, are often a line each.
+  while (before >= 0 && /\s/.test(text[before]!)) before--
   const mark = text[before]
   const inner = open[open.length - 1]
   if (mark === ':' || ((mark === '|' || mark === '&') && labelChain(text, before))) {
     // `{name: …}` is a value, not a label.
     if (inner === '{') return { kind: 'none' }
-    if (inner === '[') return { kind: 'relationshipType', from, typed }
-    return { kind: 'label', from, typed }
+    return name(inner === '[' ? 'relationshipType' : 'label')
   }
-  if (mark === '.' && before > 0 && WORD.test(text[before - 1]!)) return { kind: 'property', from, typed }
-  if (inner === '{' && (mark === '{' || mark === ',')) return { kind: 'property', from, typed }
-  // A number is being typed, or nothing yet in the middle of a line: no list to put in the way.
-  if (typed === '' || /^[0-9]/.test(typed)) return { kind: 'none' }
+  // After a variable's dot, or the dot after what a call or an index gives, `head(…).title`; not a number's: `1.5`, or a
+  // range's `*1..3`.
+  if (mark === '.' && before > 0 && /[A-Za-z0-9_)\]]/.test(text[before - 1]!) && !/(^|[^A-Za-z0-9_])[0-9]+$/.test(text.slice(0, before))) {
+    return name('property')
+  }
+  if (inner === '{' && (mark === '{' || mark === ',')) return name('property')
+  // A number is being typed, or nothing yet in the middle of a line, or a name in backticks no word of the language is:
+  // no list to put in the way. A parameter's name, after its `$`, is the user's own, too.
+  if (typed === '' || /^[0-9]/.test(typed) || quote !== undefined || text[from - 1] === '$') return { kind: 'none' }
   return { kind: 'word', from, typed }
 }
 
@@ -111,13 +137,16 @@ export const quoted = (name: string) => (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ?
 
 /** The completions for what the cursor expects, from the connection's schema and the language's own words. */
 export function completionsFor(expected: Expecting, schema: GraphSchema): { label: string; type: string; apply: string }[] {
+  // In backticks already, a name is put in as it is in them, and closed if it isn't yet.
+  const backtick = expected.kind === 'none' ? undefined : expected.backtick
+  const apply = (name: string) => (backtick ? name.replace(/`/g, '``') + (backtick === 'open' ? '`' : '') : quoted(name))
   switch (expected.kind) {
     case 'label':
-      return schema.labels.map(name => ({ label: name, type: 'type', apply: quoted(name) }))
+      return schema.labels.map(name => ({ label: name, type: 'type', apply: apply(name) }))
     case 'relationshipType':
-      return schema.relationshipTypes.map(name => ({ label: name, type: 'type', apply: quoted(name) }))
+      return schema.relationshipTypes.map(name => ({ label: name, type: 'type', apply: apply(name) }))
     case 'property':
-      return schema.propertyKeys.map(name => ({ label: name, type: 'property', apply: quoted(name) }))
+      return schema.propertyKeys.map(name => ({ label: name, type: 'property', apply: apply(name) }))
     case 'word':
       return [
         ...KEYWORDS.map(word => ({ label: word, type: 'keyword', apply: word })),

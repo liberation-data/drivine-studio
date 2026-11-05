@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { FRESH_MS, parseKept, SchemaCache, schemaOf, stale } from './schema'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fetchSchema, FRESH_MS, parseKept, SchemaCache, schemaOf, stale } from './schema'
 import type { Store } from './schema'
 
 const schema = { labels: ['Person'], relationshipTypes: ['ACTED_IN'], propertyKeys: ['name'] }
@@ -53,5 +53,23 @@ describe('stale', () => {
     expect(stale(undefined, 0)).toBe(true)
     expect(stale({ schema, at: 1000 }, 1000 + FRESH_MS - 1)).toBe(false)
     expect(stale({ schema, at: 1000 }, 1000 + FRESH_MS)).toBe(true)
+  })
+})
+
+describe('fetchSchema', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('asks for the connection’s schema, its name sent as part of the address', async () => {
+    const fetched = vi.fn(async () => Response.json({ ...schema, milliseconds: 12 }))
+    vi.stubGlobal('fetch', fetched)
+    expect(await fetchSchema('my graph')).toEqual(schema)
+    expect(fetched).toHaveBeenCalledWith('/api/schema?connection=my%20graph', { signal: undefined })
+  })
+
+  it('says what the studio said where it refused, and that there was no schema where it gave back something else', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Name a connection.' }, { status: 400 })))
+    await expect(fetchSchema('x')).rejects.toThrow('Name a connection.')
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ labels: [] })))
+    await expect(fetchSchema('x')).rejects.toThrow('The studio gave back no schema.')
   })
 })

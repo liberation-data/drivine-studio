@@ -90,6 +90,7 @@ export function schemaOf(value: unknown): GraphSchema | undefined {
 /** Whether a schema kept since `at` is read again: when there is none, or, on focus, once it is a minute old. */
 export const stale = (kept: Kept | undefined, now: number): boolean => !kept || now - kept.at >= FRESH_MS
 
+/** The connection's schema from the studio, refused where what came back isn't one, so a bad answer is never kept. */
 export async function fetchSchema(connection: string, signal?: AbortSignal): Promise<GraphSchema> {
   const answered = await read<unknown>(await fetch(`/api/schema?connection=${encodeURIComponent(connection)}`, { signal }))
   const schema = schemaOf(answered)
