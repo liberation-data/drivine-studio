@@ -147,6 +147,7 @@ function studioItems(win, items) {
     enabled: item.enabled !== false,
     ...(typeof item.checked === 'boolean' ? { type: 'checkbox', checked: item.checked } : {}),
     ...(item.accelerator ? { accelerator: String(item.accelerator) } : {}),
+    ...(item.detail ? { sublabel: String(item.detail) } : {}),
     click: () => { if (!win.isDestroyed()) win.webContents.send('studio:menu', String(item.id)); },
   });
 }

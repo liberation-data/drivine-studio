@@ -11,7 +11,7 @@ import { useEffect, useRef } from 'react'
 
 /** A menu item as the app draws it: plain data, as it crosses from the page to the app. */
 export type NativeItem =
-  | { readonly type: 'item'; readonly id: string; readonly label: string; readonly enabled: boolean; readonly checked?: boolean; readonly accelerator?: string }
+  | { readonly type: 'item'; readonly id: string; readonly label: string; readonly enabled: boolean; readonly checked?: boolean; readonly accelerator?: string; readonly detail?: string }
   | { readonly type: 'separator' }
 
 export interface NativeMenu {
@@ -95,6 +95,8 @@ export function describeMenus(
           enabled: item.type === 'command' ? can(item.command) : !flag(item.disabled),
           ...(checked === undefined ? {} : { checked }),
           ...(item.shortcut ? { accelerator: acceleratorOf(item.shortcut) } : {}),
+          // The muted words after the label, as the Mac's own menus show them: under it.
+          ...(item.detail ? { detail: item.detail } : {}),
         }
       }),
     }
