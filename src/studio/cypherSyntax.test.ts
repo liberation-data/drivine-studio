@@ -66,13 +66,25 @@ describe('expecting', () => {
     expect(at('CALL { RETURN {name: ‸')).toEqual({ kind: 'none' })
   })
 
-  it('reads a long statement, as a pasted list of rows, quickly enough to complete at each key', () => {
-    const rows = Array.from({ length: 8000 }, (_, i) => `{id: ${i}, name: 'Person ${i}', tags: ['a', 'b']}`).join(',\n')
-    const text = `UNWIND [\n${rows}\n] AS row\nMERGE (p:Person {id: row.id}) SET p.`
-    const started = performance.now()
-    expect(expecting(text, text.length)).toMatchObject({ kind: 'property' })
-    // About 400 KB: read once from the start, not again from it at each bracket.
-    expect(performance.now() - started).toBeLessThan(250)
+  it('reads a long statement, as a pasted list of rows, in time that grows with its length, not its square', () => {
+    const statement = (count: number) => {
+      const rows = Array.from({ length: count }, (_, i) => `{id: ${i}, name: 'Person ${i}', tags: ['a', 'b']}`).join(',\n')
+      return `UNWIND [\n${rows}\n] AS row\nMERGE (p:Person {id: row.id}) SET p.`
+    }
+    // The best of a few, so a busy machine doesn't decide it: growth is measured, not a time, which a busy machine moves.
+    const timed = (text: string) => {
+      let best = Infinity
+      for (let i = 0; i < 3; i++) {
+        const started = performance.now()
+        expect(expecting(text, text.length)).toMatchObject({ kind: 'property' })
+        best = Math.min(best, performance.now() - started)
+      }
+      return best
+    }
+    const short = timed(statement(1000))
+    // Eight times the rows, about 400 KB: about 8 times as long read once, about 64 times read again at each bracket.
+    const long = timed(statement(8000))
+    expect(long / Math.max(short, 0.05)).toBeLessThan(24)
   })
 
   it('expects a word of the language otherwise', () => {
