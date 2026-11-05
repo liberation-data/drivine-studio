@@ -108,6 +108,13 @@ const colaOptions = (more: Record<string, unknown>): LayoutOptions =>
     ...more,
   }) as unknown as LayoutOptions
 
+/**
+ * The first layout of a small graph. Animated, out of sight, 40 ticks a frame (cola calls it `refresh`): not animated,
+ * cola runs its simulation in one loop that ends only when it settles, and its time limit is a timer that can't fire
+ * until the loop gives way. A start that never settled (coming back to 2D from 3D did it) hung the page for good.
+ */
+export const ARRANGE = { animate: true, refresh: 40, randomize: true, maxSimulationTime: 3000, unconstrIter: 10, allConstIter: 10 }
+
 /** The node cola simulates for this one: setting bit 1 of `fixed` holds it, and a drag clears only bits 2 and 4. */
 const simulated = (node: NodeSingular) => node.scratch('cola') as { fixed?: number } | undefined
 
@@ -157,6 +164,8 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
   liveNow.current = live
   // The simulation running now, if any; the nodes put down by hand, which it holds where they are.
   const running = useRef<Layouts | null>(null)
+  // The first layout of a small graph, settling out of sight until it stops; it is `running` too, so no drag starts another.
+  const arranging = useRef<Layouts | null>(null)
   const pinned = useRef(new Set<string>())
   const settling = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -300,6 +309,9 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
     clearTimeout(settling.current)
     running.current?.stop()
     running.current = null
+    arranging.current = null
+    // A layout stopped for this graph left the view hidden; this one hides it again if it settles out of sight too.
+    if (container.current) Object.assign(container.current.style, { opacity: '', pointerEvents: '' })
     pinned.current.clear()
     core.elements().remove()
     core.add([
@@ -338,17 +350,20 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
      * once, then shown: the view never zooms while anything moves.
      */
     const element = container.current
-    if (element) element.style.opacity = '0'
-    const layout = core.layout(colaOptions({ animate: false, randomize: true, maxSimulationTime: 3000, unconstrIter: 10, allConstIter: 10 }))
+    // Out of sight and out of reach: a click on it would choose a node no one can see.
+    if (element) Object.assign(element.style, { opacity: '0', pointerEvents: 'none' })
+    const layout = core.layout(colaOptions(ARRANGE))
     layout.one('layoutstop', () => {
       // Stopped for a new graph: that one shows itself.
-      if (running.current !== layout || core.destroyed()) return
-      running.current = null
+      if (arranging.current !== layout || core.destroyed()) return
+      arranging.current = null
+      if (running.current === layout) running.current = null
       // Cola lays out each part that shares no relationship on its own; set side by side, none is drawn over another.
       separate(core)
       frame()
-      if (element) element.style.opacity = ''
+      if (element) Object.assign(element.style, { opacity: '', pointerEvents: '' })
     })
+    arranging.current = layout
     running.current = layout
     layout.run()
   }, [graph, fragments])
@@ -359,9 +374,9 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
   const [choosing, setChoosing] = useState<string | null>(null)
   const [legendOpen, setLegendOpen] = useState(present.length <= LEGEND_OPEN_UP_TO)
 
-  // Turned off, nothing moves but what is dragged.
+  // Turned off, nothing moves but what is dragged. A first layout, out of sight, is left to settle: stopped, it never shows.
   useEffect(() => {
-    if (live) return
+    if (live || arranging.current) return
     clearTimeout(settling.current)
     running.current?.stop()
     running.current = null
