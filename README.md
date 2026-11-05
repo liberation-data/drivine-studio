@@ -53,11 +53,15 @@ Each label in a graph is drawn with an icon from [Lucide](https://lucide.dev), f
 3. **The nearest icon by meaning.** A small local model, `all-MiniLM-L6-v2` (23 MB, quantized, on the CPU),
    compares the label's words with each icon's name and tags, and takes the nearest. The icon is used only when it
    is near enough: below that, the model was as often wrong as right in a test of sixty labels, and the node is drawn
-   plain.
+   plain. An icon of one particular thing, such as a cigarette, a rat or a phone, is taken only for a label that names
+   it, as the model would give one to Patient, Disease and Plan; for other labels the next nearest is taken.
 
 The model is downloaded once, the first time a label needs it, to `models` in the studio's home; offline before then,
 labels get their chosen and common-word icons alone, and the download is tried again a minute later. The icons' own
 vectors are in the repository, made by `npm run icon-vectors` after an upgrade of Lucide or the model.
+`npm run test:icons` runs the model over sixty labels with the icons that would be right for them, and fails on a wrong
+icon, or on fewer right than before: run it after a change to the model, the common words or the icons taken only by
+name.
 
 ## Connections
 

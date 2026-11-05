@@ -45,6 +45,21 @@ export const COMMON: Record<string, string> = {
 }
 
 /**
+ * Icons of one particular thing, which the model picks for a label that is only like it: Patient and Drug a cigarette,
+ * Disease a rat, Plan a phone, Category a cat. One of them is taken only for a label that names it, as `Cigarette` or
+ * `PhoneNumber`; for any other label the next nearest icon is, if it is near enough. Add to it when a label gets one
+ * of these: `npm run test:icons` says what a change does to the labels it checks.
+ */
+export const ONLY_BY_NAME: ReadonlySet<string> = new Set([
+  'bell-dot', 'cat', 'cigarette', 'circle-fading-play', 'diamond-percent', 'focus', 'mail', 'phone', 'rat', 'satellite',
+])
+
+/** Whether the label's words allow the icon: any icon, unless it is ONLY_BY_NAME and none of its words are said. */
+export function allows(said: string[], icon: string): boolean {
+  return !ONLY_BY_NAME.has(icon) || icon.split('-').some(it => said.includes(it))
+}
+
+/**
  * A label's words, lowercased, without those that say how it is used, and without bare numbers: `SampleDocNode` gives
  * `doc`, and `Address2` gives `address`. Letters are any script's, so `Größe` is a word, not two.
  */
@@ -152,14 +167,21 @@ export async function nearest(label: string, embed: Embed | null = null): Promis
   const model = embed ?? (await embedder())
   if (!model) return undefined
   const query = await model(said.join(' '))
-  return nearestTo(query, iconVectors())
+  return nearestTo(query, iconVectors(), icon => allows(said, icon))
 }
 
-/** The icon nearest a unit vector: the stored vectors are unit vectors in bytes, at 127 to 1. */
-export function nearestTo(query: number[], icons: Vectors): { icon: string; score: number } {
+/**
+ * The icon nearest a unit vector, of those `allowed` takes: the stored vectors are unit vectors in bytes, at 127 to 1.
+ */
+export function nearestTo(
+  query: number[],
+  icons: Vectors,
+  allowed: (icon: string) => boolean = () => true,
+): { icon: string; score: number } {
   let best = 0
   let score = -Infinity
   for (let i = 0; i < icons.names.length; i++) {
+    if (!allowed(icons.names[i]!)) continue
     let dot = 0
     for (let j = 0; j < icons.dimensions; j++) dot += query[j]! * icons.values[i * icons.dimensions + j]!
     if (dot > score) {
