@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { answers, waitForServer } = require('./server-start.cjs');
+const { showsSublabels, studioItems: templateOf, whileClosed } = require('./native-menus.cjs');
 
 const PORT = process.env.PORT ?? '5187';
 const URL = `http://localhost:${PORT}`;
@@ -141,34 +142,40 @@ function createWindow() {
  * its own, and these are drawn in the Mac's. The app's menu joins the one named for the app; the rest stand after View,
  * and a Window menu of the studio's leads the Mac's own Window menu.
  */
+const sublabels = showsSublabels(process.platform, process.getSystemVersion?.() ?? '');
 function studioItems(win, items) {
-  return items.map(item => item.type === 'separator' ? { type: 'separator' } : {
-    label: String(item.label),
-    enabled: item.enabled !== false,
-    ...(typeof item.checked === 'boolean' ? { type: 'checkbox', checked: item.checked } : {}),
-    ...(item.accelerator ? { accelerator: String(item.accelerator) } : {}),
-    ...(item.detail ? { sublabel: String(item.detail) } : {}),
-    click: () => { if (!win.isDestroyed()) win.webContents.send('studio:menu', String(item.id)); },
-  });
+  return templateOf(items, id => { if (!win.isDestroyed()) win.webContents.send('studio:menu', id); }, { sublabels });
 }
 
 /*
  * The page's status menu (the connection in use) as a menu bar extra, at the right of the Mac's menu bar where the
- * page keeps it: a database's drum and the connection's name, opening the same menu.
+ * page keeps it: a database's drum and the connection's name, opening the same menu. Its menu changes as connections
+ * go up and down, so it's swapped only while closed (native-menus.cjs).
  */
 let tray = null;
+let trayMenu = null;
 function setTray(win, menu) {
   if (!menu) {
     tray?.destroy();
     tray = null;
+    trayMenu = null;
     return;
   }
   if (!tray) {
     tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'build', 'trayTemplate.png')));
     tray.setToolTip('The connection Drivine Studio uses');
+    const current = tray;
+    const held = whileClosed(items => {
+      if (current.isDestroyed()) return;
+      const built = Menu.buildFromTemplate(items);
+      built.on('menu-will-show', () => held.opened());
+      built.on('menu-will-close', () => held.closed());
+      current.setContextMenu(built);
+    });
+    trayMenu = held;
   }
   tray.setTitle(` ${String(menu.label)}`);
-  tray.setContextMenu(Menu.buildFromTemplate(studioItems(win, menu.items)));
+  trayMenu.set(studioItems(win, menu.items));
 }
 
 function setMenu(win = null, studioMenus = []) {
@@ -243,10 +250,20 @@ function setMenu(win = null, studioMenus = []) {
 }
 
 // Only from the studio's own page, and only on a Mac, where the page draws no menu bar of its own.
+// The menu bar is built again only when its own menus change, not when only the status menu does: that changes every
+// time a connection goes up or down, and rebuilding the menu bar then would close a menu open in it.
+let drawn = { win: null, bar: null, status: null };
 ipcMain.on('studio:menus', (event, menus) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (process.platform !== 'darwin' || !win || !event.senderFrame?.url.startsWith(URL) || !Array.isArray(menus)) return;
-  setMenu(win, menus);
+  const status = menus.find(menu => menu?.status);
+  const next = { win, bar: JSON.stringify(menus.filter(menu => menu !== status)), status: JSON.stringify(status ?? null) };
+  if (next.win === drawn.win && next.bar === drawn.bar) {
+    if (next.status !== drawn.status) setTray(win, status);
+  } else {
+    setMenu(win, menus);
+  }
+  drawn = next;
 });
 
 // The system's folder picker, for the page to link a project by choosing it: the path chosen, or null. Only for the

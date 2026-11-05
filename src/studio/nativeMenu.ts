@@ -65,7 +65,8 @@ export const acceleratorOf = (shortcut: string): string =>
 const flag = (value: boolean | (() => boolean) | undefined) => (typeof value === 'function' ? value() : value)
 
 /**
- * The menus as they stand now, and the item each id chooses. Items given as a function (the open windows, say) are
+ * The menus as they stand now, and the item each id chooses: the menu's place and the item's label, so an id outlives
+ * the items around it moving. Items given as a function (the open windows, say) are
  * read now; the menus are described again whenever the desk changes, so they stay current. `can` says whether anything
  * would perform a command now.
  */
@@ -77,6 +78,7 @@ export function describeMenus(
   const chosen = new Map<string, MenuItem>()
   const described = [...menus, ...status].map((menu, m) => {
     const items = typeof menu.items === 'function' ? menu.items() : menu.items
+    const seen = new Map<string, number>()
     return {
       label: menu.label,
       app: menu.emphasis === true,
@@ -84,8 +86,12 @@ export function describeMenus(
       items: items.map((item, i): NativeItem => {
         if (item.type === 'separator') return { type: 'separator' }
         // A Mac menu has no headings: one is an item that cannot be chosen.
-        if (item.type === 'header') return { type: 'item', id: `${m}.${i}`, label: item.label, enabled: false }
-        const id = `${m}.${i}`
+        if (item.type === 'header') return { type: 'item', id: `${m}.h${i}`, label: item.label, enabled: false }
+        // By label, not place: the connection menu reorders as connections go up and down, and a click on a menu the
+        // app drew before (still open, say) must choose what it showed, not what has since moved into its place.
+        const repeat = (seen.get(item.label) ?? 0) + 1
+        seen.set(item.label, repeat)
+        const id = `${m}:${item.label}${repeat > 1 ? `#${repeat}` : ''}`
         chosen.set(id, item)
         const checked = flag(item.checked)
         return {
