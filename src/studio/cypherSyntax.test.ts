@@ -66,6 +66,15 @@ describe('expecting', () => {
     expect(at('CALL { RETURN {name: ‸')).toEqual({ kind: 'none' })
   })
 
+  it('reads a long statement, as a pasted list of rows, quickly enough to complete at each key', () => {
+    const rows = Array.from({ length: 8000 }, (_, i) => `{id: ${i}, name: 'Person ${i}', tags: ['a', 'b']}`).join(',\n')
+    const text = `UNWIND [\n${rows}\n] AS row\nMERGE (p:Person {id: row.id}) SET p.`
+    const started = performance.now()
+    expect(expecting(text, text.length)).toMatchObject({ kind: 'property' })
+    // About 400 KB: read once from the start, not again from it at each bracket.
+    expect(performance.now() - started).toBeLessThan(250)
+  })
+
   it('expects a word of the language otherwise', () => {
     expect(at('MAT‸')).toEqual({ kind: 'word', from: 0, typed: 'MAT' })
     expect(at('MATCH (n) RET‸')).toMatchObject({ kind: 'word', typed: 'RET' })

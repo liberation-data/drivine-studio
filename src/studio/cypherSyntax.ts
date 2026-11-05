@@ -92,8 +92,8 @@ export function expecting(text: string, pos: number): Expecting {
     }
     if (c === '(') open.push(c)
     // A relationship's brackets follow its dash; a list's, as a comprehension's, hold labels after a colon, not types.
-    else if (c === '[') open.push(/-\s*$/.test(text.slice(0, i)) ? c : 'list')
-    else if (c === '{') open.push(opensSubquery(text.slice(0, i)) ? SUBQUERY : c)
+    else if (c === '[') open.push(wordBefore(text, i) === '-' ? c : 'list')
+    else if (c === '{') open.push(opensSubquery(wordBefore(text, i)) ? SUBQUERY : c)
     else if (c === ')' || c === ']' || c === '}') open.pop()
     i++
   }
@@ -123,6 +123,16 @@ export function expecting(text: string, pos: number): Expecting {
   // no list to put in the way. A parameter's name, after its `$`, is the user's own, too.
   if (typed === '' || /^[0-9]/.test(typed) || quote !== undefined || text[from - 1] === '$') return { kind: 'none' }
   return { kind: 'word', from, typed }
+}
+
+// The word before `at`, back past spaces, or the one mark there if it isn't a word: read back from `at`, so a long
+// statement, as a pasted list of rows, isn't read again from its start at each of its brackets.
+function wordBefore(text: string, at: number): string {
+  let end = at
+  while (end > 0 && /\s/.test(text[end - 1]!)) end--
+  let start = end
+  while (start > 0 && WORD.test(text[start - 1]!)) start--
+  return text.slice(start === end ? Math.max(0, end - 1) : start, end)
 }
 
 // `:A|B` or `:A&B`: the bar or ampersand follows a label or type, itself after a colon.
