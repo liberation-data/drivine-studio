@@ -47,7 +47,7 @@ interface Node3D {
   group?: Three.Group
   body?: Three.MeshStandardMaterial
   rim?: { value: Three.Color }
-  icon?: Three.Sprite
+  icon?: Three.Mesh<Three.PlaneGeometry, Three.MeshBasicMaterial>
   text?: Three.Sprite
   /** The name's width over its height, for its box on screen. */
   aspect?: number
@@ -207,6 +207,7 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         return image.complete && image.naturalWidth > 0 ? image : undefined
       }
       const shapes: Record<Shape, Three.BufferGeometry> = { sphere: new THREE.SphereGeometry(0.5, 32, 20) }
+      const iconPlane = new THREE.PlaneGeometry(1, 1)
       const accentColour = new THREE.Color(accent)
       const rimOf = (n: Node3D) => (n.id === chosen ? accentColour.clone() : new THREE.Color(n.colour).lerp(new THREE.Color(0xffffff), 0.55))
       /*
@@ -292,7 +293,11 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         n.canvas.width = n.canvas.height = ICON_PX
         const texture = new THREE.CanvasTexture(n.canvas)
         texture.colorSpace = THREE.SRGBColorSpace
-        n.icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, opacity: n.o }))
+        /*
+         * A plane turned to face the view's eye, not a sprite: a sprite faces the screen, so on a node off to the side,
+         * seen at a slant, it tilted into its own shape and the shape hid part of it.
+         */
+        n.icon = new THREE.Mesh(iconPlane, new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, opacity: n.o }))
         // After every shape: shapes and icons are both see-through, so three sorts them by distance each frame, and a shape
         // sorted after its own icon painted over part of it. The depth test stays, so a nearer shape still hides it.
         n.icon.renderOrder = 1
@@ -609,6 +614,7 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
           if (n.icon && n.group) {
             toward.set(at.x - n.group.position.x, at.y - n.group.position.y, at.z - n.group.position.z).normalize()
             n.icon.position.copy(toward).multiplyScalar(n.size * 0.52)
+            n.icon.lookAt(at)
           }
           n.text?.position.copy(screenUp).multiplyScalar(-(n.size / 2 + NAME_HIGH * 0.8))
           const to = n.named ? 1 : 0
