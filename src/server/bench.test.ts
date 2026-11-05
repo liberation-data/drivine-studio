@@ -85,6 +85,7 @@ describe('A run’s settings', () => {
     const run = validateRun({ connections: ['a'], queries: ['Bench/q.cypher'], name: ' Mine ' })
     expect(run).toMatchObject({ name: 'Mine', connections: ['a'], queries: ['Bench/q.cypher'], warmup: 3, runs: 20 })
     expect(validateRun({ connections: ['a'], queries: ['q'] }).name).toMatch(/^\d{4}-\d\d-\d\d \d\d:\d\d$/)
+    expect(validateRun({ connections: ['a', 'b', 'a'], queries: ['q', 'q'] })).toMatchObject({ connections: ['a', 'b'], queries: ['q'] })
   })
 
   it('refuses a run with nothing to run, or counts out of bounds', () => {
