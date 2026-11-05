@@ -268,6 +268,28 @@ async function sqlWrite<T>(
   }
 }
 
+/**
+ * Postgres and Oracle: SQL of the studio's own, not Cypher, run as `sql` runs a compiled statement, in a transaction
+ * made read-only before anything else runs in it and rolled back all the same. For reading what a graph's tables
+ * hold, as the editor's completion does (see schema). Each row as Drivine's result mapper gives it back.
+ */
+export async function readSql(connection: Connection, text: string): Promise<unknown[]> {
+  const type = connection.type
+  if (type !== 'POSTGRES' && type !== 'ORACLE') throw new StatementError(`${DATABASE_NAMES[type] ?? type} doesn't take SQL.`)
+  const provider = await providerFor(connection)
+  const session = await sqlSession(type, provider)
+  try {
+    await session.startTransaction()
+    await session.query(new QuerySpecification().withStatement({ text: 'SET TRANSACTION READ ONLY', language: 'SQL' }))
+    return await session.query<unknown>(new QuerySpecification<unknown>().withStatement({ text, language: 'SQL' }))
+  } catch (e) {
+    throw sqlRefused(e, type, provider.graphName ?? 'drivine')
+  } finally {
+    await session.rollbackTransaction().catch(() => undefined)
+    await session.release().catch(() => undefined)
+  }
+}
+
 /** One of Drivine's connections for Postgres, or one on the Oracle provider's own pool: see oracleSession. */
 const sqlSession = (type: 'POSTGRES' | 'ORACLE', provider: ConnectionProvider): Promise<DrivineConnection> =>
   type === 'ORACLE' ? oracleSession(provider) : provider.connect()

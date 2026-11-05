@@ -80,6 +80,18 @@ The Cypher window runs a statement on the connection in use, with parameters as 
 back as a graph, when there are nodes in it, and as rows. It reads 1000 rows unless told otherwise, and at most
 10,000. ⌘↵ runs it.
 
+The editor draws Cypher in colour, and completes labels and relationship types after a colon, property keys after a
+dot or in a map, and Cypher's own words. The names are the connection's graph's, read only: on Neo4j and FalkorDB
+from what they keep (`db.labels()` and the others), on Memgraph and Neptune from a sample of 10,000 nodes and
+relationships, and on Postgres and Oracle every label and type from the graph's tables, and property keys from a
+sample of them, so a key on only a few nodes may not be offered. The studio keeps them in the browser, per
+connection, and reads them again when the connection is chosen, after a statement that wrote, and when the studio
+comes back to the front, in the browser or the app, a minute or more since.
+
+A graph of up to 300 nodes can be drawn in 3D as well as 2D, with the switch above it; a bigger one is drawn in 2D,
+and the choice is kept for the next small one. In 3D a click focuses a node and its neighbours, the legend's
+checkboxes fade a label's nodes, and an icon is chosen in the 2D legend.
+
 By default the studio never writes. Over Bolt (Neo4j, Memgraph, Neptune), a statement runs in a read session, whose
 transaction the database will not let write, and which the studio rolls back all the same. On FalkorDB, which has no
 transactions, it runs as a read-only query, which FalkorDB will not let write. A procedure that opens transactions of
@@ -101,7 +113,7 @@ the same. Views and fragments are not loaded on them yet: Drivine loads them wit
 A connection's **Allow writes** setting, in its sheet in the Connections window, lets a statement run in the Cypher
 window write. It is off unless turned on, and kept in `connections.json` with the rest of the connection; the
 environment's connection never allows writes. The Cypher window says, above what a statement gives back, that the
-connection in use allows writes. The Canvas, its loads and a connection's test only ever read, whatever the setting.
+connection in use allows writes. The Canvas, its loads, a Bench run of saved queries and a connection's test only ever read, whatever the setting.
 
 With it on, a statement in the Cypher window runs in a transaction that may write, and is committed: over Bolt, in a
 write session; on FalkorDB, as a query that may write, which FalkorDB, having no transactions, has done once it

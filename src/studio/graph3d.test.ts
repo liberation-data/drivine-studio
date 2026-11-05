@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clip, edgeLit, fits3D, focusSetOf, hubOf, legendOf, litOf, MAX_3D_NODES, namePriority, overlaps, shownDepth, shownOf, toggled, uncrowded } from './graph3d'
+import { clip, degrees, edgeLit, fits3D, focusSetOf, hubOf, keyAction, legendOf, litOf, MAX_3D_NODES, namePriority, overlaps, shownDepth, shownOf, toggled, uncrowded } from './graph3d'
 
 const node = (id: string, fragment = 'Person') => ({ id, fragment })
 const edge = (from: string, to: string) => ({ from, to })
@@ -14,6 +14,12 @@ describe('the size 3D is offered for', () => {
     expect(shownDepth('3d', 50)).toBe('3d')
     expect(shownDepth('3d', 5000)).toBe('2d')
     expect(shownDepth('2d', 50)).toBe('2d')
+  })
+})
+
+describe('degrees', () => {
+  it('counts each end of a relationship, and a loop once', () => {
+    expect(degrees([edge('a', 'b'), edge('a', 'a'), edge('b', 'c')])).toEqual(new Map([['a', 2], ['b', 2], ['c', 1]]))
   })
 })
 
@@ -85,6 +91,33 @@ describe('clip', () => {
   it('shortens a long caption with an ellipsis', () => {
     expect(clip('Ada')).toBe('Ada')
     expect(clip('a very long name for one node indeed', 10)).toBe('a very lo…')
+    expect(clip('ab cd', 4)).toBe('ab…')
+  })
+})
+
+describe('keyAction', () => {
+  const press = (key: string, held: Partial<Record<'shiftKey' | 'metaKey' | 'ctrlKey' | 'altKey', boolean>> = {}) =>
+    keyAction({ key, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, ...held })
+
+  it('turns with the arrows, and pans with shift and the arrows', () => {
+    expect(press('ArrowLeft')).toEqual({ kind: 'turn', h: -1, v: 0 })
+    expect(press('ArrowDown', { shiftKey: true })).toEqual({ kind: 'pan', h: 0, v: 1 })
+  })
+
+  it('zooms with + and −, fits with 0, shows every node with Escape, and flies with Enter', () => {
+    expect(press('+', { shiftKey: true })).toEqual({ kind: 'zoom', factor: 0.85 })
+    expect(press('-')).toEqual({ kind: 'zoom', factor: 1 / 0.85 })
+    expect(press('0')).toEqual({ kind: 'fit' })
+    expect(press('Escape')).toEqual({ kind: 'all' })
+    expect(press('Enter')).toEqual({ kind: 'fly' })
+    expect(press('a')).toBeNull()
+  })
+
+  it('leaves a key with ⌘, Ctrl or ⌥ to the app: ⌘0, ⌘+ and ⌘− zoom the page, ⌘← goes back', () => {
+    expect(press('0', { metaKey: true })).toBeNull()
+    expect(press('=', { metaKey: true })).toBeNull()
+    expect(press('-', { ctrlKey: true })).toBeNull()
+    expect(press('ArrowLeft', { altKey: true })).toBeNull()
   })
 })
 

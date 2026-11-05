@@ -3,7 +3,7 @@ import neo4j from 'neo4j-driver'
 import { describe, expect, it, vi } from 'vitest'
 import { ConnectionError } from './connections'
 import type { Connection } from './connections'
-import { boltParameters, falkorCounts, forget, run, StatementError } from './datasources'
+import { boltParameters, falkorCounts, forget, readSql, run, StatementError } from './datasources'
 
 describe('run', () => {
   it.each([
@@ -93,28 +93,28 @@ describe('run', () => {
   })
 })
 
-describe('run, where it may write', () => {
-  /** A Postgres connection whose provider gives the session asked for, and Drivine's provider of it to end after. */
-  async function onPostgres(id: string, session: Record<string, unknown>) {
-    const connection: Connection = { id, name: id, type: 'POSTGRES', host: 'nowhere.invalid', database: 'db', source: 'studio' }
-    const probe = DatabaseRegistry.getInstance().builder().withType(DatabaseType.POSTGRES).host('nowhere.invalid').databaseName('db')
-      .register(`${id}-probe`)
-    const Provider = Object.getPrototypeOf(probe) as { connect: () => Promise<unknown> }
-    const spy = vi.spyOn(Provider, 'connect').mockResolvedValue({
-      startTransaction: async () => undefined,
-      release: async () => undefined,
-      ...session,
-    })
-    return {
-      connection,
-      done: async () => {
-        spy.mockRestore()
-        await forget(id)
-        await probe.end()
-      },
-    }
+/** A Postgres connection whose provider gives the session asked for, and Drivine's provider of it to end after. */
+async function onPostgres(id: string, session: Record<string, unknown>) {
+  const connection: Connection = { id, name: id, type: 'POSTGRES', host: 'nowhere.invalid', database: 'db', source: 'studio' }
+  const probe = DatabaseRegistry.getInstance().builder().withType(DatabaseType.POSTGRES).host('nowhere.invalid').databaseName('db')
+    .register(`${id}-probe`)
+  const Provider = Object.getPrototypeOf(probe) as { connect: () => Promise<unknown> }
+  const spy = vi.spyOn(Provider, 'connect').mockResolvedValue({
+    startTransaction: async () => undefined,
+    release: async () => undefined,
+    ...session,
+  })
+  return {
+    connection,
+    done: async () => {
+      spy.mockRestore()
+      await forget(id)
+      await probe.end()
+    },
   }
+}
 
+describe('run, where it may write', () => {
   it('runs a statement that writes on Postgres as Drivine compiles it, commits it, and names what it returns', async () => {
     const query = vi.fn(async () => [[{ name: 'Ada' }, 1]])
     const commit = vi.fn(async () => undefined)
@@ -294,6 +294,44 @@ describe('run, where it may write', () => {
     const connection: Connection = { id: 'pg-no-compile', name: 'Postgres', type: 'POSTGRES', host: 'nowhere.invalid', database: 'db', source: 'studio' }
     await expect(run(connection, 'CREATE (n) RETURN apoc.x(n)', {}, 10, { writes: true })).rejects.toThrow(StatementError)
     await forget(connection.id)
+  })
+})
+
+describe('readSql', () => {
+  it('runs the studio\'s own SQL in a transaction made read-only first, and rolls it back', async () => {
+    const query = vi.fn(async (spec: { statement: { text: string } }) => (spec.statement.text.startsWith('SET') ? [] : [{ v: 'Person' }]))
+    const rollback = vi.fn(async () => undefined)
+    const { connection, done } = await onPostgres('postgres-read-sql', { query, rollbackTransaction: rollback })
+    try {
+      expect(await readSql(connection, 'SELECT 1 AS v')).toEqual([{ v: 'Person' }])
+      expect(query.mock.calls.map(([spec]) => spec.statement)).toEqual([
+        { text: 'SET TRANSACTION READ ONLY', language: 'SQL' },
+        { text: 'SELECT 1 AS v', language: 'SQL' },
+      ])
+      expect(rollback).toHaveBeenCalledOnce()
+    } finally {
+      await done()
+    }
+  })
+
+  it('says what the database said, as a statement refused, and still rolls back', async () => {
+    const rollback = vi.fn(async () => undefined)
+    const query = vi.fn(async (spec: { statement: { text: string } }) => {
+      if (spec.statement.text.startsWith('SET')) return []
+      throw new Error('relation "movies_node" does not exist')
+    })
+    const { connection, done } = await onPostgres('postgres-read-sql-fails', { query, rollbackTransaction: rollback })
+    try {
+      await expect(readSql(connection, 'SELECT v FROM movies_node')).rejects.toThrow(/movies_node/)
+      expect(rollback).toHaveBeenCalledOnce()
+    } finally {
+      await done()
+    }
+  })
+
+  it('refuses a store that doesn\'t take SQL, before connecting', async () => {
+    const connection: Connection = { id: 'neo4j-read-sql', name: 'Neo4j', type: 'NEO4J', host: 'nowhere.invalid', source: 'studio' }
+    await expect(readSql(connection, 'SELECT 1')).rejects.toThrow(new StatementError("Neo4j doesn't take SQL."))
   })
 })
 

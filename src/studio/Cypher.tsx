@@ -1,6 +1,6 @@
 import { addCommandHandler, windowElement } from '@liberation-data/desk'
 import { Button, PopUpButton, SegmentedControl, Sheet, Spinner, Split, Table, Tabs, TextField, Toggle, useDropTarget, useWindowId } from '@liberation-data/desk/react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, KeyboardEvent } from 'react'
 import { StudioCommands, useStudio } from './App'
 import type { SavedAs } from './App'
@@ -15,6 +15,10 @@ import { MAX_3D_NODES, fits3D, shownDepth } from './graph3d'
 import type { Depth } from './graph3d'
 import { Inspector } from './Inspector'
 import { cellText, graphOf, parametersOf, writtenText } from './results'
+import { useSchema } from './schema'
+
+// CodeMirror, on its own, so the window draws first: until it lands, the plain field it replaces.
+const CypherEditor = lazy(() => import('./CypherEditor'))
 
 type Run = { state: 'idle' } | { state: 'running' } | { state: 'failed'; message: string }
 type View = 'graph' | 'rows'
@@ -64,6 +68,9 @@ export function Cypher() {
   const [selection, setSelection] = useState<Selection>(null)
   const [size, setSize] = useState<Size>('split')
   const inFlight = useRef<AbortController | null>(null)
+  // Counted up after each statement that wrote, so the editor's completion reads the graph again.
+  const [wrote, setWrote] = useState(0)
+  const schema = useSchema(connection?.id, wrote)
 
   useEffect(() => remember(STATEMENT, statement), [statement])
   useEffect(() => remember(PARAMETERS, parameters), [parameters])
@@ -81,9 +88,11 @@ export function Cypher() {
     takeCypher()
   }, [pendingCypher, takeCypher])
 
-  const execute = useCallback(() => {
+  // The editor gives its text as it holds it now, which React may not have drawn yet: see CypherEditor's runCommand.
+  const execute = useCallback((given: { statement?: string; parameters?: string } = {}) => {
     if (!connection) return
-    const parsed = parametersOf(parameters)
+    const text = given.statement ?? statement
+    const parsed = parametersOf(given.parameters ?? parameters)
     if ('problem' in parsed) {
       setPane('parameters')
       setRun({ state: 'failed', message: parsed.problem })
@@ -97,11 +106,12 @@ export function Cypher() {
     inFlight.current = controller
     setRun({ state: 'running' })
     runCypher(
-      { connection: connection.id, statement, parameters: parsed.parameters, ...(Number.isFinite(rows) ? { limit: rows } : {}) },
+      { connection: connection.id, statement: text, parameters: parsed.parameters, ...(Number.isFinite(rows) ? { limit: rows } : {}) },
       controller.signal,
     ).then(
       answered => {
         setResult(answered)
+        if (answered.written) setWrote(n => n + 1)
         setSelection(null)
         // A result with nodes in it is drawn; one of values alone is a table.
         setView(answered.graph.nodes.length > 0 ? 'graph' : 'rows')
@@ -201,12 +211,12 @@ export function Cypher() {
   const added = drawn ? drawn.graph.edges.filter(e => e.added).length : 0
   const [live, setLive] = useLiveLayout(drawn?.graph)
   // 2D or 3D, remembered. 3D is for a small graph: a bigger one is drawn in 2D, and the choice kept for the next.
-  const [depth, setDepthNow] = useState<Depth>(() => (typeof localStorage !== 'undefined' && localStorage.getItem(DEPTH_KEY) === '3d' ? '3d' : '2d'))
+  const [depth, setDepthNow] = useState<Depth>(() => (remembered(DEPTH_KEY, '2d') === '3d' ? '3d' : '2d'))
   const nodeCount = drawn?.graph.nodes.length ?? 0
   const shown = shownDepth(depth, nodeCount)
   const setDepth = (next: Depth) => {
     setDepthNow(next)
-    localStorage.setItem(DEPTH_KEY, next)
+    remember(DEPTH_KEY, next)
   }
 
   const given = parameters.trim() !== ''
@@ -249,29 +259,24 @@ export function Cypher() {
         </button>
       ) : pane === 'statement' ? (
         <>
-          <label className="desk-label" htmlFor="studio-statement" data-hidden>Statement</label>
           {/* The editor fills what the edge below leaves it, so it is sized by dragging the edge, not by a corner of its own. */}
-          <textarea
-            id="studio-statement"
-            className="desk-input studio-editor studio-statement"
-            spellCheck={false}
-            value={statement}
-            onChange={e => setStatement(e.target.value)}
-            onKeyDown={keys}
-          />
+          <Suspense
+            fallback={
+              <textarea id="studio-statement" aria-label="Statement" className="desk-input studio-editor studio-statement" spellCheck={false} value={statement} onChange={e => setStatement(e.target.value)} onKeyDown={keys} />
+            }
+          >
+            <CypherEditor key="statement" id="studio-statement" label="Statement" language="cypher" value={statement} onChange={setStatement} onRun={text => execute({ statement: text })} schema={schema} />
+          </Suspense>
         </>
       ) : (
         <>
-          <label className="desk-label" htmlFor="studio-parameters" data-hidden>Parameters, as a JSON object</label>
-          <textarea
-            id="studio-parameters"
-            className="desk-input studio-editor studio-statement"
-            spellCheck={false}
-            placeholder={'Parameters, as a JSON object:\n{"name": "Ada"}'}
-            value={parameters}
-            onChange={e => setParameters(e.target.value)}
-            onKeyDown={keys}
-          />
+          <Suspense
+            fallback={
+              <textarea id="studio-parameters" aria-label="Parameters, as a JSON object" className="desk-input studio-editor studio-statement" spellCheck={false} placeholder={'Parameters, as a JSON object:\n{"name": "Ada"}'} value={parameters} onChange={e => setParameters(e.target.value)} onKeyDown={keys} />
+            }
+          >
+            <CypherEditor key="parameters" id="studio-parameters" label="Parameters, as a JSON object" language="json" value={parameters} onChange={setParameters} onRun={text => execute({ parameters: text })} placeholder={'Parameters, as a JSON object:\n{"name": "Ada"}'} />
+          </Suspense>
         </>
       )}
     </form>

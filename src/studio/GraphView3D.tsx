@@ -3,9 +3,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ForceGraph3DInstance } from '3d-force-graph'
 import type * as Three from 'three'
 import type { GraphEdge, GraphNode, Result } from './api'
-import { captionOf, colourOf } from './GraphView'
+import { captionOf, colourOf, iconLabelOf } from './GraphView'
 import type { Selection } from './GraphView'
-import { clip, degrees, edgeLit, hubOf, legendOf, litOf, namePriority, shownOf, toggled, uncrowded } from './graph3d'
+import { clip, degrees, edgeLit, hubOf, keyAction, legendOf, litOf, namePriority, shownOf, toggled, uncrowded } from './graph3d'
 import type { NameBox } from './graph3d'
 import { Swatch } from './IconPicker'
 import { useLabelIcons } from './icons'
@@ -508,19 +508,18 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
       element.addEventListener('wheel', wheel, { passive: false })
 
       const key = (event: KeyboardEvent) => {
-        const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]
-        if (step) {
-          const [h, v] = step as [number, number]
-          if (event.shiftKey) pan(h * PAN * element.clientHeight, v * PAN * element.clientHeight)
-          else turn(h * TURN, v * TURN)
-        } else if (event.key === '+' || event.key === '=') dolly(0.85)
-        else if (event.key === '-' || event.key === '_') dolly(1 / 0.85)
-        else if (event.key === '0') fit()
-        else if (event.key === 'Escape') all()
-        else if (event.key === 'Enter' && chosen) {
+        const action = keyAction(event)
+        if (!action) return
+        if (action.kind === 'turn') turn(action.h * TURN, action.v * TURN)
+        else if (action.kind === 'pan') pan(action.h * PAN * element.clientHeight, action.v * PAN * element.clientHeight)
+        else if (action.kind === 'zoom') dolly(action.factor)
+        else if (action.kind === 'fit') fit()
+        else if (action.kind === 'all') all()
+        else {
           const n = (g.graphData().nodes as Node3D[]).find(it => it.id === chosen)
-          if (n) flyTo(n)
-        } else return
+          if (!n) return
+          flyTo(n)
+        }
         touched()
         event.preventDefault()
       }
@@ -651,6 +650,8 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         const counts = degrees(graph.edges)
         chosen = null
         hovered = null
+        // A new graph of as many nodes, with nothing chosen, asks the same question: the old graph's order would name none.
+        orderKey = ''
         opened = false
         element.dataset.shown = 'false'
         g.graphData({
@@ -726,7 +727,7 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
             )}
             <ul className="studio-legend-list" aria-label="Fragments shown">
               {entries.map(({ fragment, count }) => {
-                const label = graph.nodes.find(n => n.fragment === fragment)?.labels[0]
+                const label = iconLabelOf(graph.nodes, fragment)
                 return (
                   <li key={fragment}>
                     <Checkbox

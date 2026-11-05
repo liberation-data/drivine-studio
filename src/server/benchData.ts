@@ -86,7 +86,16 @@ export class Scale {
   get nodes(): number {
     return this.orgs + this.persons + this.repos + this.topics + this.issues + this.comments
   }
+
+  /** About how many relationships: Graph Bench's graph has about four a node. An estimate, for what a load will write. */
+  get relationships(): number {
+    return this.nodes * 4
+  }
 }
+
+/** The scales a load is offered at, from about 1,100 nodes to about 11 million. Past SLOW_SCALE, a load is long. */
+export const SCALES = [0.001, 0.01, 0.1, 1, 3, 10] as const
+export const SLOW_SCALE = 0.1
 
 export type Props = Record<string, string | number>
 
