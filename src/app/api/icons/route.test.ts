@@ -86,7 +86,7 @@ describe('/api/icons/lists', () => {
   it('gives the choices and the lists, the built-in ones beside their own', async () => {
     await PUT(request('PUT', { label: 'Person', icon: 'bug' }))
     const answer = (await (await lists(request('GET'))).json()) as Record<string, unknown> & { builtIn: { words: Record<string, string>; onlyByName: string[] } }
-    expect(answer).toMatchObject({ chosen: { Person: 'bug' }, words: {}, onlyByName: [] })
+    expect(answer).toMatchObject({ chosen: { Person: 'bug' }, words: {}, onlyByName: [], nearest: 0.45 })
     expect(answer.builtIn.words.person).toBe('user')
     expect(answer.builtIn.onlyByName).toContain('cigarette')
   })

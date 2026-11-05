@@ -288,7 +288,7 @@ export function Cypher() {
       {!connection ? (
         <div className="studio-hint">
           <h2>No connection in use</h2>
-          <p>Choose one from the connection menu at the end of the menu bar, or add one in Connections.</p>
+          <p>Choose one from the connection menu at the end of the menu bar, or add one in Settings, under Connections.</p>
         </div>
       ) : result && waiting ? (
         <div className="studio-hint"><Spinner label="Connecting the results" size="small" /></div>

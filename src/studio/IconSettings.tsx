@@ -1,0 +1,467 @@
+import { Button, Chip, Loading, SegmentedControl, Table, Tabs, TextField } from '@liberation-data/desk/react'
+import type { Column } from '@liberation-data/desk/react'
+import { useEffect, useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
+import { useStudio } from './App'
+import { RUNS_CYPHER } from './database'
+import type { StudioConnection } from './database'
+import { changeOnlyByName, changeWord, chooseIcon, explainIcons, iconLists, refound, refoundAll } from './icons'
+import type { Explained, IconLists } from './icons'
+import { Icon, IconPicker, IconSheet } from './IconPicker'
+import { useOnline } from './online'
+import { useSchemas } from './schema'
+import type { GraphSchema } from './schema'
+
+/*
+ * The labels' icons, in Settings: every label the studio can see, with its icon and why it has it, to change one with
+ * a click; the person's own common words and icons taken only by name, beside the built-in ones; and a field to try a
+ * label in, to see what it would get. Icons are the studio's, by label, never a connection's.
+ */
+
+type View = 'labels' | 'words' | 'onlyByName' | 'try'
+const VIEW = 'drivine-studio.settings.icons'
+const VIEWS: readonly View[] = ['labels', 'words', 'onlyByName', 'try']
+const rememberedView = (): View => {
+  try {
+    const kept = window.localStorage.getItem(VIEW) as View | null
+    return kept && VIEWS.includes(kept) ? kept : 'labels'
+  } catch {
+    return 'labels'
+  }
+}
+
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+/** How many labels are explained at once: as many as the server takes. */
+const MOST = 500
+
+/** A label the studio can see, and the connections whose graphs have it: none for one known only by its chosen icon. */
+export interface SeenLabel {
+  label: string
+  connections: string[]
+}
+
+/**
+ * The labels to show: those in the graphs of the connections that are up, and those with a chosen icon, each once,
+ * in order of name, with the names of the connections that have it.
+ */
+export function labelsOf(
+  connections: readonly StudioConnection[],
+  schemas: Readonly<Record<string, GraphSchema>>,
+  chosen: Readonly<Record<string, unknown>>,
+): SeenLabel[] {
+  const seen = new Map<string, string[]>()
+  for (const c of connections) for (const label of schemas[c.id]?.labels ?? []) seen.set(label, [...(seen.get(label) ?? []), c.name])
+  for (const label of Object.keys(chosen)) if (!seen.has(label)) seen.set(label, [])
+  return [...seen].map(([label, names]) => ({ label, connections: names })).sort((a, b) => a.label.localeCompare(b.label))
+}
+
+/** Why a label has the icon it has, in a few words: as LabelIcon's sources say, with the word or score behind it. */
+export function reason(found: Explained, nearest: number): string {
+  if (found.source === 'chosen') return found.icon ? 'Chosen' : 'Chosen to have none'
+  if (found.source === 'common') return found.own ? `Your word “${found.word}”` : `Common word “${found.word}”`
+  if (found.source === 'nearest') return `Model, ${score(found.score)}`
+  if (found.score !== undefined) return `None: nearest ${score(found.score)}, under ${score(nearest)}`
+  return found.picks.length ? 'None' : 'None: no model yet, or no word in the label'
+}
+
+const score = (n: number | undefined) => (n === undefined ? '' : n.toFixed(2))
+
+export function IconSettings() {
+  const [view, setView] = useState<View>(rememberedView)
+  const [lists, setLists] = useState<IconLists | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  // Counts the changes, so what is shown is found again after one.
+  const [changes, setChanges] = useState(0)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(VIEW, view)
+    } catch {
+      // Labels each time, then.
+    }
+  }, [view])
+
+  useEffect(() => {
+    iconLists().then(setLists, (e: unknown) => setProblem(message(e)))
+  }, [changes])
+
+  // A change of a list changes the icons of labels anywhere in the studio, so every one shown is found again.
+  const changedLists = (now: IconLists) => {
+    setLists(now)
+    refoundAll()
+    setChanges(n => n + 1)
+  }
+  const failed = (e: unknown) => setProblem(message(e))
+
+  if (!lists) return problem ? <div className="studio-hint" role="alert"><p>{problem}</p></div> : <Loading label="Reading the icons" />
+
+  return (
+    <div className="studio-icon-settings">
+      <Tabs
+        label="Icons"
+        value={view}
+        onChange={setView}
+        className="studio-tabs"
+        tabs={[
+          { value: 'labels', label: 'Labels' },
+          { value: 'words', label: 'Common Words', badge: Object.keys(lists.words).length || undefined },
+          { value: 'onlyByName', label: 'Only by Name', badge: lists.onlyByName.length || undefined },
+          { value: 'try', label: 'Try a Label' },
+        ]}
+      >
+        {view === 'labels' && <Labels lists={lists} changes={changes} onChanged={() => setChanges(n => n + 1)} />}
+        {view === 'words' && <Words lists={lists} onChanged={changedLists} onFailed={failed} />}
+        {view === 'onlyByName' && <OnlyByName lists={lists} onChanged={changedLists} onFailed={failed} />}
+        {view === 'try' && <TryLabel lists={lists} changes={changes} onChanged={() => setChanges(n => n + 1)} />}
+      </Tabs>
+      {problem && <p className="studio-bad desk-text-small studio-finder-problem" role="alert">{problem}</p>}
+    </div>
+  )
+}
+
+interface Row extends SeenLabel {
+  found: Explained | undefined
+}
+
+/** Every label the studio can see, with its icon and why; a label with none has the model's nearest beside it. */
+function Labels({ lists, changes, onChanged }: { lists: IconLists; changes: number; onChanged: () => void }) {
+  const { connections } = useStudio()
+  const graphs = useMemo(() => (connections ?? []).filter(c => RUNS_CYPHER.includes(c.type)), [connections])
+  const up = useOnline(graphs.map(c => c.id))
+  const running = useMemo(() => graphs.filter(c => up[c.id] === true), [graphs, up])
+  const schemas = useSchemas(running.map(c => c.id))
+  const seen = useMemo(() => labelsOf(running, schemas, lists.chosen), [running, schemas, lists.chosen])
+  const [found, setFound] = useState<Record<string, Explained> | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [find, setFind] = useState('')
+  const [only, setOnly] = useState<'all' | 'none'>('all')
+  const [choosing, setChoosing] = useState<string | null>(null)
+
+  const key = seen.slice(0, MOST).map(it => it.label).join('\n')
+  useEffect(() => {
+    const controller = new AbortController()
+    explainIcons(key ? key.split('\n') : [], undefined, controller.signal).then(
+      answer => {
+        setFound(answer)
+        setProblem(null)
+      },
+      (e: unknown) => controller.signal.aborted || setProblem(message(e)),
+    )
+    return () => controller.abort()
+  }, [key, changes])
+
+  const choose = (label: string, icon: string) => {
+    chooseIcon(label, icon).then(now => {
+      refound(label, now)
+      onChanged()
+    }, (e: unknown) => setProblem(message(e)))
+  }
+
+  const words = find.trim().toLowerCase()
+  const rows: Row[] = seen
+    .map(it => ({ ...it, found: found?.[it.label] }))
+    .filter(it => (!words || it.label.toLowerCase().includes(words)) && (only === 'all' || it.found?.icon === null))
+  const without = seen.filter(it => found?.[it.label]?.icon === null).length
+
+  const columns: Column<Row>[] = [
+    { key: 'icon', header: '', width: '44px', render: row => (row.found?.icon ? <Icon name={row.found.icon} size="small" /> : <span className="desk-text-muted">–</span>) },
+    {
+      key: 'label', header: 'Label', render: row => (
+        <span className="studio-label-cell">
+          <span>{row.label}</span>
+          <span className="desk-text-caption desk-text-muted">{row.connections.length ? row.connections.join(', ') : 'In no graph up now'}</span>
+        </span>
+      ),
+    },
+    { key: 'name', header: 'Icon', render: row => <span className={row.found?.icon ? 'desk-text-small' : 'desk-text-small desk-text-muted'}>{row.found?.icon ?? (row.found ? 'none' : '')}</span> },
+    { key: 'why', header: 'Why', render: row => <span className="desk-text-small desk-text-muted">{row.found ? reason(row.found, lists.nearest) : ''}</span> },
+    {
+      key: 'picks', header: 'Nearest', render: row => (row.found?.icon === null && row.found.picks.length ? (
+        <span className="studio-picks">
+          {row.found.picks.map(pick => (
+            <button
+              key={pick.icon}
+              type="button"
+              className="studio-icon-choice studio-pick"
+              title={`Choose ${pick.icon} (${score(pick.score)}) for ${row.label}`}
+              aria-label={`Choose ${pick.icon} for ${row.label}`}
+              onClick={event => {
+                event.stopPropagation()
+                choose(row.label, pick.icon)
+              }}
+            >
+              <Icon name={pick.icon} size="small" />
+            </button>
+          ))}
+        </span>
+      ) : null),
+    },
+    {
+      key: 'change', header: '', align: 'end', render: row => (
+        <Button size="small" onClick={() => setChoosing(row.label)}>Choose…</Button>
+      ),
+    },
+  ]
+
+  return (
+    <div className="studio-finder">
+      <div className="studio-finder-bar">
+        <span className="desk-text-small desk-text-muted">
+          {seen.length} {seen.length === 1 ? 'label' : 'labels'}
+          {found ? ` · ${without} without an icon` : ''}
+          {running.length < graphs.length ? ` · ${running.length} of ${graphs.length} connections up` : ''}
+        </span>
+        <span className="desk-grow" />
+        <span className="studio-find">
+          <TextField label="Find" labelHidden placeholder="Find a label" value={find} onChange={e => setFind(e.target.value)} />
+        </span>
+        <SegmentedControl label="Show" size="small" value={only} onChange={setOnly} options={[{ value: 'all', label: 'All' }, { value: 'none', label: 'No Icon' }]} />
+      </div>
+      <div className="studio-rows">
+        {!found && !problem ? <Loading label="Finding the icons" /> : (
+          <Table
+            label="Labels"
+            rows={rows}
+            rowId={row => row.label}
+            columns={columns}
+            onActivate={id => setChoosing(id)}
+            empty={
+              seen.length === 0
+                ? 'No labels yet: none of the connections up has any, and no icon has been chosen.'
+                : 'No label matches.'
+            }
+          />
+        )}
+      </div>
+      {seen.length > MOST && <p className="desk-text-small desk-text-muted studio-finder-problem">The first {MOST} labels, of {seen.length}, by name.</p>}
+      {problem && <p className="studio-bad desk-text-small studio-finder-problem" role="alert">{problem}</p>}
+      {choosing && (
+        <IconPicker
+          label={choosing}
+          current={found?.[choosing]}
+          onDone={() => {
+            setChoosing(null)
+            onChanged()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** The person's own common words, to add to and take from, beside the built-in ones, which are shown only. */
+function Words({ lists, onChanged, onFailed }: { lists: IconLists; onChanged: (now: IconLists) => void; onFailed: (e: unknown) => void }) {
+  const [word, setWord] = useState('')
+  const [icon, setIcon] = useState<string | null>(null)
+  const [picking, setPicking] = useState(false)
+  const own = Object.entries(lists.words).sort(([a], [b]) => a.localeCompare(b))
+  const builtIn = Object.entries(lists.builtIn.words).sort(([a], [b]) => a.localeCompare(b))
+
+  const add = (event?: FormEvent) => {
+    event?.preventDefault()
+    if (!word.trim() || !icon) return
+    changeWord(word, icon).then(now => {
+      setWord('')
+      setIcon(null)
+      onChanged(now)
+    }, onFailed)
+  }
+
+  return (
+    <div className="studio-settings-page">
+      <p className="desk-text-small desk-text-muted studio-settings-lead">
+        A label&apos;s words are looked up whole, then each from the last, in your words first and then the built-in ones:
+        so a word of yours can give one of theirs another icon. A word is kept as a label&apos;s are looked up, so
+        <code> WorkHistory</code> is <code>workhistory</code>.
+      </p>
+      <section className="studio-settings-group" aria-label="Your words">
+        <h3 className="desk-text-small studio-settings-heading">Yours</h3>
+        <form className="studio-word-add" onSubmit={add} aria-label="Add a word">
+          <TextField label="Word" labelHidden placeholder="A word, such as Probe" value={word} onChange={e => setWord(e.target.value)} />
+          <Button onClick={() => setPicking(true)} title="Choose the word's icon">
+            {icon ? <span className="studio-file-name"><Icon name={icon} size="small" />{icon}</span> : 'Icon…'}
+          </Button>
+          <Button intent="default" onClick={() => add()} disabled={!word.trim() || !icon}>Add</Button>
+          <button type="submit" hidden />
+        </form>
+        {own.length === 0 ? (
+          <p className="desk-text-small desk-text-muted">None yet.</p>
+        ) : (
+          <ul className="studio-word-list" aria-label="Your words">
+            {own.map(([w, i]) => (
+              <li key={w}>
+                <Chip onRemove={() => changeWord(w, undefined).then(onChanged, onFailed)} removeLabel={`Take ${w} off your words`}>
+                  <span className="studio-file-name"><Icon name={i} size="small" />{w}</span>
+                </Chip>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="studio-settings-group" aria-label="Built-in words">
+        <h3 className="desk-text-small studio-settings-heading">Built in</h3>
+        <ul className="studio-word-list" aria-label="Built-in words">
+          {builtIn.map(([w, i]) => (
+            <li key={w} className="studio-word" data-overridden={Object.hasOwn(lists.words, w) || undefined} title={Object.hasOwn(lists.words, w) ? 'Yours is taken instead' : i}>
+              <Icon name={i} size="small" />
+              <span className="desk-text-small">{w}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+      {picking && (
+        <IconSheet
+          title={word.trim() ? `Icon of ${word.trim()}` : 'Icon of the word'}
+          current={icon}
+          onChoose={chosen => {
+            setIcon(chosen)
+            setPicking(false)
+          }}
+          onDone={() => setPicking(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+/** The person's own icons taken only by name, to add to and take from, beside the built-in ones, which are shown only. */
+function OnlyByName({ lists, onChanged, onFailed }: { lists: IconLists; onChanged: (now: IconLists) => void; onFailed: (e: unknown) => void }) {
+  const [picking, setPicking] = useState(false)
+  return (
+    <div className="studio-settings-page">
+      <p className="desk-text-small desk-text-muted studio-settings-lead">
+        Icons of one particular thing, which the model picks for a label that is only like it: a cigarette for Patient, a
+        rat for Disease. One of these is taken only for a label that names it, as <code>Cigarette</code>; for any other,
+        the next nearest is, if it is near enough. Add one when a label gets it wrongly.
+      </p>
+      <section className="studio-settings-group" aria-label="Your icons">
+        <h3 className="desk-text-small studio-settings-heading">Yours</h3>
+        <div>
+          <Button onClick={() => setPicking(true)}>Add Icon…</Button>
+        </div>
+        {lists.onlyByName.length === 0 ? (
+          <p className="desk-text-small desk-text-muted">None yet.</p>
+        ) : (
+          <ul className="studio-word-list" aria-label="Your icons taken only by name">
+            {lists.onlyByName.map(name => (
+              <li key={name}>
+                <Chip onRemove={() => changeOnlyByName(name, false).then(onChanged, onFailed)} removeLabel={`Take ${name} off the list`}>
+                  <span className="studio-file-name"><Icon name={name} size="small" />{name}</span>
+                </Chip>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+      <section className="studio-settings-group" aria-label="Built-in icons">
+        <h3 className="desk-text-small studio-settings-heading">Built in</h3>
+        <ul className="studio-word-list" aria-label="Built-in icons taken only by name">
+          {lists.builtIn.onlyByName.map(name => (
+            <li key={name} className="studio-word">
+              <Icon name={name} size="small" />
+              <span className="desk-text-small">{name}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+      {picking && (
+        <IconSheet
+          title="Take an icon only by name"
+          description="The model gives it only to a label that names it."
+          current={null}
+          onChoose={name => {
+            setPicking(false)
+            changeOnlyByName(name, true).then(onChanged, onFailed)
+          }}
+          onDone={() => setPicking(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+/** How long typing rests before the label typed is tried: a model is asked for each try. */
+const REST_MS = 250
+
+/** A label typed, and the icon it would get and why, with the model's nearest icons and how near each is. */
+function TryLabel({ lists, changes, onChanged }: { lists: IconLists; changes: number; onChanged: () => void }) {
+  const [label, setLabel] = useState('')
+  const [found, setFound] = useState<{ label: string; found: Explained } | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [choosing, setChoosing] = useState(false)
+  const typed = label.trim()
+
+  useEffect(() => {
+    if (!typed) return setFound(null)
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      explainIcons([typed], undefined, controller.signal).then(
+        answer => {
+          setFound(answer[typed] ? { label: typed, found: answer[typed] } : null)
+          setProblem(null)
+        },
+        (e: unknown) => controller.signal.aborted || setProblem(message(e)),
+      )
+    }, REST_MS)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [typed, changes])
+
+  const shown = found && found.label === typed ? found.found : null
+
+  return (
+    <div className="studio-settings-page">
+      <p className="desk-text-small desk-text-muted studio-settings-lead">
+        Type a label to see the icon it would get, and why: chosen, a common word, or the model&apos;s nearest when it is
+        near enough, at {score(lists.nearest)} or more.
+      </p>
+      <div className="studio-try-field">
+        <TextField label="Label" placeholder="A label, such as SpaceProbe" value={label} autoFocus onChange={e => setLabel(e.target.value)} />
+      </div>
+      {shown && (
+        <div className="studio-try">
+          <div className="studio-try-result">
+            <span className="studio-try-icon">{shown.icon ? <Icon name={shown.icon} size="large" /> : <span className="desk-text-muted">–</span>}</span>
+            <span className="studio-label-cell">
+              <strong>{shown.icon ?? 'No icon'}</strong>
+              <span className="desk-text-small desk-text-muted">{reason(shown, lists.nearest)}</span>
+            </span>
+            <span className="desk-grow" />
+            <Button size="small" onClick={() => setChoosing(true)}>Choose…</Button>
+          </div>
+          {shown.picks.length > 0 && (
+            <>
+              <h3 className="desk-text-small studio-settings-heading">The model&apos;s nearest</h3>
+              <ol className="studio-try-picks" aria-label="The model's nearest icons">
+                {shown.picks.map(pick => (
+                  <li key={pick.icon}>
+                    <Icon name={pick.icon} size="small" />
+                    <span className="desk-text-small">{pick.icon}</span>
+                    <span className="studio-try-bar" aria-hidden="true">
+                      <span style={{ width: `${Math.max(0, Math.min(1, pick.score)) * 100}%` }} data-near={pick.score >= lists.nearest || undefined} />
+                    </span>
+                    <span className="desk-text-small desk-text-muted studio-try-score">{score(pick.score)}</span>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+        </div>
+      )}
+      {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
+      {choosing && shown && (
+        <IconPicker
+          label={typed}
+          current={shown}
+          onDone={() => {
+            setChoosing(false)
+            onChanged()
+          }}
+        />
+      )}
+    </div>
+  )
+}

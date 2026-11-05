@@ -23,6 +23,43 @@ export const chooseIcon = (label: string, icon: string | null | undefined): Prom
 export const iconCatalog = (): Promise<Record<string, string[]>> =>
   fetch(`${API}/catalog`).then(r => read<Record<string, string[]>>(r))
 
+/** An icon the model found for a label, and how near, from -1 to 1. */
+export interface Pick {
+  icon: string
+  score: number
+}
+
+/** A label's icon and why, as explain in src/server/icons/labels.ts gives it: the word that gave it, and the model's picks. */
+export interface Explained extends LabelIcon {
+  word?: string
+  own?: boolean
+  picks: Pick[]
+}
+
+/** Each label's icon and why, with the model's nearest few icons beside it. */
+export const explainIcons = (labels: string[], picks?: number, signal?: AbortSignal): Promise<Record<string, Explained>> =>
+  fetch(`${API}/explain`, json('POST', { labels, ...(picks ? { picks } : {}) }, signal)).then(r => read<Record<string, Explained>>(r))
+
+/** The icons chosen for labels, and the person's own lists of common words and icons taken only by name, beside the built-in ones. */
+export interface IconLists {
+  chosen: Record<string, string | null>
+  words: Record<string, string>
+  onlyByName: string[]
+  builtIn: { words: Record<string, string>; onlyByName: string[] }
+  /** How near the model's icon must be to be taken. */
+  nearest: number
+}
+
+export const iconLists = (): Promise<IconLists> => fetch(`${API}/lists`, { cache: 'no-store' }).then(r => read<IconLists>(r))
+
+/** Gives a word of the person's own its icon, or with undefined takes it off their list. */
+export const changeWord = (word: string, icon: string | undefined): Promise<IconLists> =>
+  fetch(`${API}/lists`, json('PUT', icon === undefined ? { word, forget: true } : { word, icon })).then(r => read<IconLists>(r))
+
+/** Puts an icon on the person's own list of icons taken only by name, or takes it off. */
+export const changeOnlyByName = (icon: string, listed: boolean): Promise<IconLists> =>
+  fetch(`${API}/lists`, json('PUT', { onlyByName: icon, listed })).then(r => read<IconLists>(r))
+
 /** Where an icon's SVG is, in the colour of the text around it. */
 export const iconUrl = (name: string): string => `${API}/svg/${encodeURIComponent(name)}`
 
@@ -35,6 +72,12 @@ const changed = () => listeners.forEach(it => it())
 /** Forgets what was found of a label, as when its icon is chosen, and finds it again where it is shown. */
 export function refound(label: string, icon: LabelIcon): void {
   found.set(label, icon)
+  changed()
+}
+
+/** Forgets every label's icon found, as when a list they are found by changes, and finds them again where they are shown. */
+export function refoundAll(): void {
+  found.clear()
   changed()
 }
 

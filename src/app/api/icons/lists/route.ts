@@ -1,8 +1,11 @@
 import { body, failure, foreign, refuse } from '../../../../server/http'
-import { chooseWord, COMMON, iconsFile, ONLY_BY_NAME, takeOnlyByName, wordOf } from '../../../../server/icons/labels'
+import { chooseWord, COMMON, iconsFile, NEAREST, ONLY_BY_NAME, takeOnlyByName, wordOf } from '../../../../server/icons/labels'
 import { isIcon } from '../../../../server/icons/lucide'
 
-/** The icons chosen for labels, and the person's own lists beside the built-in ones, which are shown and not changed. */
+/**
+ * The icons chosen for labels, and the person's own lists beside the built-in ones, which are shown and not changed;
+ * and how near the model's icon must be to be taken, to say why a label has none.
+ */
 async function lists(): Promise<Response> {
   const file = await iconsFile()
   return Response.json({
@@ -10,6 +13,7 @@ async function lists(): Promise<Response> {
     words: file.words,
     onlyByName: file.onlyByName,
     builtIn: { words: COMMON, onlyByName: [...ONLY_BY_NAME].sort() },
+    nearest: NEAREST,
   })
 }
 
