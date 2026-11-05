@@ -51,4 +51,11 @@ describe('describeMenus', () => {
     expect(menus.map(m => [m.label, m.status ?? false])).toEqual([['File', false], ['Matrix (Postgres)', true]])
     expect(menus[1]!.items[1]).toMatchObject({ id: '1.1', checked: true })
   })
+
+  it('carries an item’s detail and whether it can be chosen, as a connection that is not running has them', () => {
+    const { menus } = describeMenus([], () => true, [
+      { id: 'connection', label: 'A', items: [menuAction('A', () => {}, { checked: true, disabled: true, detail: 'Neo4j · not running' })] },
+    ])
+    expect(menus[0]!.items[0]).toEqual({ type: 'item', id: '0.0', label: 'A', enabled: false, checked: true, detail: 'Neo4j · not running' })
+  })
 })
