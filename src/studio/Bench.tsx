@@ -344,7 +344,7 @@ function LinkBench({ onDone }: { onDone: (linked: boolean) => void }) {
       open
       onDismiss={() => onDone(false)}
       title="Link Graph Bench"
-      description="A checkout of Graph Bench on this machine: the studio reads the results its runs write. In the desktop app, Link Graph Bench… opens a folder picker instead."
+      description="A checkout of Graph Bench on this machine: the studio reads the results its runs write. In the desktop app, Graph Bench ▾ › Read Results from a Checkout… opens a folder picker instead."
       actions={<><Button onClick={() => onDone(false)}>Cancel</Button><Button intent="default" onClick={link} disabled={!path.trim()}>Link</Button></>}
     >
       <form onSubmit={event => { event.preventDefault(); link() }}>
