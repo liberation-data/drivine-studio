@@ -80,6 +80,10 @@ The Cypher window runs a statement on the connection in use, with parameters as 
 back as a graph, when there are nodes in it, and as rows. It reads 1000 rows unless told otherwise, and at most
 10,000. ⌘↵ runs it.
 
+A graph of up to 300 nodes can be drawn in 3D as well as 2D, with the switch above it; a bigger one is drawn in 2D,
+and the choice is kept for the next small one. In 3D a click focuses a node and its neighbours, the legend's
+checkboxes fade a label's nodes, and an icon is chosen in the 2D legend.
+
 By default the studio never writes. Over Bolt (Neo4j, Memgraph, Neptune), a statement runs in a read session, whose
 transaction the database will not let write, and which the studio rolls back all the same. On FalkorDB, which has no
 transactions, it runs as a read-only query, which FalkorDB will not let write. A procedure that opens transactions of
