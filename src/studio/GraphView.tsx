@@ -339,7 +339,12 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
      */
     const element = container.current
     if (element) element.style.opacity = '0'
-    const layout = core.layout(colaOptions({ animate: false, randomize: true, maxSimulationTime: 3000, unconstrIter: 10, allConstIter: 10 }))
+    /*
+     * Animated, out of sight, many ticks a frame: not animated, cola runs its simulation in one loop that ends only when
+     * it settles, and its time limit is a timer that can't fire until the loop gives way. A start that never settled
+     * (coming back to 2D from 3D did it) hung the page for good.
+     */
+    const layout = core.layout(colaOptions({ animate: true, ticksPerFrame: 40, randomize: true, maxSimulationTime: 3000, unconstrIter: 10, allConstIter: 10 }))
     layout.one('layoutstop', () => {
       // Stopped for a new graph: that one shows itself.
       if (running.current !== layout || core.destroyed()) return
