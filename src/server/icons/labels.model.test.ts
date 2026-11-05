@@ -1,5 +1,8 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { iconsOf } from './labels'
+import { embedder, iconsOf } from './labels'
 
 /**
  * Labels with the icons that would be right for them, found with the studio's own model: `npm run test:icons`, which
@@ -41,7 +44,17 @@ const RIGHT = 28
 
 describe.runIf(process.env.STUDIO_ICON_MODEL)("the studio's model", () => {
   it('gives each label a right icon or none, and finds at least as many right as before', async () => {
-    const found = await iconsOf(Object.keys(LABELS))
+    // The model from the studio's home, where it is cached, but not the icons chosen there, as they aren't the model's.
+    const model = await embedder()
+    const saved = process.env.DRIVINE_STUDIO_HOME
+    const home = await mkdtemp(join(tmpdir(), 'studio-icons-'))
+    process.env.DRIVINE_STUDIO_HOME = home
+    const found = await iconsOf(Object.keys(LABELS), model).finally(async () => {
+      if (saved === undefined) delete process.env.DRIVINE_STUDIO_HOME
+      else process.env.DRIVINE_STUDIO_HOME = saved
+      await rm(home, { recursive: true, force: true })
+    })
+    expect(model).not.toBeNull()
     const wrong = Object.entries(found).filter(([label, it]) => it.icon !== null && !LABELS[label]!.includes(it.icon))
     const right = Object.values(found).filter(it => it.icon !== null).length - wrong.length
     const report = Object.entries(found).map(([label, it]) => `${label}: ${it.icon ?? '-'} (${it.source}${it.score === undefined ? '' : ` ${it.score}`})`)

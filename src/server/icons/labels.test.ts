@@ -162,6 +162,12 @@ describe('iconsOf', () => {
     expect((await iconsOf(['Probe'], unlike)).Probe).toEqual({ icon: null, source: 'none', score: 0 })
   })
 
+  it('gives the model\'s icon of one particular thing only to a label that names it', async () => {
+    const icons = await iconsOf(['Patient', 'Cigarette'], like('cigarette'))
+    expect(icons.Patient?.icon).not.toBe('cigarette')
+    expect(icons.Cigarette).toMatchObject({ icon: 'cigarette', source: 'nearest' })
+  })
+
   it('takes a label named as an object is born with for a label, not a choice', async () => {
     const icons = await iconsOf(['toString', '__proto__'], unlike)
     expect(Object.keys(icons)).toEqual(['toString', '__proto__'])
