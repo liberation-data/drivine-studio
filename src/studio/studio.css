@@ -170,6 +170,9 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-cypher-split { flex: 1; height: auto; }
 .studio-query-fill { flex: 1; min-height: 0; overflow: auto; border-bottom: 0; }
 .studio-statement { flex: 1; min-height: 4.5em; resize: none; }
+/* CodeMirror, in place of the field: it fills the same room, and scrolls inside it. */
+.studio-editor-host { display: flex; flex-direction: column; min-height: 4.5em; }
+.studio-editor-host > .cm-editor { flex: 1; min-height: 0; }
 /* Expanded: the editor has the window, and the edge and results wait out of sight. */
 .desk-split.studio-expanded[data-orientation] { grid-template-rows: minmax(0, 1fr); }
 .desk-split.studio-expanded > .desk-split-edge, .desk-split.studio-expanded > .desk-split-panel:last-child { display: none; }
