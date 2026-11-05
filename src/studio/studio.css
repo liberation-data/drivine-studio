@@ -375,8 +375,18 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-graph3d { outline: none; }
 .studio-graph3d:focus-visible { box-shadow: inset 0 0 0 2px var(--desk-accent); }
 .studio-graph3d-reset { position: absolute; top: 8px; right: 8px; z-index: 2; }
-.studio-graph3d-hint { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); margin: 0; pointer-events: none; white-space: nowrap; }
+.studio-graph3d-hint {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); margin: 0; pointer-events: none; white-space: nowrap;
+  padding: 2px var(--desk-space-2); border-radius: var(--desk-control-radius); background: color-mix(in srgb, var(--desk-surface) 85%, transparent);
+}
 /* three-forcegraph's hover tip, in the desk's type and colours. */
 .studio-graph .scene-tooltip { font-family: var(--desk-font); }
 .studio-graph3d-tip { padding: 3px 6px; border-radius: 6px; background: var(--desk-surface); color: var(--desk-ink); border: 1px solid var(--desk-rule); font-size: 11px; }
 .studio-graph3d-tip span { color: var(--desk-muted); }
+/* Shown once its layout has settled and the view is set: no nodes flying in. */
+.studio-graph3d { opacity: 0; transition: opacity 0.4s ease; }
+.studio-graph3d[data-shown='true'] { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .studio-graph3d { transition: none; } }
+.studio-legend3d { z-index: 2; gap: var(--desk-space-1); }
+.studio-legend3d-entry { display: inline-flex; align-items: center; gap: var(--desk-space-2); }
+.studio-legend3d .studio-swatch { width: 18px; height: 18px; }

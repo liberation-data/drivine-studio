@@ -11,6 +11,8 @@ import type { Cell, CypherRelationship, CypherResult } from './database'
 import { GraphView, LiveLayoutToggle, useLiveLayout } from './GraphView'
 import type { Selection } from './GraphView'
 import { GraphView3D } from './GraphView3D'
+import { MAX_3D_NODES, fits3D, shownDepth } from './graph3d'
+import type { Depth } from './graph3d'
 import { Inspector } from './Inspector'
 import { cellText, graphOf, parametersOf, writtenText } from './results'
 
@@ -198,9 +200,11 @@ export function Cypher() {
   )
   const added = drawn ? drawn.graph.edges.filter(e => e.added).length : 0
   const [live, setLive] = useLiveLayout(drawn?.graph)
-  // 2D or 3D, remembered: a prototype of the graph in three dimensions.
-  const [depth, setDepthNow] = useState<'2d' | '3d'>(() => (typeof localStorage !== 'undefined' && localStorage.getItem(DEPTH_KEY) === '3d' ? '3d' : '2d'))
-  const setDepth = (next: '2d' | '3d') => {
+  // 2D or 3D, remembered. 3D is for a small graph: a bigger one is drawn in 2D, and the choice kept for the next.
+  const [depth, setDepthNow] = useState<Depth>(() => (typeof localStorage !== 'undefined' && localStorage.getItem(DEPTH_KEY) === '3d' ? '3d' : '2d'))
+  const nodeCount = drawn?.graph.nodes.length ?? 0
+  const shown = shownDepth(depth, nodeCount)
+  const setDepth = (next: Depth) => {
     setDepthNow(next)
     localStorage.setItem(DEPTH_KEY, next)
   }
@@ -298,9 +302,17 @@ export function Cypher() {
                   <Toggle label={added ? `Connect results (${added})` : 'Connect results'} checked={connectOn} onChange={setConnectOn} />
                 </span>
               )}
-              {view === 'graph' && depth === '2d' && <LiveLayoutToggle live={live} onChange={setLive} />}
+              {view === 'graph' && shown === '2d' && <LiveLayoutToggle live={live} onChange={setLive} />}
               {view === 'graph' && (
-                <SegmentedControl label="Draw the graph in" size="small" value={depth} onChange={setDepth} options={[{ value: '2d', label: '2D' }, { value: '3d', label: '3D' }]} />
+                <span title={fits3D(nodeCount) ? undefined : `3D draws up to ${MAX_3D_NODES} nodes; this result has ${nodeCount.toLocaleString()}`}>
+                  <SegmentedControl
+                    label="Draw the graph in"
+                    size="small"
+                    value={shown}
+                    onChange={setDepth}
+                    options={[{ value: '2d', label: '2D' }, { value: '3d', label: '3D', disabled: !fits3D(nodeCount) }]}
+                  />
+                </span>
               )}
               <Summary result={result} />
             </span>
@@ -312,7 +324,7 @@ export function Cypher() {
         >
           {view === 'graph' ? (
             <div className="studio-result">
-              {depth === '3d' ? (
+              {shown === '3d' ? (
                 <GraphView3D graph={drawn.graph} fragments={drawn.labels} onSelect={setSelection} />
               ) : (
                 <GraphView graph={drawn.graph} live={live} fragments={drawn.labels} onSelect={setSelection} />
