@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { GET as catalog } from './catalog/route'
+import { POST as explain } from './explain/route'
+import { GET as lists, PUT as change } from './lists/route'
 import { POST, PUT } from './route'
 import { GET as svg } from './svg/[name]/route'
 
@@ -77,5 +79,75 @@ describe('/api/icons/svg and /api/icons/catalog', () => {
   it('lists every icon with its tags', async () => {
     const icons = (await (await catalog(request('GET'))).json()) as Record<string, string[]>
     expect(icons.user).toContain('person')
+  })
+})
+
+describe('/api/icons/lists', () => {
+  it('gives the choices and the lists, the built-in ones beside their own', async () => {
+    await PUT(request('PUT', { label: 'Person', icon: 'bug' }))
+    const answer = (await (await lists(request('GET'))).json()) as Record<string, unknown> & { builtIn: { words: Record<string, string>; onlyByName: string[] } }
+    expect(answer).toMatchObject({ chosen: { Person: 'bug' }, words: {}, onlyByName: [] })
+    expect(answer.builtIn.words.person).toBe('user')
+    expect(answer.builtIn.onlyByName).toContain('cigarette')
+  })
+
+  it("adds a word of their own, as a label's words are looked up, which then gives labels their icon", async () => {
+    const answer = await (await change(request('PUT', { word: 'Space Probe', icon: 'radar' }))).json()
+    expect(answer).toMatchObject({ words: { spaceprobe: 'radar' } })
+    expect(await (await POST(request('POST', { labels: ['SpaceProbe'] }))).json()).toEqual({ SpaceProbe: { icon: 'radar', source: 'common' } })
+    expect(await (await change(request('PUT', { word: 'spaceprobe', forget: true }))).json()).toMatchObject({ words: {} })
+  })
+
+  it('lists an icon to take only by name, and takes it off', async () => {
+    expect(await (await change(request('PUT', { onlyByName: 'tablets', listed: true }))).json()).toMatchObject({ onlyByName: ['tablets'] })
+    expect(await (await change(request('PUT', { onlyByName: 'tablets', listed: false }))).json()).toMatchObject({ onlyByName: [] })
+  })
+
+  it.each([
+    [{ word: '', icon: 'radar' }, 'Name a word.'],
+    [{ word: '--', icon: 'radar' }, 'Name a word.'],
+    [{ word: 7, icon: 'radar' }, 'Name a word.'],
+    [{ word: 'probe', icon: 'no-such-icon' }, "Name one of Lucide's icons for the word."],
+    [{ word: 'probe', icon: null }, "Name one of Lucide's icons for the word."],
+    [{ onlyByName: '../package', listed: true }, "Name one of Lucide's icons."],
+    [{ onlyByName: 'tablets' }, 'Say whether the icon is listed.'],
+    [{}, 'Give a word and its icon, or an icon to take only by name.'],
+  ])('refuses to change the lists with %j', async (body, message) => {
+    expect(await error(await change(request('PUT', body)))).toEqual({ status: 400, error: message })
+  })
+
+  it('refuses another site', async () => {
+    expect((await lists(request('GET', undefined, { origin: 'https://example.com' }))).status).toBe(403)
+    expect((await change(request('PUT', { onlyByName: 'cat', listed: true }, { origin: 'https://example.com' }))).status).toBe(403)
+  })
+})
+
+describe('/api/icons/explain', () => {
+  // A model that finds nothing like any icon, in place of the studio's, which would be downloaded.
+  const shared = globalThis as { drivineStudioEmbed?: unknown }
+  beforeEach(() => {
+    shared.drivineStudioEmbed = { model: Promise.resolve(async () => new Array<number>(384).fill(0)) }
+  })
+  afterEach(() => {
+    delete shared.drivineStudioEmbed
+  })
+
+  it("gives each label's icon, why, and the model's nearest few", async () => {
+    const answer = (await (await explain(request('POST', { labels: ['GithubPerson', 'Probe'], picks: 2 }))).json()) as Record<string, { picks: unknown[] }>
+    expect(answer.GithubPerson).toMatchObject({ icon: 'user', source: 'common', word: 'person', own: false })
+    expect(answer.Probe).toMatchObject({ icon: null, source: 'none' })
+    expect(answer.Probe?.picks).toHaveLength(2)
+  })
+
+  it.each([
+    [{ labels: 'Person' }, 'Give the labels, a list of at most 500.'],
+    [{ labels: ['Person'], picks: 0 }, 'Ask for 1 to 20 picks.'],
+    [{ labels: ['Person'], picks: 2.5 }, 'Ask for 1 to 20 picks.'],
+  ])('refuses to explain %j', async (body, message) => {
+    expect(await error(await explain(request('POST', body)))).toEqual({ status: 400, error: message })
+  })
+
+  it('refuses another site', async () => {
+    expect((await explain(request('POST', { labels: [] }, { origin: 'https://example.com' }))).status).toBe(403)
   })
 })
