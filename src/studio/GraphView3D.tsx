@@ -293,6 +293,9 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         const texture = new THREE.CanvasTexture(n.canvas)
         texture.colorSpace = THREE.SRGBColorSpace
         n.icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, opacity: n.o }))
+        // After every shape: shapes and icons are both see-through, so three sorts them by distance each frame, and a shape
+        // sorted after its own icon painted over part of it. The depth test stays, so a nearer shape still hides it.
+        n.icon.renderOrder = 1
         n.icon.scale.set(n.size * 0.62, n.size * 0.62, 1)
         group.add(body, n.icon, nameOf(n))
         mark(n)
@@ -391,6 +394,9 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         const at = (n: Node3D) => new THREE.Vector3(n.x ?? 0, n.y ?? 0, n.z ?? 0)
         const centre = nodes.reduce((sum, n) => sum.add(at(n)), new THREE.Vector3()).divideScalar(nodes.length)
         const outward = at(hub).sub(centre)
+        // Level with the hub and a little above, whichever way it lies from the centre: a hub at the top had the view look
+        // straight down, where the spin only turns the picture in place.
+        outward.y = 0
         if (outward.lengthSq() < 1) outward.set(0, 0, 1)
         outward.normalize().add(new THREE.Vector3(0, 0.35, 0)).normalize()
         const near = new Set(pairs.flatMap(p => (p.from === hub.id ? [p.to] : p.to === hub.id ? [p.from] : [])))
@@ -570,7 +576,7 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
           // The name's ink is a little inside its canvas: the box is drawn in to it.
           boxes.push({ id, x, y, width: width * 0.94, height: tall * 0.72 })
         }
-        const room = uncrowded(boxes, 3)
+        const room = uncrowded(boxes, 3, 64, { width: wide, height: high })
         for (const n of nodes) n.named = room.has(n.id)
       }
 

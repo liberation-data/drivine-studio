@@ -134,6 +134,15 @@ describe('uncrowded', () => {
     expect(uncrowded([box('b', 0, 18), shape('a', 0, 0), shape('b', 0, 30)])).toEqual(new Set(['b']))
   })
 
+  it('grids a box many screens wide only where it is on screen, and it still blocks a name there', () => {
+    // A node right by the view: its shape is a million pixels across. Unclipped, that was some 240 million cells.
+    const near = { id: 'near', x: 600, y: 380, width: 1_000_000, height: 1_000_000, obstacle: true }
+    const started = performance.now()
+    expect(uncrowded([near, box('behind', 300, 200), box('own', 600, 380)].map(b => (b.id === 'own' ? { ...b, id: 'near' } : b)), 2, 64, { width: 1200, height: 760 }))
+      .toEqual(new Set(['near']))
+    expect(performance.now() - started).toBeLessThan(50)
+  })
+
   it('checks a dropped name against nothing: a name hidden takes no room', () => {
     expect(uncrowded([box('a', 0, 0), box('b', 35, 0), box('c', 70, 0)], 0)).toEqual(new Set(['a', 'c']))
   })

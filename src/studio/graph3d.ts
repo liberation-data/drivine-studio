@@ -135,18 +135,28 @@ export const overlaps = (a: NameBox, b: NameBox, gap = 0): boolean =>
 /**
  * The names shown: taken in the order given, each kept unless its box would overlap one kept before it, or an obstacle
  * given before it, of another node. A box is checked only against those in the cells of a coarse grid it touches, so a
- * frame stays cheap.
+ * frame stays cheap. With `screen`, a box is gridded only where it is on screen: a node close to the view has a box
+ * many screens wide, and gridding all of it took Firefox seconds a frame.
  */
-export function uncrowded(boxes: readonly NameBox[], gap = 2, cell = 64): Set<string> {
+export function uncrowded(
+  boxes: readonly NameBox[],
+  gap = 2,
+  cell = 64,
+  screen?: { readonly width: number; readonly height: number },
+): Set<string> {
   const kept = new Set<string>()
-  const grid = new Map<string, NameBox[]>()
+  // Cells by number, not by a string made of the two: a string a cell a frame was the garbage that slowed Firefox.
+  const grid = new Map<number, NameBox[]>()
+  const across = screen ? Math.ceil(screen.width / cell) : Infinity
+  const down = screen ? Math.ceil(screen.height / cell) : Infinity
+  const least = screen ? -1 : -Infinity
   const cellsOf = (b: NameBox) => {
-    const keys: string[] = []
-    const x0 = Math.floor((b.x - b.width / 2 - gap) / cell)
-    const x1 = Math.floor((b.x + b.width / 2 + gap) / cell)
-    const y0 = Math.floor((b.y - b.height / 2 - gap) / cell)
-    const y1 = Math.floor((b.y + b.height / 2 + gap) / cell)
-    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) keys.push(`${x},${y}`)
+    const keys: number[] = []
+    const x0 = Math.max(least, Math.floor((b.x - b.width / 2 - gap) / cell))
+    const x1 = Math.min(across, Math.floor((b.x + b.width / 2 + gap) / cell))
+    const y0 = Math.max(least, Math.floor((b.y - b.height / 2 - gap) / cell))
+    const y1 = Math.min(down, Math.floor((b.y + b.height / 2 + gap) / cell))
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) keys.push(x * 65536 + y)
     return keys
   }
   for (const box of boxes) {
