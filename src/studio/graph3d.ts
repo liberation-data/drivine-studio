@@ -93,3 +93,73 @@ export function toggled(hidden: ReadonlySet<string>, fragment: string, shown: bo
 
 /** A caption short enough to sit under a node. */
 export const clip = (text: string, most = 24): string => (text.length > most ? `${text.slice(0, most - 1).trimEnd()}…` : text)
+
+/** What the view knows of the reader's attention: the node chosen, the one under the pointer, the one in focus. */
+export interface Attention {
+  readonly chosen: string | null
+  readonly hovered: string | null
+  readonly focus: string | null
+}
+
+/**
+ * The order names are given room in: the node chosen, then the one under the pointer, then the focus node's
+ * neighbours, then every other node, those with most relationships first. Ties keep the graph's order.
+ */
+export function namePriority(ids: readonly string[], edges: readonly Ends[], attention: Attention): string[] {
+  const counts = degrees(edges)
+  const near = attention.focus === null ? new Set<string>() : focusSetOf(attention.focus, edges)
+  const rank = (id: string) => (id === attention.chosen ? 0 : id === attention.hovered ? 1 : near.has(id) ? 2 : 3)
+  return ids
+    .map((id, i) => ({ id, i, rank: rank(id), degree: counts.get(id) ?? 0 }))
+    .sort((a, b) => a.rank - b.rank || b.degree - a.degree || a.i - b.i)
+    .map(({ id }) => id)
+}
+
+/**
+ * A box on screen, in pixels, from its middle: a name's, or an obstacle's, such as a node's shape, which a name must
+ * not cover but which is drawn whatever happens. A box never clashes with another of the same node's.
+ */
+export interface NameBox {
+  readonly id: string
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+  readonly obstacle?: boolean
+}
+
+/** Whether two boxes overlap, with `gap` pixels kept clear between them. */
+export const overlaps = (a: NameBox, b: NameBox, gap = 0): boolean =>
+  Math.abs(a.x - b.x) * 2 < a.width + b.width + gap * 2 && Math.abs(a.y - b.y) * 2 < a.height + b.height + gap * 2
+
+/**
+ * The names shown: taken in the order given, each kept unless its box would overlap one kept before it, or an obstacle
+ * given before it, of another node. A box is checked only against those in the cells of a coarse grid it touches, so a
+ * frame stays cheap.
+ */
+export function uncrowded(boxes: readonly NameBox[], gap = 2, cell = 64): Set<string> {
+  const kept = new Set<string>()
+  const grid = new Map<string, NameBox[]>()
+  const cellsOf = (b: NameBox) => {
+    const keys: string[] = []
+    const x0 = Math.floor((b.x - b.width / 2 - gap) / cell)
+    const x1 = Math.floor((b.x + b.width / 2 + gap) / cell)
+    const y0 = Math.floor((b.y - b.height / 2 - gap) / cell)
+    const y1 = Math.floor((b.y + b.height / 2 + gap) / cell)
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) keys.push(`${x},${y}`)
+    return keys
+  }
+  for (const box of boxes) {
+    const keys = cellsOf(box)
+    if (!box.obstacle) {
+      if (keys.some(k => grid.get(k)?.some(other => other.id !== box.id && overlaps(box, other, gap)))) continue
+      kept.add(box.id)
+    }
+    for (const k of keys) {
+      const list = grid.get(k)
+      if (list) list.push(box)
+      else grid.set(k, [box])
+    }
+  }
+  return kept
+}
