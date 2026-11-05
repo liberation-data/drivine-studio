@@ -48,6 +48,8 @@ describe('common', () => {
     expect(common('IssueCore')).toBe('circle-dot')
     expect(common('PurchaseOrder')).toBe('shopping-cart')
     expect(common('Address2')).toBe('map-pinned')
+    expect(common('ContentElement')).toBe('file-text')
+    expect(common('Persona')).toBe('venetian-mask')
   })
 
   it("gives only Lucide's icons, as an upgrade of Lucide may rename one", () => {

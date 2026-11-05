@@ -40,7 +40,8 @@ export const COMMON: Record<string, string> = {
   repo: 'folder-git-2', branch: 'git-branch', vehicle: 'car', car: 'car', animal: 'dog', recipe: 'chef-hat',
   ingredient: 'apple', link: 'link', url: 'link', notification: 'bell', ticket: 'ticket', store: 'store',
   shop: 'store', wallet: 'wallet', bank: 'landmark', course: 'graduation-cap', job: 'briefcase',
-  embedding: 'sparkles', vector: 'sparkles', concept: 'brain', network: 'network',
+  embedding: 'sparkles', vector: 'sparkles', concept: 'brain', network: 'network', content: 'file-text',
+  persona: 'venetian-mask',
 }
 
 /**
