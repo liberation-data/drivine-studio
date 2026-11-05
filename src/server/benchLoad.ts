@@ -5,11 +5,11 @@ import {
 
 import { BenchError } from './bench'
 import type { EngineResults } from './bench'
-import { Dataset, LABELS, Scale } from './benchData'
+import { Dataset, LABELS, Scale, SCALES } from './benchData'
 import type { EdgeSet, Label } from './benchData'
 import { findConnection } from './connections'
 import type { Connection } from './connections'
-import { NoGraphError, providerFor, readRows, run } from './datasources'
+import { NoGraphError, providerFor, readRows, run, SQL_STORES } from './datasources'
 import { readHomeFile, serially, writeHomeFile } from './home'
 
 /*
@@ -18,6 +18,10 @@ import { readHomeFile, serially, writeHomeFile } from './home'
  * write it, by Drivine: each label's id indexed, as unique where the store can afford it, then the nodes and the
  * relationships in batches of rows, with UNWIND. Graph Bench itself loads Postgres and Oracle with their bulk paths,
  * which are quicker: these load times say what Cypher through Drivine costs, not what the store can do at best.
+ *
+ * On Postgres and Oracle the relationships take time in nodes × relationships for now: a node matched by `{id: row.s}`
+ * doesn't use the id's index there, so each row reads its label (liberation-data/drivine#636). Past a small scale, a
+ * load there is long.
  *
  * It writes, so only on a connection that allows writes, and only into a graph without Graph Bench's data already.
  */
@@ -53,12 +57,9 @@ export interface LoadBatch {
   loads: LoadJob[]
 }
 
-/** The scales a load takes: from about 1,100 nodes to about 11 million. Past SLOW, a load is long. */
-export const SMALLEST = 0.001
-export const LARGEST = 10
-export const SLOW = 0.1
-/** Graph Bench's dataset has about four relationships a node: an estimate, for the progress bar. */
-const EDGES_A_NODE = 4
+/** The scales a load takes: any from the smallest offered to the largest. */
+export const SMALLEST = SCALES[0]
+export const LARGEST = SCALES[SCALES.length - 1]!
 
 const LOADS = 'bench-loads.json'
 
@@ -93,33 +94,53 @@ export async function startLoad(input: { connections: string[]; scale: number })
 
 const loading = (id: string) => [...batches_.values()].some(b => b.loads.some(l => l.connection === id && (l.state === 'running' || l.state === 'waiting')))
 
-/** Starts a load into each connection given, once each is found able to take it: else none is started. */
-export async function beginLoad(connections: Connection[], scale: number): Promise<LoadBatch> {
+const refuseWrites = (connection: Connection) =>
+  new BenchError(`${connection.name} doesn't allow writes. Allow them in its settings to load Graph Bench's data there.`)
+const refuseLoading = (connection: Connection) => new BenchError(`${connection.name} is being loaded already.`)
+
+/**
+ * Starts a load into each connection given, once each is found able to take it: else none is started. Each is read
+ * again by `latest` when its turn comes, since a batch can wait hours: one taken off writes, or removed, meanwhile is
+ * not written to.
+ */
+export async function beginLoad(
+  connections: Connection[],
+  scale: number,
+  latest: (connection: Connection) => Promise<Connection> = c => findConnection(c.id),
+): Promise<LoadBatch> {
   for (const connection of connections) {
-    if (!connection.allowWrites) throw new BenchError(`${connection.name} doesn't allow writes. Allow them in its settings to load Graph Bench's data there.`)
-    if (loading(connection.id)) throw new BenchError(`${connection.name} is being loaded already.`)
-    // A graph not there yet is empty: the load makes it.
-    const there = await readRows(connection, 'MATCH (n:Comment) RETURN count(n) AS c', {}, 1, value => Number(value)).catch((e: unknown) => {
+    if (!connection.allowWrites) throw refuseWrites(connection)
+    if (loading(connection.id)) throw refuseLoading(connection)
+    // A graph not there yet is empty: the load makes it. The label written first is looked for, so that a load that
+    // stopped partway is not loaded again on top: FalkorDB's ids are not unique, so nothing else would stop it.
+    const there = await readRows(connection, `MATCH (n:${LABELS[0]}) RETURN count(n) AS c`, {}, 1, value => Number(value)).catch((e: unknown) => {
       if (e instanceof NoGraphError) return { rows: [[0]] }
       throw e
     })
-    if (Number(there.rows[0]?.[0] ?? 0) > 0) throw new BenchError(`${connection.name} has Graph Bench's data already, or nodes labelled Comment. Load into an empty graph.`)
+    if (Number(there.rows[0]?.[0] ?? 0) > 0) throw new BenchError(`${connection.name} has Graph Bench's data already, or some of it, or nodes labelled ${LABELS[0]}. Load into an empty graph.`)
   }
+  // Another load may have started on one of them while the graphs were read: checked again, with nothing awaited after.
+  const taken = connections.find(c => loading(c.id))
+  if (taken) throw refuseLoading(taken)
   const data = new Dataset(new Scale(scale))
   const batch: LoadBatch = {
     id: `${Date.now().toString(36)}-load`, scale, state: 'running',
     loads: connections.map(c => ({
       connection: c.id, name: c.name, type: c.type.toLowerCase(), state: 'waiting', done: 0,
-      total: data.scale.nodes * (1 + EDGES_A_NODE), now: 'Waiting its turn',
+      total: data.scale.nodes + data.scale.relationships, now: 'Waiting its turn',
     })),
   }
   batches_.set(batch.id, batch)
   void (async () => {
-    for (const [i, connection] of connections.entries()) {
+    for (const [i, given] of connections.entries()) {
       const job = batch.loads[i]!
       job.state = 'running'
-      job.now = 'Making the indexes'
-      await loadIn(job, connection, data).catch((e: unknown) => {
+      await (async () => {
+        const connection = await latest(given)
+        if (!connection.allowWrites) throw refuseWrites(connection)
+        job.now = 'Making the indexes'
+        await loadIn(job, connection, data)
+      })().catch((e: unknown) => {
         job.state = 'failed'
         job.error = e instanceof Error ? e.message : String(e)
       })
@@ -140,7 +161,7 @@ async function loadIn(job: LoadJob, connection: Connection, data: Dataset): Prom
   let nodes = 0
   for (const label of LABELS) {
     job.now = `${data.count(label).toLocaleString()} ${label} nodes`
-    for (const rows of batches(data.nodes(label), batchSize(connection))) {
+    for (const rows of batches(data.nodes(label), batchSize(connection, 'nodes'))) {
       await write(connection, nodeStatement(label), { rows })
       nodes += rows.length
       job.done += rows.length
@@ -152,7 +173,7 @@ async function loadIn(job: LoadJob, connection: Connection, data: Dataset): Prom
   let edges = 0
   for (const set of data.edges) {
     job.now = `${set.type} relationships`
-    for (const pairs of batches(set.pairs(), batchSize(connection))) {
+    for (const pairs of batches(set.pairs(), batchSize(connection, 'relationships'))) {
       await write(connection, edgeStatement(set), { rows: pairs.map(([s, d]) => ({ s, d })) })
       edges += pairs.length
       job.done += pairs.length
@@ -200,8 +221,16 @@ export const nodeStatement = (label: Label) => `UNWIND $rows AS row CREATE (n:${
 export const edgeStatement = (set: Pick<EdgeSet, 'type' | 'from' | 'to'>) =>
   `UNWIND $rows AS row MATCH (a:${set.from} {id: row.s}) MATCH (b:${set.to} {id: row.d}) CREATE (a)-[:${set.type}]->(b)`
 
-/** FalkorDB is sent its parameters as text in the query, and Postgres and Oracle a batch as one JSON value: smaller. */
-const batchSize = (connection: Connection) => (connection.type === 'NEO4J' || connection.type === 'MEMGRAPH' ? 20_000 : 5_000)
+/**
+ * How many rows a statement writes. FalkorDB is sent its parameters as text in the query: smaller than over Bolt.
+ * Postgres and Oracle are sent a batch as one JSON value. Drivine 3.4's compiled write copies the rows it has written
+ * once per row, so a batch of nodes takes time in the square of its size: on Postgres 4,000 nodes took 5.3 s in one
+ * batch and 0.55 s in batches of 250, on Oracle 2,000 took 3.0 s and 0.9 s (liberation-data/drivine#624 fixes it after
+ * 3.4.1). Relationships keep large batches: their time is in matching the ends (drivine#636), and Oracle matches them a
+ * statement at a time, so at scale 0.001 its relationships took 12 s in batches of 5,000 and 269 s in batches of 250.
+ */
+export const batchSize = (connection: Pick<Connection, 'type'>, rows: 'nodes' | 'relationships') =>
+  connection.type === 'NEO4J' || connection.type === 'MEMGRAPH' ? 20_000 : rows === 'nodes' && SQL_STORES.includes(connection.type) ? 250 : 5_000
 
 const write = (connection: Connection, statement: string, parameters: Record<string, unknown>) =>
   run(connection, statement, parameters, 1, { writes: true })

@@ -6,7 +6,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { BenchSet, EngineResults, Outcome } from '../server/bench'
 import type { RunJob } from '../server/benchRun'
 import type { Loaded, LoadBatch, LoadJob } from '../server/benchLoad'
-import { Scale } from '../server/benchData'
+import { Scale, SCALES, SLOW_SCALE } from '../server/benchData'
 import { listConnections, DATABASE_NAMES } from './database'
 import { useOnline } from './online'
 import type { StudioConnection } from './database'
@@ -704,9 +704,6 @@ function NewRun({ onStarted, onCancel }: { onStarted: (job: RunJob) => void; onC
   )
 }
 
-/** The scales offered, from a quick look to a graph of millions. */
-const SCALES = [0.001, 0.01, 0.1, 1, 3, 10]
-const SLOW_SCALE = 0.1
 /** The size section's colour at each scale: cool for a quick look, hotter as the graph grows. */
 const HEAT = ['#3fb8c4', '#45c29b', '#d9c443', '#f0a03a', '#ee6a32', '#e5383b']
 
@@ -752,7 +749,7 @@ function LoadData({ onStarted, onCancel }: { onStarted: (batch: LoadBatch) => vo
             {SCALES.map((s, i) => <span key={s} data-on={i === step ? '' : undefined}>{s}</span>)}
           </div>
           <p className="studio-bench-size-says">
-            <strong>{size.nodes.toLocaleString()}</strong> nodes and about <strong>{(size.nodes * 4).toLocaleString()}</strong> relationships
+            <strong>{size.nodes.toLocaleString()}</strong> nodes and about <strong>{size.relationships.toLocaleString()}</strong> relationships
           </p>
           {scale > SLOW_SCALE && (
             <p className="desk-text-small studio-warn" role="note">

@@ -40,7 +40,8 @@ const count = async (connection: Connection, statement: string) => Number((await
 
 function loads(connection: () => Connection) {
   it('loads every node and relationship Graph Bench makes, and remembers it', async () => {
-    const done = await finished(await beginLoad([connection()], SMALLEST))
+    // The connection is not saved in the studio: its turn takes it as it is.
+    const done = await finished(await beginLoad([connection()], SMALLEST, async c => c))
     expect(done.error).toBeUndefined()
     expect(done.state).toBe('done')
     expect(done.loaded!.load).toMatchObject({ nodes: data.scale.nodes, edges: EDGES })
@@ -55,7 +56,7 @@ function loads(connection: () => Connection) {
   })
 
   it('refuses to load twice into the same graph', async () => {
-    await expect(beginLoad([connection()], SMALLEST)).rejects.toThrow(/already/)
+    await expect(beginLoad([connection()], SMALLEST, async c => c)).rejects.toThrow(/already/)
   })
 }
 
