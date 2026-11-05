@@ -16,10 +16,12 @@ import { Bench } from './Bench'
 import { Files, QueryIcon } from './Files'
 import { listQueries, QUERY_DRAG } from './savedQueries'
 import type { QueryDrag } from './savedQueries'
-import { ALLOWS_WRITES, DATABASE_NAMES, listConnections } from './database'
+import { connectionChoices } from './connectionMenu'
+import { ALLOWS_WRITES, listConnections } from './database'
 import type { StudioConnection } from './database'
 import { inCatalog, nextSubject } from './model'
 import { nativeMenus, useNativeMenus } from './nativeMenu'
+import { useOnline } from './online'
 import type { Subject } from './model'
 
 const desk = createDesk()
@@ -307,6 +309,8 @@ export function App() {
    * The connection in use, at the trailing end of the menu bar: one for the whole studio, so chosen where the whole
    * studio is, not in a window. Each window's title bar names it too.
    */
+  // Whether each is up, tried every few seconds: a menu gives no word of opening or closing to try it then.
+  const up = useOnline((connections ?? []).map(c => c.id))
   const status = useMemo(() => [{
     id: 'connection',
     label: connection?.name ?? 'No Connection',
@@ -318,13 +322,14 @@ export function App() {
     ),
     items: () => [
       menuHeader('Connection'),
-      ...(connections ?? []).map(c =>
-        menuAction(c.name, () => chooseConnection(c.id), { checked: c.id === connection?.id, detail: DATABASE_NAMES[c.type] }),
+      // Those that are up first; one that isn't running greyed out, saying so, as Bench's pickers do.
+      ...connectionChoices(connections ?? [], up, connection?.id).map(({ connection: c, detail, disabled, checked }) =>
+        menuAction(c.name, () => chooseConnection(c.id), { checked, detail, disabled }),
       ),
       ...(connections?.length ? [menuSeparator()] : []),
       menuAction('Connections…', () => desk.open('connections')),
     ],
-  }], [connections, connection, chooseConnection])
+  }], [connections, connection, chooseConnection, up])
   useNativeMenus(native, menus, desk, status)
 
   /*
