@@ -66,8 +66,10 @@ export function Bench() {
   // A run going on: read how it's getting on every second, and show its results when it's done.
   useEffect(() => {
     if (!job || job.state !== 'running') return
+    // Gone, as when the studio was restarted under it: said so, so it can be closed, rather than polled forever.
+    const gone: RunJob = { ...job, state: 'failed', now: '', error: 'The studio no longer knows of this run: it was restarted while it ran.' }
     const timer = setInterval(() => {
-      fetch(`${API}/runs/${encodeURIComponent(job.id)}`, { cache: 'no-store' }).then(r => read<RunJob>(r)).then(now => {
+      fetch(`${API}/runs/${encodeURIComponent(job.id)}`, { cache: 'no-store' }).then(r => (r.status === 404 ? gone : read<RunJob>(r))).then(now => {
         setJob(now)
         if (now.state === 'done' && now.set) {
           void reload()
@@ -153,7 +155,11 @@ export function Bench() {
             {load ? (
               <LoadProgress batch={load} onClose={() => setLoad(null)} />
             ) : job && job.state !== 'done' ? (
-              <RunProgress job={job} onClose={() => setJob(null)} />
+              <RunProgress
+                job={job}
+                onClose={() => setJob(null)}
+                onStop={() => fetch(`${API}/runs/${encodeURIComponent(job.id)}`, { method: 'DELETE' }).then(r => read<RunJob>(r)).then(setJob, (e: unknown) => setProblem(message(e)))}
+              />
             ) : scaling && set ? (
               <Scaling set={set} />
             ) : !results ? <Loading label="Reading them" /> : <Report results={results} base={other ? base : null} baseName={other ? nameOf(other, sets) : null} />}
@@ -356,6 +362,31 @@ function LinkBench({ onDone }: { onDone: (linked: boolean) => void }) {
 }
 
 /**
+ * How many workloads each engine was fastest at, of those two or more ran: on threads the most calls a second, else
+ * the least middle time. A tie wins for each engine in it, as the table marks each; a throughput not kept is no figure.
+ * And how many of those every engine gave a digest for, and agreed on.
+ */
+export function scores(results: EngineResults[], keys: Outcome[], find: (rs: EngineResults[] | null, engine: string, o: Outcome) => Outcome | undefined) {
+  const wins = new Map<string, number>(results.map(r => [r.engine, 0]))
+  let agreed = 0
+  let compared = 0
+  for (const o of keys) {
+    const concurrent = o.group.endsWith('threads')
+    const found = results.map(r => ({ engine: r.engine, f: find(results, r.engine, o) })).filter(x => x.f !== undefined)
+    if (found.length < 2) continue
+    const values = found.map(({ engine, f }) => ({ engine, value: concurrent ? f!.throughput : f!.p50 })).filter((v): v is { engine: string; value: number } => v.value !== null)
+    const best = concurrent ? Math.max(...values.map(v => v.value)) : Math.min(...values.map(v => v.value))
+    if (values.length > 1) for (const v of values) if (v.value === best) wins.set(v.engine, (wins.get(v.engine) ?? 0) + 1)
+    const digests = found.map(x => x.f!.digest).filter(Boolean)
+    if (digests.length === results.length) {
+      compared += 1
+      if (new Set(digests).size === 1) agreed += 1
+    }
+  }
+  return { wins, agreed, compared }
+}
+
+/**
  * The headline: for each engine, how many workloads it was the fastest on, in its colour, and how many answers every
  * engine agreed on. What's under it says how far apart they were.
  */
@@ -365,25 +396,9 @@ function Scoreboard({ results, keys, find }: {
   find: (rs: EngineResults[] | null, engine: string, o: Outcome) => Outcome | undefined
 }) {
   if (results.length < 2) return null
-  const wins = new Map<string, number>(results.map(r => [r.engine, 0]))
-  let agreed = 0
-  let compared = 0
-  for (const o of keys) {
-    const concurrent = o.group.endsWith('threads')
-    const values = results.map(r => {
-      const f = find(results, r.engine, o)
-      return f ? { engine: r.engine, value: concurrent ? f.throughput ?? 0 : f.p50, digest: f.digest } : null
-    }).filter((v): v is { engine: string; value: number; digest: string | null } => v !== null)
-    if (values.length < 2) continue
-    const best = values.reduce((a, b) => (concurrent ? (b.value > a.value ? b : a) : (b.value < a.value ? b : a)))
-    wins.set(best.engine, (wins.get(best.engine) ?? 0) + 1)
-    const digests = values.map(v => v.digest).filter(Boolean)
-    if (digests.length === results.length) {
-      compared += 1
-      if (new Set(digests).size === 1) agreed += 1
-    }
-  }
-  const leader = Math.max(...wins.values())
+  const { wins, agreed, compared } = scores(results, keys, find)
+  // No trophy where nothing was won: no workload ran on two engines.
+  const leader = Math.max(1, ...wins.values())
   return (
     <div className="studio-bench-scores" role="list" aria-label="Fastest, by engine">
       {results.map(r => (
@@ -405,14 +420,29 @@ function Scoreboard({ results, keys, find }: {
   )
 }
 
-/** A point of a workload's line: how many nodes the graph had, and the middle time there. */
-interface Point { nodes: number; ms: number; p95: number }
+/** A point of a workload's line: how many nodes the graph had, and the middle time there, or calls a second on threads. */
+interface Point { nodes: number; ms: number; p95: number; throughput?: number | null }
 
-/** Where one engine's line drops below another's, between two sizes: estimated on the log–log lines between them. */
+/** A workload run on threads is measured in calls a second, and the most wins; the others by middle time, the least. */
+const onThreads = (group: string) => group.endsWith('threads')
+/** What a point is ranked and drawn by: calls a second on threads, else the middle time; undefined if it has none. */
+const valueOf = (p: Point, threads: boolean) => (threads ? (p.throughput ?? undefined) : p.ms)
+
+/**
+ * Where one engine's line passes another's, between two sizes: estimated on the log–log lines between them. Only
+ * engines measured at both sizes are compared, and only a strict lead counts: a tie at either size is no overtaking.
+ */
 export interface Crossover { workload: string; group: string; ahead: string; behind: string; from: number; to: number; at: number }
 
-/** The size of a set's graph at a scale: the load's own count, or Graph Bench's 1,121,500 a scale when it wasn't kept. */
-const nodesOf = (r: EngineResults) => r.load?.nodes ?? Math.round(1_121_500 * r.scale)
+/**
+ * The size of a set's graph at each scale: the nodes a load there counted, or else Graph Bench's dataset's at that
+ * scale. One size a scale, so engines run at one scale meet at one size, whether or not each kept its load.
+ */
+export const sizesOf = (all: EngineResults[]) => {
+  const counted = new Map<number, number>()
+  for (const r of all) if (r.load && !counted.has(r.scale)) counted.set(r.scale, r.load.nodes)
+  return (r: EngineResults) => counted.get(r.scale) ?? new Scale(r.scale).nodes
+}
 
 /**
  * For each workload, where the fastest engine changes as the graph grows: the engine that leads at the larger size,
@@ -423,22 +453,43 @@ export function crossovers(lines: Map<string, Map<string, Point[]>>, workloads: 
   for (const w of workloads) {
     const byEngine = lines.get(`${w.group}|${w.name}`)
     if (!byEngine || byEngine.size < 2) continue
+    const threads = onThreads(w.group)
     const sizes = [...new Set([...byEngine.values()].flatMap(ps => ps.map(p => p.nodes)))].sort((a, b) => a - b)
-    const at = (engine: string, n: number) => byEngine.get(engine)?.find(p => p.nodes === n)?.ms
-    const leaderAt = (n: number) =>
-      [...byEngine.keys()].map(e => ({ e, ms: at(e, n) })).filter((x): x is { e: string; ms: number } => x.ms !== undefined).sort((a, b) => a.ms - b.ms)[0]?.e
-    for (let i = 1; i < sizes.length; i++) {
-      const before = leaderAt(sizes[i - 1]!)
-      const after = leaderAt(sizes[i]!)
-      if (!before || !after || before === after) continue
-      const [n0, n1] = [sizes[i - 1]!, sizes[i]!]
-      // Where the two lines meet, in log space: the difference of their logs goes from positive to negative.
-      const d0 = Math.log(at(after, n0) ?? 1) - Math.log(at(before, n0) ?? 1)
-      const d1 = Math.log(at(after, n1) ?? 1) - Math.log(at(before, n1) ?? 1)
-      const t = d0 === d1 ? 0.5 : d0 / (d0 - d1)
-      const meet = Math.exp(Math.log(n0) + Math.min(1, Math.max(0, t)) * (Math.log(n1) - Math.log(n0)))
-      found.push({ workload: w.name, group: w.group, ahead: after, behind: before, from: n0, to: n1, at: meet })
+    const at = (engine: string, n: number) => {
+      const p = byEngine.get(engine)?.find(p => p.nodes === n)
+      return p ? valueOf(p, threads) : undefined
     }
+    // The one engine strictly ahead at a size, of those given; none on a tie for the lead.
+    const leaderAt = (engines: string[], n: number) => {
+      const ranked = engines.map(e => ({ e, v: at(e, n)! })).sort((a, b) => (threads ? b.v - a.v : a.v - b.v))
+      return ranked.length > 1 && ranked[0]!.v === ranked[1]!.v ? undefined : ranked[0]?.e
+    }
+    // Logs of values a store reported as 0 would be infinite: they are taken as a microsecond, as the chart draws them.
+    const log = (v: number) => Math.log(Math.max(v, 1e-6))
+    const engines = [...byEngine.keys()]
+    const measured = (n: number) => engines.filter(e => at(e, n) !== undefined)
+    const here: Crossover[] = []
+    // Each two engines, between each two sizes both were measured at, so a size one of them missed doesn't hide a change.
+    for (const [i, a] of engines.entries()) {
+      for (const b of engines.slice(i + 1)) {
+        const common = sizes.filter(n => at(a, n) !== undefined && at(b, n) !== undefined)
+        for (let k = 1; k < common.length; k++) {
+          const [n0, n1] = [common[k - 1]!, common[k]!]
+          const before = leaderAt([a, b], n0)
+          const after = leaderAt([a, b], n1)
+          if (!before || !after || before === after) continue
+          // Only a change of the fastest: the one behind led every engine measured at the smaller size, the one ahead every one at the larger.
+          if (leaderAt(measured(n0), n0) !== before || leaderAt(measured(n1), n1) !== after) continue
+          // Where the two lines meet, in log space: the difference of their logs changes sign between the two sizes.
+          const d0 = log(at(after, n0)!) - log(at(before, n0)!)
+          const d1 = log(at(after, n1)!) - log(at(before, n1)!)
+          const t = d0 / (d0 - d1)
+          const meet = Math.exp(Math.log(n0) + Math.min(1, Math.max(0, t)) * (Math.log(n1) - Math.log(n0)))
+          here.push({ workload: w.name, group: w.group, ahead: after, behind: before, from: n0, to: n1, at: meet })
+        }
+      }
+    }
+    found.push(...here.sort((x, y) => x.from - y.from || x.to - y.to))
   }
   return found
 }
@@ -451,18 +502,25 @@ function Scaling({ set }: { set: BenchSet }) {
   const [problem, setProblem] = useState<string | null>(null)
   useEffect(() => {
     setAll(null)
-    Promise.all(set.scales.map(scale => resultsOf(set, scale))).then(got => setAll(got.flat()), (e: unknown) => setProblem(message(e)))
-  }, [set])
+    setProblem(null)
+    // Another set chosen while this one's were read: what this one's give back is left.
+    let gone = false
+    Promise.all(set.scales.map(scale => resultsOf(set, scale))).then(got => gone || setAll(got.flat()), (e: unknown) => gone || setProblem(message(e)))
+    return () => {
+      gone = true
+    }
+  }, [set.source, set.set, set.scales.join()])
   const shaped = useMemo(() => {
     if (!all) return null
     const lines = new Map<string, Map<string, Point[]>>()
     const workloads = new Map<string, Outcome>()
+    const nodesOf = sizesOf(all)
     for (const r of all) {
       for (const o of r.outcomes) {
         const key = `${o.group}|${o.name}`
         workloads.set(key, o)
         const byEngine = lines.get(key) ?? new Map<string, Point[]>()
-        byEngine.set(r.engine, [...(byEngine.get(r.engine) ?? []), { nodes: nodesOf(r), ms: o.p50, p95: o.p95 }].sort((a, b) => a.nodes - b.nodes))
+        byEngine.set(r.engine, [...(byEngine.get(r.engine) ?? []), { nodes: nodesOf(r), ms: o.p50, p95: o.p95, throughput: o.throughput }].sort((a, b) => a.nodes - b.nodes))
         lines.set(key, byEngine)
       }
     }
@@ -479,7 +537,7 @@ function Scaling({ set }: { set: BenchSet }) {
     <div className="studio-bench-report">
       <div className="studio-bench-legend" aria-label="Engines">
         {shaped.engines.map(e => <EngineName key={e} engine={e} />)}
-        <span className="desk-text-small desk-text-muted">· middle time against the graph’s nodes, both on log scales: {shaped.sizes.map(count).join(', ')}</span>
+        <span className="desk-text-small desk-text-muted">· middle time, or calls a second on threads, against the graph’s nodes, both on log scales: {shaped.sizes.map(count).join(', ')}</span>
       </div>
       <h3>Crossovers</h3>
       {shaped.crossings.length === 0 ? (
@@ -487,7 +545,7 @@ function Scaling({ set }: { set: BenchSet }) {
       ) : (
         <ul className="studio-bench-crossings">
           {shaped.crossings.map(c => (
-            <li key={`${c.group}|${c.workload}|${c.from}`}>
+            <li key={`${c.group}|${c.workload}|${c.from}|${c.to}`}>
               <EngineName engine={c.ahead} /> overtakes <EngineName engine={c.behind} /> at about <strong>{count(c.at)} nodes</strong>
               <span className="desk-text-muted"> (between {count(c.from)} and {count(c.to)})</span> on <em>{c.workload}</em>
             </li>
@@ -502,6 +560,7 @@ function Scaling({ set }: { set: BenchSet }) {
               <ScalingChart
                 key={w.name}
                 title={w.name}
+                threads={onThreads(w.group)}
                 lines={shaped.lines.get(`${w.group}|${w.name}`) ?? new Map()}
                 sizes={shaped.sizes}
                 crossings={shaped.crossings.filter(c => c.group === w.group && c.workload === w.name)}
@@ -515,37 +574,47 @@ function Scaling({ set }: { set: BenchSet }) {
 }
 
 /** One workload: a 2px line an engine, markers at each size with the figures on hover, and where the lead changed. */
-function ScalingChart({ title, lines, sizes, crossings }: { title: string; lines: Map<string, Point[]>; sizes: number[]; crossings: Crossover[] }) {
+function ScalingChart({ title, threads, lines, sizes, crossings }: {
+  title: string
+  /** Run on threads: drawn in calls a second, as the report gives it, rather than middle time. */
+  threads: boolean
+  lines: Map<string, Point[]>
+  sizes: number[]
+  crossings: Crossover[]
+}) {
   const W = 300
   const H = 160
   const pad = { l: 40, r: 10, t: 8, b: 22 }
-  const values = [...lines.values()].flat().map(p => p.ms).filter(v => v > 0)
+  const drawn = new Map([...lines].map(([engine, points]) => [engine, points.filter(p => valueOf(p, threads) !== undefined)]))
+  const values = [...drawn.values()].flat().map(p => valueOf(p, threads)!).filter(v => v > 0)
   if (!values.length || sizes.length < 2) return null
   const lo = Math.log10(Math.min(...values)) - 0.1
   const hi = Math.log10(Math.max(...values)) + 0.1
   const x = (n: number) => pad.l + ((Math.log10(n) - Math.log10(sizes[0]!)) / (Math.log10(sizes[sizes.length - 1]!) - Math.log10(sizes[0]!) || 1)) * (W - pad.l - pad.r)
-  const y = (ms: number) => pad.t + (1 - (Math.log10(Math.max(ms, 1e-6)) - lo) / (hi - lo || 1)) * (H - pad.t - pad.b)
+  const y = (v: number) => pad.t + (1 - (Math.log10(Math.max(v, 1e-6)) - lo) / (hi - lo || 1)) * (H - pad.t - pad.b)
   // A gridline at each power of ten in range, labelled.
   const decades: number[] = []
   for (let d = Math.ceil(lo); d <= Math.floor(hi); d++) decades.push(10 ** d)
   return (
     <figure className="studio-bench-chart">
       <figcaption>{title}</figcaption>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title}: middle time by graph size`}>
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title}: ${threads ? 'calls a second' : 'middle time'} by graph size`}>
         {decades.map(d => (
           <g key={d}>
             <line x1={pad.l} x2={W - pad.r} y1={y(d)} y2={y(d)} className="studio-bench-grid" />
-            <text x={pad.l - 4} y={y(d) + 3} textAnchor="end" className="studio-bench-tick">{d >= 1000 ? `${d / 1000}s` : `${d}ms`}</text>
+            <text x={pad.l - 4} y={y(d) + 3} textAnchor="end" className="studio-bench-tick">{threads ? `${count(d)}/s` : d >= 1000 ? `${d / 1000}s` : `${d}ms`}</text>
           </g>
         ))}
         {sizes.map(n => <text key={n} x={x(n)} y={H - 6} textAnchor="middle" className="studio-bench-tick">{count(n)}</text>)}
-        {crossings.map(c => <line key={c.from} x1={x(c.at)} x2={x(c.at)} y1={pad.t} y2={H - pad.b} className="studio-bench-cross" style={{ stroke: colourOf(c.ahead) }} />)}
-        {[...lines.entries()].map(([engine, points]) => (
+        {crossings.map(c => <line key={`${c.from}|${c.to}`} x1={x(c.at)} x2={x(c.at)} y1={pad.t} y2={H - pad.b} className="studio-bench-cross" style={{ stroke: colourOf(c.ahead) }} />)}
+        {[...drawn.entries()].map(([engine, points]) => (
           <g key={engine} style={{ color: colourOf(engine) }}>
-            <polyline points={points.map(p => `${x(p.nodes)},${y(p.ms)}`).join(' ')} className="studio-bench-line" />
+            <polyline points={points.map(p => `${x(p.nodes)},${y(valueOf(p, threads)!)}`).join(' ')} className="studio-bench-line" />
             {points.map(p => (
-              <circle key={p.nodes} cx={x(p.nodes)} cy={y(p.ms)} r={4} className="studio-bench-point">
-                <title>{`${engine} at ${count(p.nodes)} nodes: middle ${p.ms.toFixed(2)} ms, slowest 5% ${p.p95.toFixed(2)} ms`}</title>
+              <circle key={p.nodes} cx={x(p.nodes)} cy={y(valueOf(p, threads)!)} r={4} className="studio-bench-point">
+                <title>{threads
+                  ? `${engine} at ${count(p.nodes)} nodes: ${Math.round(p.throughput!).toLocaleString()} calls a second`
+                  : `${engine} at ${count(p.nodes)} nodes: middle ${p.ms.toFixed(2)} ms, slowest 5% ${p.p95.toFixed(2)} ms`}</title>
               </circle>
             ))}
           </g>
@@ -804,7 +873,7 @@ function LoadRow({ load }: { load: LoadJob }) {
 }
 
 /** A bench run going on, in place of the last report, until its own report opens. */
-function RunProgress({ job, onClose }: { job: RunJob; onClose: () => void }) {
+function RunProgress({ job, onClose, onStop }: { job: RunJob; onClose: () => void; onStop: () => void }) {
   return (
     <section className="studio-bench-busy" aria-live="polite">
       <h3>{job.state === 'failed' ? `${job.name} stopped` : job.done === 0 ? `Preparing ${job.name}` : `Running ${job.name}`}</h3>
@@ -818,6 +887,7 @@ function RunProgress({ job, onClose }: { job: RunJob; onClose: () => void }) {
         </span>
       </div>
       {job.state === 'failed' && <Button onClick={onClose}>Done</Button>}
+      {job.state === 'running' && <Button onClick={onStop} disabled={job.stopping}>{job.stopping ? 'Stopping…' : 'Stop'}</Button>}
     </section>
   )
 }

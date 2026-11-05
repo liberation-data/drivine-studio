@@ -109,7 +109,7 @@ the same. Views and fragments are not loaded on them yet: Drivine loads them wit
 A connection's **Allow writes** setting, in its sheet in the Connections window, lets a statement run in the Cypher
 window write. It is off unless turned on, and kept in `connections.json` with the rest of the connection; the
 environment's connection never allows writes. The Cypher window says, above what a statement gives back, that the
-connection in use allows writes. The Canvas, its loads and a connection's test only ever read, whatever the setting.
+connection in use allows writes. The Canvas, its loads, a Bench run of saved queries and a connection's test only ever read, whatever the setting.
 
 With it on, a statement in the Cypher window runs in a transaction that may write, and is committed: over Bolt, in a
 write session; on FalkorDB, as a query that may write, which FalkorDB, having no transactions, has done once it
