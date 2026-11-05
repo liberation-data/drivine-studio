@@ -21,8 +21,9 @@
     "package:linux": "npm run build && electron-builder --linux --dir",
     "package:linux:appimage": "npm run build && electron-builder --linux",
     "package:all": "npm run build && electron-builder --mac --win --linux",
-    "test": "vitest run --exclude '**/*.db.test.ts' --exclude '**/node_modules/**' --exclude '.next/**'",
+    "test": "vitest run --exclude '**/*.db.test.ts' --exclude '**/*.model.test.ts' --exclude '**/node_modules/**' --exclude '.next/**'",
     "test:db": "vitest run db.test",
+    "test:icons": "STUDIO_ICON_MODEL=1 vitest run src/server/icons/labels.model.test.ts",
     "icon-vectors": "node scripts/icon-vectors.mjs"
   },
   "dependencies": {

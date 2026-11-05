@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { choose, chosen, COMMON, common, embedder, iconsOf, NEAREST, nearestTo, RETRY, words } from './labels'
+import { allows, choose, chosen, COMMON, common, embedder, iconsOf, NEAREST, nearestTo, ONLY_BY_NAME, RETRY, words } from './labels'
 import type { Embed } from './labels'
 import { isIcon } from './lucide'
 
@@ -48,6 +48,8 @@ describe('common', () => {
     expect(common('IssueCore')).toBe('circle-dot')
     expect(common('PurchaseOrder')).toBe('shopping-cart')
     expect(common('Address2')).toBe('map-pinned')
+    expect(common('ContentElement')).toBe('file-text')
+    expect(common('Persona')).toBe('venetian-mask')
   })
 
   it("gives only Lucide's icons, as an upgrade of Lucide may rename one", () => {
@@ -69,6 +71,28 @@ describe('nearestTo', () => {
     const icons = { model: 'm', dimensions: 2, names: ['a', 'b'], values: Int8Array.from([127, 0, 0, 127]) }
     expect(nearestTo([0, 1], icons)).toEqual({ icon: 'b', score: 1 })
     expect(nearestTo([0.6, 0.8], icons)).toEqual({ icon: 'b', score: 0.8 })
+  })
+
+  it('passes over an icon it is not allowed, for the next nearest', () => {
+    const icons = { model: 'm', dimensions: 2, names: ['a', 'b'], values: Int8Array.from([127, 0, 0, 127]) }
+    expect(nearestTo([0.6, 0.8], icons, icon => icon !== 'b')).toEqual({ icon: 'a', score: 0.6 })
+  })
+})
+
+describe('allows', () => {
+  it('takes an icon of one particular thing only for a label that names it', () => {
+    expect(allows(words('Patient'), 'cigarette')).toBe(false)
+    expect(allows(words('Category'), 'cat')).toBe(false)
+    expect(allows(words('Cigarette'), 'cigarette')).toBe(true)
+    expect(allows(words('PhoneNumber'), 'phone')).toBe(true)
+  })
+
+  it('takes any other icon for any label', () => {
+    expect(allows(words('Drug'), 'tablets')).toBe(true)
+  })
+
+  it("lists only Lucide's icons, as an upgrade of Lucide may rename one", () => {
+    expect([...ONLY_BY_NAME].filter(icon => !isIcon(icon))).toEqual([])
   })
 })
 
@@ -136,6 +160,12 @@ describe('iconsOf', () => {
     expect(sure).toMatchObject({ icon: 'flask-conical', source: 'nearest' })
     expect(sure?.score).toBeGreaterThanOrEqual(NEAREST)
     expect((await iconsOf(['Probe'], unlike)).Probe).toEqual({ icon: null, source: 'none', score: 0 })
+  })
+
+  it('gives the model\'s icon of one particular thing only to a label that names it', async () => {
+    const icons = await iconsOf(['Patient', 'Cigarette'], like('cigarette'))
+    expect(icons.Patient?.icon).not.toBe('cigarette')
+    expect(icons.Cigarette).toMatchObject({ icon: 'cigarette', source: 'nearest' })
   })
 
   it('takes a label named as an object is born with for a label, not a choice', async () => {
