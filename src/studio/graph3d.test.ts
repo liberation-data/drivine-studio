@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clip, edgeLit, fits3D, focusSetOf, hubOf, legendOf, litOf, MAX_3D_NODES, shownDepth, shownOf, toggled } from './graph3d'
+import { clip, edgeLit, fits3D, focusSetOf, hubOf, legendOf, litOf, MAX_3D_NODES, namePriority, overlaps, shownDepth, shownOf, toggled, uncrowded } from './graph3d'
 
 const node = (id: string, fragment = 'Person') => ({ id, fragment })
 const edge = (from: string, to: string) => ({ from, to })
@@ -85,5 +85,72 @@ describe('clip', () => {
   it('shortens a long caption with an ellipsis', () => {
     expect(clip('Ada')).toBe('Ada')
     expect(clip('a very long name for one node indeed', 10)).toBe('a very lo…')
+  })
+})
+
+describe('namePriority', () => {
+  const ids = ['a', 'b', 'hub', 'c', 'd']
+  const edges = [edge('hub', 'a'), edge('hub', 'b'), edge('hub', 'c'), edge('c', 'd'), edge('b', 'c')]
+  const none = { chosen: null, hovered: null, focus: null }
+
+  it('gives hubs room first, then the rest in the graph order', () => {
+    expect(namePriority(ids, edges, none)).toEqual(['hub', 'c', 'b', 'a', 'd'])
+  })
+
+  it('puts the node chosen first, then the one under the pointer, then the focus node and its neighbours', () => {
+    expect(namePriority(ids, edges, { chosen: 'd', hovered: 'a', focus: 'd' })).toEqual(['d', 'a', 'c', 'hub', 'b'])
+  })
+
+  it('ranks the focus node’s neighbours above a bigger hub outside them', () => {
+    expect(namePriority(ids, edges, { chosen: null, hovered: null, focus: 'a' }).slice(0, 2)).toEqual(['hub', 'a'])
+    expect(namePriority(ids, edges, { chosen: null, hovered: null, focus: 'd' })).toEqual(['c', 'd', 'hub', 'b', 'a'])
+  })
+})
+
+describe('uncrowded', () => {
+  const box = (id: string, x: number, y: number, width = 40, height = 10) => ({ id, x, y, width, height })
+
+  it('keeps names that do not touch', () => {
+    expect(uncrowded([box('a', 0, 0), box('b', 100, 0), box('c', 0, 50)])).toEqual(new Set(['a', 'b', 'c']))
+  })
+
+  it('drops a name that would overlap one given room before it, and keeps the first', () => {
+    expect(uncrowded([box('first', 0, 0), box('second', 20, 4), box('third', 200, 200)])).toEqual(new Set(['first', 'third']))
+  })
+
+  it('keeps a gap between names', () => {
+    expect(uncrowded([box('a', 0, 0), box('b', 41, 0)], 0)).toEqual(new Set(['a', 'b']))
+    expect(uncrowded([box('a', 0, 0), box('b', 41, 0)], 2)).toEqual(new Set(['a']))
+  })
+
+  it('finds an overlap across grid cells, and with a box wider than a cell', () => {
+    expect(uncrowded([box('wide', 0, 0, 400), box('far end', 180, 3)], 2, 64)).toEqual(new Set(['wide']))
+    expect(uncrowded([box('a', 63, 0), box('b', 66, 0)], 2, 64)).toEqual(new Set(['a']))
+  })
+
+  it('keeps a name off another node\u2019s shape, but not off its own', () => {
+    const shape = (id: string, x: number, y: number) => ({ id, x, y, width: 20, height: 20, obstacle: true })
+    expect(uncrowded([shape('a', 0, 0), box('a', 0, 12), shape('b', 0, 30), box('b', 0, 18)])).toEqual(new Set(['a']))
+    expect(uncrowded([box('b', 0, 18), shape('a', 0, 0), shape('b', 0, 30)])).toEqual(new Set(['b']))
+  })
+
+  it('grids a box many screens wide only where it is on screen, and it still blocks a name there', () => {
+    // A node right by the view: its shape is a million pixels across. Unclipped, that was some 240 million cells.
+    const near = { id: 'near', x: 600, y: 380, width: 1_000_000, height: 1_000_000, obstacle: true }
+    const started = performance.now()
+    expect(uncrowded([near, box('behind', 300, 200), box('own', 600, 380)].map(b => (b.id === 'own' ? { ...b, id: 'near' } : b)), 2, 64, { width: 1200, height: 760 }))
+      .toEqual(new Set(['near']))
+    expect(performance.now() - started).toBeLessThan(50)
+  })
+
+  it('checks a dropped name against nothing: a name hidden takes no room', () => {
+    expect(uncrowded([box('a', 0, 0), box('b', 35, 0), box('c', 70, 0)], 0)).toEqual(new Set(['a', 'c']))
+  })
+})
+
+describe('overlaps', () => {
+  it('is true when boxes share area and false when they only meet', () => {
+    expect(overlaps({ id: 'a', x: 0, y: 0, width: 10, height: 10 }, { id: 'b', x: 5, y: 5, width: 10, height: 10 })).toBe(true)
+    expect(overlaps({ id: 'a', x: 0, y: 0, width: 10, height: 10 }, { id: 'b', x: 10, y: 0, width: 10, height: 10 })).toBe(false)
   })
 })

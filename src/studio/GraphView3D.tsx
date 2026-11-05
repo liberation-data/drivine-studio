@@ -5,13 +5,16 @@ import type * as Three from 'three'
 import type { GraphEdge, GraphNode, Result } from './api'
 import { captionOf, colourOf } from './GraphView'
 import type { Selection } from './GraphView'
-import { clip, degrees, edgeLit, hubOf, legendOf, litOf, shownOf, toggled } from './graph3d'
+import { clip, degrees, edgeLit, hubOf, legendOf, litOf, namePriority, shownOf, toggled, uncrowded } from './graph3d'
+import type { NameBox } from './graph3d'
 import { Swatch } from './IconPicker'
 import { useLabelIcons } from './icons'
 
 /*
- * The same graph as GraphView, in three dimensions, for a small result (see MAX_3D_NODES): every node is a disc in its
- * fragment's colour with its label's icon, named beneath, and fog lets what is near read first.
+ * The same graph as GraphView, in three dimensions, for a small result (see MAX_3D_NODES): every node is a lit shape in
+ * its fragment's colour, its label's icon on the side that faces the view, and fog lets what is near read first. Names
+ * are given room in order (the node chosen, the one under the pointer, the focus node's neighbours, then hubs), and a
+ * name that would overlap one shown already fades out until there is room for it.
  *
  * It opens close on the node with most relationships, turning slowly until it is touched, and again a few seconds
  * after. A click focuses a node: it and its neighbours stay solid, the rest fade; Esc or a click on empty space brings
@@ -26,6 +29,10 @@ import { useLabelIcons } from './icons'
  * A node dragged stays where it is put, until it is double-clicked.
  */
 
+/** The shapes a node may be drawn as. One for now; a label could be given its own here, and in `shapes` below. */
+type Shape = 'sphere'
+const shapeOf = (_node: GraphNode): Shape => 'sphere'
+
 interface Node3D {
   id: string
   node: GraphNode
@@ -33,9 +40,17 @@ interface Node3D {
   size: number
   /** The opacity it is drawn at now, eased toward the one it should have. */
   o: number
+  /** How shown its name is now, and whether it has room to be. */
+  nameO: number
+  named: boolean
   x?: number; y?: number; z?: number; fx?: number; fy?: number; fz?: number
-  disc?: Three.SpriteMaterial
-  text?: Three.SpriteMaterial
+  group?: Three.Group
+  body?: Three.MeshStandardMaterial
+  rim?: { value: Three.Color }
+  icon?: Three.Mesh<Three.PlaneGeometry, Three.MeshBasicMaterial>
+  text?: Three.Sprite
+  /** The name's width over its height, for its box on screen. */
+  aspect?: number
   canvas?: HTMLCanvasElement
 }
 interface Link3D { source: string | Node3D; target: string | Node3D; edge: GraphEdge; o: number; line?: Three.LineBasicMaterial; cone?: Three.MeshBasicMaterial }
@@ -69,8 +84,14 @@ const LINK = 0.55
 const LINK_FADED = 0.05
 /** How much of the way to its new opacity a node goes each frame. */
 const EASE = 0.12
-/** A disc's canvas, in pixels: big enough for its icon to stay sharp close up. */
-const DISC_PX = 128
+/** An icon's canvas, in pixels: big enough to stay sharp close up. */
+const ICON_PX = 128
+/** How tall a name is, in the scene's units; how small on screen before it is not worth room; how often room is shared out. */
+const NAME_HIGH = 3.4
+const NAME_MIN_PX = 10
+const ROOM_MS = 33
+/** How far a name eases toward shown or hidden each frame. */
+const NAME_EASE = 0.18
 
 const escape = (text: string) => text.replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`)
 const ends = (l: Link3D) => [typeof l.source === 'string' ? l.source : l.source.id, typeof l.target === 'string' ? l.target : l.target.id] as const
@@ -146,6 +167,12 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
       // Fog in the stage's own colour: what is past what the view looks at fades into it.
       const fog = new THREE.Fog(surface, 100, 1000)
       g.scene().fog = fog
+      // Light from the sky and the ground, and a key light that goes with the view, so each shape is lit from the front.
+      g.lights([new THREE.HemisphereLight(0xffffff, 0x8a9aa0, 1.4), new THREE.AmbientLight(0xffffff, 0.35)])
+      const keyLight = new THREE.DirectionalLight(0xffffff, 1.5)
+      keyLight.position.set(-0.6, 1, 0.8)
+      camera().add(keyLight)
+      g.scene().add(camera())
 
       // ── Turning by itself ──
       const still = matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -167,7 +194,7 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
       controls.addEventListener('start', hold)
       controls.addEventListener('end', rest)
 
-      // ── Nodes: a disc that faces the view, and its name beneath ──
+      // ── Nodes: a lit shape, its icon on the near side, and its name beneath ──
       const images = new Map<string, HTMLImageElement>()
       const imageOf = (url: string) => {
         let image = images.get(url)
@@ -179,28 +206,47 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         }
         return image.complete && image.naturalWidth > 0 ? image : undefined
       }
+      const shapes: Record<Shape, Three.BufferGeometry> = { sphere: new THREE.SphereGeometry(0.5, 32, 20) }
+      const iconPlane = new THREE.PlaneGeometry(1, 1)
+      const accentColour = new THREE.Color(accent)
+      const rimOf = (n: Node3D) => (n.id === chosen ? accentColour.clone() : new THREE.Color(n.colour).lerp(new THREE.Color(0xffffff), 0.55))
+      /*
+       * A soft rim, brighter at the edge than in the middle, as a bubble is: added to the light the material gives,
+       * before fog, so a far shape's rim fades with it.
+       */
+      const withRim = (material: Three.MeshStandardMaterial, rim: { value: Three.Color }) => {
+        material.onBeforeCompile = shader => {
+          shader.uniforms.rimColour = rim
+          shader.fragmentShader = shader.fragmentShader
+            .replace('void main() {', 'uniform vec3 rimColour;\nvoid main() {')
+            .replace(
+              '#include <opaque_fragment>',
+              'float rimAmount = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.4);\n' +
+                'outgoingLight += rimColour * rimAmount * 0.85;\n#include <opaque_fragment>',
+            )
+        }
+        return material
+      }
       let chosen: string | null = null
+      let hovered: string | null = null
+      // The icon, white, on a clear canvas: the shape behind it gives the colour.
       const paint = (n: Node3D) => {
         const canvas = n.canvas
-        const material = n.disc
+        const material = n.icon?.material
         if (!canvas || !material) return
         const c = canvas.getContext('2d')!
-        const half = DISC_PX / 2
-        c.clearRect(0, 0, DISC_PX, DISC_PX)
-        c.beginPath()
-        c.arc(half, half, half - 6, 0, Math.PI * 2)
-        c.fillStyle = n.colour
-        c.fill()
-        if (n.id === chosen) {
-          c.lineWidth = 8
-          c.strokeStyle = accent
-          c.stroke()
-        }
+        c.clearRect(0, 0, ICON_PX, ICON_PX)
         const label = n.node.labels[0]
         const url = label === undefined ? undefined : imagesNow.current[label]
         const image = url ? imageOf(url) : undefined
-        if (image) c.drawImage(image, half * 0.48, half * 0.48, half * 1.04, half * 1.04)
+        if (image) c.drawImage(image, ICON_PX * 0.18, ICON_PX * 0.18, ICON_PX * 0.64, ICON_PX * 0.64)
+        n.icon!.visible = Boolean(image)
         if (material.map) material.map.needsUpdate = true
+      }
+      const mark = (n: Node3D) => {
+        n.rim?.value.copy(rimOf(n))
+        n.body?.emissive.set(n.id === chosen ? accent : 0x000000)
+        if (n.body) n.body.emissiveIntensity = n.id === chosen ? 0.35 : 0
       }
       repaint.current = () => (g.graphData().nodes as Node3D[]).forEach(paint)
       const nameOf = (n: Node3D) => {
@@ -222,26 +268,42 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         c.fillText(text, 8, canvas.height / 2)
         const texture = new THREE.CanvasTexture(canvas)
         texture.colorSpace = THREE.SRGBColorSpace
-        const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+        // Drawn over the shapes, its halo keeping it apart: a name half behind a nearer node can't be read.
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, depthTest: false, opacity: 0 })
         const sprite = new THREE.Sprite(material)
-        const high = 3.4
-        sprite.scale.set((high * canvas.width) / canvas.height, high, 1)
-        sprite.position.y = -(n.size / 2 + high * 0.75)
-        n.text = material
+        sprite.renderOrder = 10
+        n.aspect = canvas.width / canvas.height
+        sprite.scale.set(NAME_HIGH * n.aspect, NAME_HIGH, 1)
+        sprite.visible = false
+        n.text = sprite
         return sprite
       }
       const makeNode = (o: object) => {
         const n = o as Node3D
         const group = new THREE.Group()
+        n.group = group
+        n.rim = { value: rimOf(n) }
+        n.body = withRim(
+          new THREE.MeshStandardMaterial({ color: n.colour, roughness: 0.5, metalness: 0, transparent: true, opacity: n.o }),
+          n.rim,
+        )
+        const body = new THREE.Mesh(shapes[shapeOf(n.node)], n.body)
+        body.scale.setScalar(n.size)
         n.canvas = document.createElement('canvas')
-        n.canvas.width = n.canvas.height = DISC_PX
+        n.canvas.width = n.canvas.height = ICON_PX
         const texture = new THREE.CanvasTexture(n.canvas)
         texture.colorSpace = THREE.SRGBColorSpace
-        n.disc = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, opacity: n.o })
-        const disc = new THREE.Sprite(n.disc)
-        disc.scale.set(n.size, n.size, 1)
-        group.add(disc, nameOf(n))
-        n.text!.opacity = n.o
+        /*
+         * A plane turned to face the view's eye, not a sprite: a sprite faces the screen, so on a node off to the side,
+         * seen at a slant, it tilted into its own shape and the shape hid part of it.
+         */
+        n.icon = new THREE.Mesh(iconPlane, new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, opacity: n.o }))
+        // After every shape: shapes and icons are both see-through, so three sorts them by distance each frame, and a shape
+        // sorted after its own icon painted over part of it. The depth test stays, so a nearer shape still hides it.
+        n.icon.renderOrder = 1
+        n.icon.scale.set(n.size * 0.62, n.size * 0.62, 1)
+        group.add(body, n.icon, nameOf(n))
+        mark(n)
         paint(n)
         return group
       }
@@ -289,7 +351,7 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
       const choose = (id: string | null) => {
         const before = chosen
         chosen = id
-        for (const n of g.graphData().nodes as Node3D[]) if (n.id === before || n.id === id) paint(n)
+        for (const n of g.graphData().nodes as Node3D[]) if (n.id === before || n.id === id) mark(n)
         for (const l of g.graphData().links as Link3D[]) l.line?.color.set(l.edge.id === chosen ? accent : muted)
       }
 
@@ -303,6 +365,7 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         .nodeThreeObject(makeNode)
         .linkThreeObject(makeLink)
         .linkPositionUpdate(placeLink)
+        .onNodeHover((n: object | null) => (hovered = n ? (n as Node3D).id : null))
         .linkLabel((l: object) => escape((l as Link3D).edge.type))
         // How near a line the pointer must be to pick it, in the scene's units: near, so a node beside one wins.
         .linkHoverPrecision(0.4)
@@ -336,6 +399,9 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         const at = (n: Node3D) => new THREE.Vector3(n.x ?? 0, n.y ?? 0, n.z ?? 0)
         const centre = nodes.reduce((sum, n) => sum.add(at(n)), new THREE.Vector3()).divideScalar(nodes.length)
         const outward = at(hub).sub(centre)
+        // Level with the hub and a little above, whichever way it lies from the centre: a hub at the top had the view look
+        // straight down, where the spin only turns the picture in place.
+        outward.y = 0
         if (outward.lengthSq() < 1) outward.set(0, 0, 1)
         outward.normalize().add(new THREE.Vector3(0, 0.35, 0)).normalize()
         const near = new Set(pairs.flatMap(p => (p.from === hub.id ? [p.to] : p.to === hub.id ? [p.from] : [])))
@@ -462,17 +528,101 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
 
       // Each frame: ease every node and relationship toward how solid it should be, keep the fog about what the view
       // looks at, and turn when nothing has touched the view for a while.
+      /*
+       * Room for names, shared out a few dozen times a second: in order of attention, each name whose box on screen
+       * would overlap one already given room is hidden. A name too small to read takes none, and a faded node's name
+       * none, unless it is chosen or under the pointer.
+       */
+      const toward = new THREE.Vector3()
+      const screenUp = new THREE.Vector3(0, 1, 0)
+      const spot = new THREE.Vector3()
+      let roomAt = 0
+      let order: string[] = []
+      let orderKey = ''
+      const share = () => {
+        const nodes = g.graphData().nodes as Node3D[]
+        const links = g.graphData().links as Link3D[]
+        const asked = `${nodes.length}|${chosen}|${hovered}|${focusNow.current}`
+        if (asked !== orderKey) {
+          orderKey = asked
+          order = namePriority(nodes.map(n => n.id), links.map(l => ({ from: ends(l)[0], to: ends(l)[1] })), { chosen, hovered, focus: focusNow.current })
+        }
+        const byId = new Map(nodes.map(n => [n.id, n]))
+        const view = camera()
+        view.updateMatrixWorld()
+        const wide = element.clientWidth
+        const high = element.clientHeight
+        const perUnit = high / (2 * Math.tan((view.fov * Math.PI) / 360))
+        const solid = litNow.current
+        const boxes: NameBox[] = []
+        for (const id of order) {
+          const n = byId.get(id)
+          if (!n?.text || !n.group) continue
+          const must = id === chosen || id === hovered
+          if (!must && !solid.has(id)) continue
+          // Its shape first: no later node's name may cover it.
+          spot.copy(n.group.position).applyMatrix4(view.matrixWorldInverse)
+          const near = -spot.z
+          if (near <= 0) continue
+          spot.applyMatrix4(view.projectionMatrix)
+          const across = (n.size * perUnit) / near
+          boxes.push({ id, x: ((spot.x + 1) / 2) * wide, y: ((1 - spot.y) / 2) * high, width: across * 0.9, height: across * 0.9, obstacle: true })
+          spot.copy(n.group.position).add(n.text.position)
+          spot.applyMatrix4(view.matrixWorldInverse)
+          const depth = -spot.z
+          if (depth <= 0) continue
+          const tall = (NAME_HIGH * perUnit) / depth
+          if (!must && tall < NAME_MIN_PX) continue
+          spot.applyMatrix4(view.projectionMatrix)
+          const x = ((spot.x + 1) / 2) * wide
+          const y = ((1 - spot.y) / 2) * high
+          const width = tall * (n.aspect ?? 4)
+          if (x + width / 2 < 0 || x - width / 2 > wide || y + tall / 2 < 0 || y - tall / 2 > high) continue
+          // The name's ink is a little inside its canvas: the box is drawn in to it.
+          boxes.push({ id, x, y, width: width * 0.94, height: tall * 0.72 })
+        }
+        const room = uncrowded(boxes, 3, 64, { width: wide, height: high })
+        for (const n of nodes) n.named = room.has(n.id)
+      }
+
       let frame = 0
       const tick = () => {
         frame = requestAnimationFrame(tick)
+        const now = performance.now()
         const solid = litNow.current
         for (const n of g.graphData().nodes as Node3D[]) {
           const to = solid.has(n.id) ? 1 : FADED
           if (Math.abs(n.o - to) < 0.002) continue
           n.o += (to - n.o) * EASE
-          if (n.disc) n.disc.opacity = n.o
-          // A faded name fades further than its disc: names are what clutter most.
-          if (n.text) n.text.opacity = Math.max(0, (n.o - FADED) / (1 - FADED)) * 0.95 + 0.05
+          if (n.body) {
+            n.body.opacity = n.o
+            // A faded shape doesn't hide what is behind it.
+            n.body.depthWrite = n.o > 0.5
+          }
+          if (n.icon) n.icon.material.opacity = n.o
+        }
+        const at = camera().position
+        // The screen's up, in the scene: a name hangs below its node as the view sees it, from above or below alike.
+        const e = camera().matrixWorld.elements
+        screenUp.set(e[4]!, e[5]!, e[6]!).normalize()
+        if (now - roomAt > ROOM_MS) {
+          roomAt = now
+          share()
+        }
+        for (const n of g.graphData().nodes as Node3D[]) {
+          // The icon on the side of the shape that faces the view.
+          if (n.icon && n.group) {
+            toward.set(at.x - n.group.position.x, at.y - n.group.position.y, at.z - n.group.position.z).normalize()
+            n.icon.position.copy(toward).multiplyScalar(n.size * 0.52)
+            n.icon.lookAt(at)
+          }
+          n.text?.position.copy(screenUp).multiplyScalar(-(n.size / 2 + NAME_HIGH * 0.8))
+          const to = n.named ? 1 : 0
+          if (n.text && Math.abs(n.nameO - to) > 0.002) {
+            n.nameO += (to - n.nameO) * NAME_EASE
+            n.text.material.opacity = n.nameO
+            n.text.visible = n.nameO > 0.01
+          }
         }
         for (const l of g.graphData().links as Link3D[]) {
           const [from, to] = ends(l)
@@ -483,7 +633,6 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
           if (l.cone) l.cone.opacity = l.o
         }
         const t = controls.target
-        const at = camera().position
         const distance = Math.hypot(at.x - t.x, at.y - t.y, at.z - t.z)
         fog.near = distance * 0.8
         fog.far = distance * 2.6
@@ -501,6 +650,7 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         const ids = new Set(graph.nodes.map(n => n.id))
         const counts = degrees(graph.edges)
         chosen = null
+        hovered = null
         opened = false
         element.dataset.shown = 'false'
         g.graphData({
@@ -510,6 +660,8 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
             colour: colourOf(fragments, node.fragment),
             size: (5 + 1.6 * Math.sqrt(counts.get(node.id) ?? 0)) * (roots.has(node.id) ? 1.2 : 1),
             o: 1,
+            nameO: 0,
+            named: false,
           })),
           links: graph.edges.filter(e => ids.has(e.from) && ids.has(e.to)).map((edge): Link3D => ({ source: edge.from, target: edge.to, edge, o: LINK })),
         })
