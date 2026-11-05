@@ -211,12 +211,12 @@ export function Cypher() {
   const added = drawn ? drawn.graph.edges.filter(e => e.added).length : 0
   const [live, setLive] = useLiveLayout(drawn?.graph)
   // 2D or 3D, remembered. 3D is for a small graph: a bigger one is drawn in 2D, and the choice kept for the next.
-  const [depth, setDepthNow] = useState<Depth>(() => (typeof localStorage !== 'undefined' && localStorage.getItem(DEPTH_KEY) === '3d' ? '3d' : '2d'))
+  const [depth, setDepthNow] = useState<Depth>(() => (remembered(DEPTH_KEY, '2d') === '3d' ? '3d' : '2d'))
   const nodeCount = drawn?.graph.nodes.length ?? 0
   const shown = shownDepth(depth, nodeCount)
   const setDepth = (next: Depth) => {
     setDepthNow(next)
-    localStorage.setItem(DEPTH_KEY, next)
+    remember(DEPTH_KEY, next)
   }
 
   const given = parameters.trim() !== ''

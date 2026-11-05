@@ -94,6 +94,31 @@ export function toggled(hidden: ReadonlySet<string>, fragment: string, shown: bo
 /** A caption short enough to sit under a node. */
 export const clip = (text: string, most = 24): string => (text.length > most ? `${text.slice(0, most - 1).trimEnd()}…` : text)
 
+/** What a key does to the view. */
+export type KeyAction =
+  | { readonly kind: 'turn' | 'pan'; readonly h: number; readonly v: number }
+  | { readonly kind: 'zoom'; readonly factor: number }
+  | { readonly kind: 'fit' | 'all' | 'fly' }
+
+/** How far one press of + or − brings the view in or takes it out. */
+const ZOOM_STEP = 0.85
+
+/**
+ * What a key pressed on the view does, or null for one it leaves alone. With ⌘, Ctrl or ⌥ held a key is the app's or
+ * the browser's, not the view's: ⌘0, ⌘+ and ⌘− zoom the page, and ⌘← goes back.
+ */
+export function keyAction(event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'metaKey' | 'ctrlKey' | 'altKey'>): KeyAction | null {
+  if (event.metaKey || event.ctrlKey || event.altKey) return null
+  const step = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, [number, number]>)[event.key]
+  if (step) return { kind: event.shiftKey ? 'pan' : 'turn', h: step[0], v: step[1] }
+  if (event.key === '+' || event.key === '=') return { kind: 'zoom', factor: ZOOM_STEP }
+  if (event.key === '-' || event.key === '_') return { kind: 'zoom', factor: 1 / ZOOM_STEP }
+  if (event.key === '0') return { kind: 'fit' }
+  if (event.key === 'Escape') return { kind: 'all' }
+  if (event.key === 'Enter') return { kind: 'fly' }
+  return null
+}
+
 /** What the view knows of the reader's attention: the node chosen, the one under the pointer, the one in focus. */
 export interface Attention {
   readonly chosen: string | null
