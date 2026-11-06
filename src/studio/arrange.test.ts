@@ -23,6 +23,15 @@ const ring = (n: number) => {
   core.add(Array.from({ length: n }, (_, i) => ({ group: 'edges' as const, data: { id: `e${i}`, source: `n${i}`, target: `n${(i + 1) % n}` } })))
   return core
 }
+/*
+ * A ring with a chord from each node across it: the chords pull against the ring, so it takes cola 6 to 12 seconds to
+ * settle (measured), where a plain ring can settle exactly, and so stop on its own, in under 200 ms.
+ */
+const tangled = (n: number) => {
+  const core = ring(n)
+  core.add(Array.from({ length: n }, (_, i) => ({ group: 'edges' as const, data: { id: `c${i}`, source: `n${i}`, target: `n${(i * 7 + 3) % n}` } })))
+  return core
+}
 const stopped = (layout: cytoscapeType.Layouts) => new Promise<void>(resolve => layout.one('layoutstop', () => resolve()))
 
 describe('the first layout of a small graph', () => {
@@ -40,8 +49,8 @@ describe('the first layout of a small graph', () => {
   })
 
   it('stops at its time limit when it never settles, as the timer fires between frames', async () => {
-    const core = ring(30)
-    // A threshold only a stopped simulation gets under: only the time limit ends it.
+    const core = tangled(30)
+    // A threshold only a stopped simulation gets under, on a graph far from settling by then: only the time limit ends it.
     const layout = core.layout({ name: 'cola', fit: false, ...ARRANGE, convergenceThreshold: Number.MIN_VALUE, maxSimulationTime: 200 } as unknown as cytoscapeType.LayoutOptions)
     const end = stopped(layout)
     const started = Date.now()
