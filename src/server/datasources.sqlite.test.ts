@@ -100,6 +100,18 @@ describe('run, on SQLite', () => {
     expect((await run(connection, 'MATCH (c:Cat {name: $name}) RETURN count(c) AS c', { name: 'Cy' })).rows).toEqual([[{ kind: 'value', value: 1 }]])
   })
 
+  it('gives booleans, nulls, floats, lists, maps and text that looks like JSON as the values they are', async () => {
+    const result = await run(on(await graphFile()), `RETURN true AS t, null AS n, 1.5 AS f, [1, 'a', false, null] AS l, {k: 'v'} AS m, '{"a":1}' AS j`)
+    expect(result.rows).toEqual([[
+      { kind: 'value', value: true },
+      { kind: 'null' },
+      { kind: 'value', value: 1.5 },
+      { kind: 'list', items: [{ kind: 'value', value: 1 }, { kind: 'value', value: 'a' }, { kind: 'value', value: false }, { kind: 'null' }] },
+      { kind: 'map', entries: [{ key: 'k', value: { kind: 'value', value: 'v' } }] },
+      { kind: 'value', value: '{"a":1}' },
+    ]])
+  })
+
   it('reads at most the limit, and says there were more', async () => {
     const result = await run(on(await graphFile()), 'MATCH (n) RETURN n.name AS name ORDER BY name', {}, 1)
     expect(result.rows).toEqual([[{ kind: 'value', value: 'Ann' }]])
@@ -196,6 +208,16 @@ describe('readSchema, on SQLite', () => {
       labels: ['Person', 'Pet'],
       relationshipTypes: ['KNOWS'],
       propertyKeys: ['born', 'name', 'since'],
+    })
+  })
+
+  it('reads labels and keys with quotes, dots and letters past ASCII as they are, not as JSON writes them', async () => {
+    const file = await graphFile()
+    await run(on(file, { allowWrites: true }), "CREATE (:`Odd \"La'bel`:`ünï cødé` {`we\"ird key`: 1, `a.b`: 2})", {}, 1, { writes: true })
+    expect(await readSchema(on(file))).toEqual({
+      labels: ['Odd "La\'bel', 'Person', 'Pet', 'ünï cødé'],
+      relationshipTypes: ['KNOWS'],
+      propertyKeys: ['a.b', 'born', 'name', 'since', 'we"ird key'],
     })
   })
 })

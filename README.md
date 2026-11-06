@@ -128,7 +128,7 @@ guarantee.
 
 On Postgres, Oracle and SQLite, Drivine (TypeScript) compiles the Cypher to SQL over the graph's tables, with the compiler a
 `PersistenceManager` compiles a Cypher statement with there: what it takes, and how its results can differ from a
-graph engine's, is in Drivine's README, under Cypher on Oracle and Postgres. Drivine gives a node there as its
+graph engine's, is in Drivine's guide, under [Cypher on a relational database](https://github.com/liberation-data/drivine/blob/master/docs/04-cypher-on-a-relational-database.md). Drivine gives a node there as its
 properties alone, so the studio compiles each item of the `RETURN` to come back whole, a node with its id and labels
 and a relationship with its type and ends, and draws them as it draws a graph engine's: `MATCH
 (p:Person)-[r:ACTED_IN]->(m) RETURN p, r, m` is a graph, and `RETURN p.name` rows. A path comes back whole too. A
