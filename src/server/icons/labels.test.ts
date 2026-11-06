@@ -259,6 +259,15 @@ describe('the icons file', () => {
     expect(await iconsFile()).toEqual({ labels: { B: 'bug' }, words: {}, onlyByName: [] })
   })
 
+  it('keeps every change made at once, to the choices and both lists alike', async () => {
+    await Promise.all([chooseWord('probe', 'radar'), takeOnlyByName('tablets', true), choose('Person', 'smile'), chooseWord('order', 'list-ordered')])
+    expect(await iconsFile()).toEqual({
+      labels: { Person: 'smile' },
+      words: { probe: 'radar', order: 'list-ordered' },
+      onlyByName: ['tablets'],
+    })
+  })
+
   it('takes a word or an icon off the lists again', async () => {
     await chooseWord('probe', 'radar')
     await chooseWord('probe', undefined)
