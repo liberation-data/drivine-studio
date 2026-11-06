@@ -112,6 +112,8 @@ describe('/api/icons/lists', () => {
     [{ onlyByName: '../package', listed: true }, "Name one of Lucide's icons."],
     [{ onlyByName: 'tablets' }, 'Say whether the icon is listed.'],
     [{}, 'Give a word and its icon, or an icon to take only by name.'],
+    ['probe', 'Give a word and its icon, or an icon to take only by name.'],
+    [null, 'Give a word and its icon, or an icon to take only by name.'],
   ])('refuses to change the lists with %j', async (body, message) => {
     expect(await error(await change(request('PUT', body)))).toEqual({ status: 400, error: message })
   })
@@ -139,9 +141,20 @@ describe('/api/icons/explain', () => {
     expect(answer.Probe?.picks).toHaveLength(2)
   })
 
+  it('gives five picks when not asked for a number, and takes 500 labels', async () => {
+    const one = (await (await explain(request('POST', { labels: ['Probe'] }))).json()) as Record<string, { picks: unknown[] }>
+    expect(one.Probe?.picks).toHaveLength(5)
+    expect((await explain(request('POST', { labels: new Array<string>(500).fill('Person') }))).status).toBe(200)
+  })
+
   it.each([
     [{ labels: 'Person' }, 'Give the labels, a list of at most 500.'],
+    [{ labels: ['Person', 7] }, 'Give the labels, a list of at most 500.'],
+    [{ labels: new Array<string>(501).fill('Person') }, 'Give the labels, a list of at most 500.'],
+    [null, 'Give the labels, a list of at most 500.'],
     [{ labels: ['Person'], picks: 0 }, 'Ask for 1 to 20 picks.'],
+    [{ labels: ['Person'], picks: 21 }, 'Ask for 1 to 20 picks.'],
+    [{ labels: ['Person'], picks: '5' }, 'Ask for 1 to 20 picks.'],
     [{ labels: ['Person'], picks: 2.5 }, 'Ask for 1 to 20 picks.'],
   ])('refuses to explain %j', async (body, message) => {
     expect(await error(await explain(request('POST', body)))).toEqual({ status: 400, error: message })

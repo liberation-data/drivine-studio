@@ -26,6 +26,7 @@ const remembered = (): SettingsSection => {
   }
 }
 
+/** The Settings window: Connections and Icons down the side, on the section its route names, else the one used last. */
 export function Settings() {
   const [route, setRoute] = useWindowRoute()
   const [last] = useState(remembered)

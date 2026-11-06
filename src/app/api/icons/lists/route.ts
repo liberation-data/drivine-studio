@@ -35,7 +35,11 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   const refused = foreign(request)
   if (refused) return refused
-  const asked = (await body(request)) as { word?: unknown; icon?: unknown; forget?: unknown; onlyByName?: unknown; listed?: unknown } | undefined
+  const given = await body(request)
+  // A body that is JSON but not an object, such as `"probe"`, asks for neither change: `in` would throw on it.
+  const asked = (typeof given === 'object' && given !== null ? given : undefined) as
+    | { word?: unknown; icon?: unknown; forget?: unknown; onlyByName?: unknown; listed?: unknown }
+    | undefined
   const icon = (it: unknown): it is string => typeof it === 'string' && isIcon(it)
   try {
     if (asked && 'word' in asked) {

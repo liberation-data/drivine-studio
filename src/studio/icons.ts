@@ -36,9 +36,14 @@ export interface Explained extends LabelIcon {
   picks: Pick[]
 }
 
-/** Each label's icon and why, with the model's nearest few icons beside it. */
+/**
+ * Each label's icon and why, with the model's nearest few icons beside it: by label with no prototype, as Settings
+ * looks up labels not explained yet, and `constructor` must read as none of them.
+ */
 export const explainIcons = (labels: string[], picks?: number, signal?: AbortSignal): Promise<Record<string, Explained>> =>
-  fetch(`${API}/explain`, json('POST', { labels, ...(picks ? { picks } : {}) }, signal)).then(r => read<Record<string, Explained>>(r))
+  fetch(`${API}/explain`, json('POST', { labels, ...(picks ? { picks } : {}) }, signal))
+    .then(r => read<Record<string, Explained>>(r))
+    .then(answer => byLabel(Object.entries(answer)))
 
 /** The icons chosen for labels, and the person's own lists of common words and icons taken only by name, beside the built-in ones. */
 export interface IconLists {
@@ -50,6 +55,7 @@ export interface IconLists {
   nearest: number
 }
 
+/** The icons chosen and the lists, read fresh each time, as Settings shows them after any change. */
 export const iconLists = (): Promise<IconLists> => fetch(`${API}/lists`, { cache: 'no-store' }).then(r => read<IconLists>(r))
 
 /** Gives a word of the person's own its icon, or with undefined takes it off their list. */
@@ -68,6 +74,8 @@ const found = new Map<string, LabelIcon>()
 const drawn = new Map<string, Promise<string | undefined>>()
 const listeners = new Set<() => void>()
 const changed = () => listeners.forEach(it => it())
+// How many times every icon found was forgotten: what was being found before the last time is out of date.
+let forgotten = 0
 
 /** Forgets what was found of a label, as when its icon is chosen, and finds it again where it is shown. */
 export function refound(label: string, icon: LabelIcon): void {
@@ -77,8 +85,36 @@ export function refound(label: string, icon: LabelIcon): void {
 
 /** Forgets every label's icon found, as when a list they are found by changes, and finds them again where they are shown. */
 export function refoundAll(): void {
+  forgotten++
   found.clear()
   changed()
+}
+
+/**
+ * Finds the icons of those labels given whose icons aren't found yet, and keeps them. An icon chosen while they were
+ * being found is newer than what was found, and so is every icon once a list changed meanwhile: then none is kept.
+ */
+export function findIcons(labels: readonly string[], ask: (labels: string[]) => Promise<Record<string, LabelIcon>> = iconsOf): Promise<void> {
+  const missing = labels.filter(it => !found.has(it))
+  if (!missing.length) return Promise.resolve()
+  const asked = forgotten
+  return ask(missing).then(
+    icons => {
+      if (asked === forgotten) Object.entries(icons).forEach(([label, icon]) => found.has(label) || found.set(label, icon))
+    },
+    () => undefined,
+  )
+}
+
+/**
+ * Listens for a label's icon found again anywhere in the studio, as when one is chosen in a graph's legend, so a list
+ * of icons shown elsewhere, such as Settings', is found again too. Returns the way to stop listening.
+ */
+export function onIconsChanged(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
 /** A record by label with no prototype, so a label such as `constructor` reads as no label's, not an object's. */
@@ -120,15 +156,7 @@ export function useLabelIcons(labels: readonly string[]): { images: Record<strin
   useEffect(() => {
     let live = true
     const wanted = key ? key.split('\n') : []
-    const missing = wanted.filter(it => !found.has(it))
-    const ready = missing.length
-      ? iconsOf(missing).then(
-          // An icon chosen while these were being found is newer than what was found.
-          icons => Object.entries(icons).forEach(([label, icon]) => found.has(label) || found.set(label, icon)),
-          () => undefined,
-        )
-      : Promise.resolve()
-    void ready.then(async () => {
+    void findIcons(wanted).then(async () => {
       const pairs = await Promise.all(
         wanted.map(async label => {
           const icon = found.get(label)?.icon
