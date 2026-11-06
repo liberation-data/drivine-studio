@@ -2,6 +2,7 @@ import { canPerform, perform } from '@liberation-data/desk'
 import type { CommandId, Desk } from '@liberation-data/desk'
 import type { Menu, MenuItem } from '@liberation-data/desk/react'
 import { useEffect, useRef } from 'react'
+import type { Appearance } from './appearance'
 
 /*
  * In the desktop app on a Mac, the studio's menus are the Mac's own: the app's menu merges into the one named for the
@@ -34,7 +35,7 @@ export interface StudioNative {
   /** The system's folder picker: the path of the folder chosen, or null. */
   pickFolder?(): Promise<string | null>
   /** The appearance chosen in Settings, for the app's own menus and dialogs to follow. */
-  setTheme?(theme: 'system' | 'light' | 'dark'): void
+  setTheme?(theme: Appearance): void
 }
 
 /** The desktop app's folder picker, on any system, when the page is in the desktop app. */
