@@ -211,8 +211,14 @@ const DATABASE_FIELD: Record<DatabaseType, { label: string; help: string } | nul
   MEMGRAPH: null,
   NEPTUNE: null,
   FALKORDB: { label: 'Graph', help: 'The graph to query: graph when empty.' },
-  POSTGRES: { label: 'Database', help: 'Required.' },
+  POSTGRES: { label: 'Database', help: 'The Postgres database to connect to, which can hold several graphs. Required.' },
   ORACLE: { label: 'Service name', help: 'Required, such as FREEPDB1.' },
+}
+
+/** What the Graph field of Postgres and Oracle is, with the tables the graph named has: drivine's when it is empty, as the server trims it. */
+export const graphHelp = (graph: string): string => {
+  const name = graph.trim() || 'drivine'
+  return `The graph within the database, kept in its own tables: here ${name}_node and ${name}_edge. drivine when empty.`
 }
 
 const DEFAULT_PORTS: Record<DatabaseType, string> = {
@@ -465,7 +471,7 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
           )}
           {field && <TextField label={field.label} help={field.help} value={draft.database} onChange={e => set({ database: e.target.value })} />}
           {(draft.type === 'ORACLE' || draft.type === 'POSTGRES') && (
-            <TextField label="Graph" help="Its tables are graph_node and graph_edge: drivine when empty." value={draft.graph} onChange={e => set({ graph: e.target.value })} />
+            <TextField label="Graph" help={graphHelp(draft.graph)} value={draft.graph} onChange={e => set({ graph: e.target.value })} />
           )}
           <div className="studio-wide">
             <Checkbox

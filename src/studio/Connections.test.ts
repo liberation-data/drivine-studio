@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inputOf } from './Connections'
+import { graphHelp, inputOf } from './Connections'
 
 const draft = {
   name: 'Local', type: 'NEO4J' as const, host: 'localhost', port: '', user: '', password: '', clearPassword: false, database: '', graph: '',
@@ -29,5 +29,21 @@ describe('inputOf', () => {
   it('allows writes only when the box is ticked, and says nothing of it otherwise', () => {
     expect(inputOf(draft)).not.toHaveProperty('allowWrites')
     expect(inputOf({ ...draft, allowWrites: true })).toMatchObject({ allowWrites: true })
+  })
+})
+
+describe('graphHelp', () => {
+  it("names the tables of the graph typed, and drivine's when none is", () => {
+    expect(graphHelp('guide')).toContain('guide_node and guide_edge')
+    expect(graphHelp('')).toContain('drivine_node and drivine_edge')
+  })
+
+  it('names the tables the server will use, which trims the name', () => {
+    expect(graphHelp(' guide ')).toContain('here guide_node and guide_edge')
+    expect(graphHelp('   ')).toContain('drivine_node and drivine_edge')
+  })
+
+  it("doesn't say the graph has only two tables: Drivine keeps its schema in a third", () => {
+    expect(graphHelp('guide')).not.toContain('two tables')
   })
 })
