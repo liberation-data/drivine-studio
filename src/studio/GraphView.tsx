@@ -4,6 +4,7 @@ import type { Core, Layouts, LayoutOptions, NodeSingular } from 'cytoscape'
 import cola from 'cytoscape-cola'
 import { useEffect, useRef, useState } from 'react'
 import type { GraphEdge, GraphNode, Result } from './api'
+import { applyEdges, edgeElement, redrawOf } from './connect'
 import { IconPicker, Swatch } from './IconPicker'
 import { useLabelIcons } from './icons'
 
@@ -125,13 +126,14 @@ export type Selection = { kind: 'node'; node: GraphNode } | { kind: 'edge'; edge
 
 /**
  * Whether the graph's layout is live: as last chosen, else on for a graph small enough. A graph past `LIVE_UP_TO`
- * starts off whatever was chosen before, as the motion of so many is noise; turned on for it, it stays on for it.
+ * starts off whatever was chosen before, as the motion of so many is noise; turned on for it, it stays on for it, its
+ * results connected or not (the same graph has the same nodes: see `redrawOf`).
  */
 export function useLiveLayout(graph: Result['graph'] | null | undefined): [boolean, (live: boolean) => void] {
-  const [choice, setChoice] = useState<{ live: boolean; graph: unknown } | null>(null)
+  const [choice, setChoice] = useState<{ live: boolean; nodes: unknown } | null>(null)
   const large = (graph?.nodes.length ?? 0) > LIVE_UP_TO
-  const live = large ? choice !== null && choice.graph === graph && choice.live : (choice?.live ?? true)
-  return [live, next => setChoice({ live: next, graph })]
+  const live = large ? choice !== null && choice.nodes === graph?.nodes && choice.live : (choice?.live ?? true)
+  return [live, next => setChoice({ live: next, nodes: graph?.nodes })]
 }
 
 /** The switch for it, for the header of whatever holds the graph. */
@@ -168,12 +170,17 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
   const arranging = useRef<Layouts | null>(null)
   const pinned = useRef(new Set<string>())
   const settling = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // The graph on the core now, so the same nodes with other relationships change only those.
+  const drawnNow = useRef<{ graph: Result['graph']; fragments: readonly string[] } | null>(null)
 
   useEffect(() => {
     const element = container.current
     if (!element) return
     const core = cytoscape({ container: element, wheelSensitivity: 0.3, minZoom: FURTHEST, maxZoom: 3 })
     cy.current = core
+    drawnNow.current = null
+    // For a test to reach the core, as the 3D view gives its own.
+    Object.assign(element, { _cy: core })
     core.on('tap', event => {
       if (event.target === core) select.current(null)
     })
@@ -299,12 +306,29 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
       resized.disconnect()
       core.destroy()
       cy.current = null
+      drawnNow.current = null
     }
   }, [])
 
   useEffect(() => {
     const core = cy.current
     if (!core) return
+    const redraw = redrawOf(drawnNow.current, { graph, fragments })
+    drawnNow.current = { graph, fragments }
+    if (redraw.kind === 'edges') {
+      /*
+       * The same nodes, with relationships come or gone: those only, and every node left where it is, chosen or pinned
+       * as it was. A simulation running for a drag holds the relationships it started with, so it stops; a first
+       * layout still settling out of sight is left to finish.
+       */
+      if (running.current && running.current !== arranging.current) {
+        clearTimeout(settling.current)
+        running.current.stop()
+        running.current = null
+      }
+      applyEdges(core, redraw)
+      return
+    }
     const roots = new Set(graph.roots)
     clearTimeout(settling.current)
     running.current?.stop()
@@ -319,10 +343,7 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
         group: 'nodes' as const,
         data: { id: node.id, caption: short(captionOf(node)), colour: colourOf(fragments, node.fragment), root: roots.has(node.id), node },
       })),
-      ...graph.edges.map(edge => ({
-        group: 'edges' as const,
-        data: { id: edge.id, source: edge.from, target: edge.to, type: edge.type, directed: edge.directed, added: edge.added === true, edge },
-      })),
+      ...graph.edges.map(edgeElement),
     ])
     const frame = () => {
       // However large the graph, it can be framed whole: the limit is set again from the zoom that frames it.
