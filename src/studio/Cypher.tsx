@@ -7,14 +7,16 @@ import type { SavedAs } from './App'
 import { addQuery, firstLine, listQueries, QUERY_DRAG, updateQuery } from './savedQueries'
 import type { QueryDrag, SavedQuery } from './savedQueries'
 import { connectResults, DEFAULT_LIMIT, MAX_LIMIT, runCypher } from './database'
-import type { Cell, CypherRelationship, CypherResult } from './database'
+import type { Cell, CypherResult } from './database'
 import { GraphView, LiveLayoutToggle, useLiveLayout } from './GraphView'
 import type { Selection } from './GraphView'
 import { GraphView3D } from './GraphView3D'
 import { MAX_3D_NODES, fits3D, shownDepth } from './graph3d'
 import type { Depth } from './graph3d'
 import { Inspector } from './Inspector'
-import { cellText, graphOf, parametersOf, writtenText } from './results'
+import { cellText, graphOf, parametersOf, withConnections, writtenText } from './results'
+import { connectionsOf, toConnect, waitsToConnect } from './connect'
+import type { Connected } from './connect'
 import { useSchema } from './schema'
 
 // CodeMirror, on its own, so the window draws first: until it lands, the plain field it replaces.
@@ -111,6 +113,7 @@ export function Cypher() {
     ).then(
       answered => {
         setResult(answered)
+        setHolding(connectNow.current ? answered : null)
         if (answered.written) setWrote(n => n + 1)
         setSelection(null)
         // A result with nodes in it is drawn; one of values alone is a table.
@@ -184,30 +187,54 @@ export function Cypher() {
 
   /*
    * The relationships among the result's nodes, drawn beside what the query gave back, as Neo4j Browser's "Connect
-   * result nodes" does: one more read, on by default, and remembered. The graph waits for them, so it is laid out once.
+   * result nodes" does: one more read, on by default, and remembered. They are read once for each result and kept, so
+   * the toggle draws them or takes them away where the graph stands, with no new layout. A new result run with it on
+   * waits for them, so it is laid out once; one connected after it is drawn has them added to it.
    */
-  const [connectOn, setConnectOn] = useState(() => remembered(CONNECT, 'on') === 'on')
+  const [connectOn, setConnectOnNow] = useState(() => remembered(CONNECT, 'on') === 'on')
   useEffect(() => remember(CONNECT, connectOn ? 'on' : 'off'), [connectOn])
-  const [connected, setConnected] = useState<{ for: CypherResult; relationships: CypherRelationship[]; truncated: boolean } | null>(null)
+  const connectNow = useRef(connectOn)
+  connectNow.current = connectOn
+  // The new result that waits for its connections before it is first drawn.
+  const [holding, setHolding] = useState<CypherResult | null>(null)
+  const [connected, setConnected] = useState<Connected | null>(null)
+  const setConnectOn = (on: boolean) => {
+    // Turned off or on, the graph shown stays shown; and a read that failed is tried again.
+    setHolding(null)
+    setConnected(known => (known?.failed ? null : known))
+    setConnectOnNow(on)
+  }
+  const known = connectionsOf(connected, result, connection?.id)
+  const reading = toConnect(connectOn, result, connection?.id, connected)
   useEffect(() => {
-    if (!result || !connection || !connectOn) return
+    if (!reading || !result || !connection) return
+    const settled = (got: Omit<Connected, 'for' | 'connection'>) => {
+      setConnected({ for: result, connection: connection.id, ...got })
+      setHolding(held => (held === result ? null : held))
+    }
     const ids = result.graph.nodes.filter(n => !n.partial).map(n => n.id)
-    if (ids.length < 2) return setConnected({ for: result, relationships: [], truncated: false })
+    if (ids.length < 2) return settled({ relationships: [], truncated: false })
     const controller = new AbortController()
     connectResults(connection.id, ids, controller.signal).then(
-      got => setConnected({ for: result, ...got }),
+      got => settled(got),
       () => {
         // Not connected is still a graph: what the query gave back, as it gave it.
-        if (!controller.signal.aborted) setConnected({ for: result, relationships: [], truncated: false })
+        if (!controller.signal.aborted) settled({ relationships: [], truncated: false, failed: true })
       },
     )
     return () => controller.abort()
-  }, [result, connection, connectOn])
-  const waiting = connectOn && result !== null && connected?.for !== result
+  }, [reading, result, connection])
+  const waiting = waitsToConnect(connectOn, result, connection?.id, holding, connected)
+  // What the query gave back, made once for each result: its nodes are the same nodes with the connections or without.
+  const base = useMemo(() => (result ? graphOf(result.graph) : null), [result])
   const drawn = useMemo(
-    () => (result && !waiting ? graphOf(result.graph, connectOn && connected?.for === result ? connected.relationships : []) : null),
-    [result, waiting, connectOn, connected],
+    () => (!result || !base || waiting ? null : connectOn && known ? withConnections(base, result.graph, known.relationships) : base),
+    [result, base, waiting, connectOn, known],
   )
+  // A relationship that is chosen and taken away with the connections leaves nothing to show.
+  useEffect(() => {
+    if (selection?.kind === 'edge' && drawn && !drawn.graph.edges.some(e => e.id === selection.edge.id)) setSelection(null)
+  }, [drawn, selection])
   const added = drawn ? drawn.graph.edges.filter(e => e.added).length : 0
   const [live, setLive] = useLiveLayout(drawn?.graph)
   // 2D or 3D, remembered. 3D is for a small graph: a bigger one is drawn in 2D, and the choice kept for the next.
@@ -305,6 +332,7 @@ export function Cypher() {
               {view === 'graph' && (
                 <span className="studio-live desk-text-small" title="Draw the relationships among the nodes that came back, as Neo4j Browser does">
                   <Toggle label={added ? `Connect results (${added})` : 'Connect results'} checked={connectOn} onChange={setConnectOn} />
+                  {reading && <Spinner label="Connecting the results" size="small" />}
                 </span>
               )}
               {view === 'graph' && shown === '2d' && <LiveLayoutToggle live={live} onChange={setLive} />}

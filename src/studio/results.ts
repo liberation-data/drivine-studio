@@ -11,8 +11,17 @@ export const NO_LABEL = 'No label'
  * by its first label, the labels sorted, so a label keeps its colour from one run to the next.
  */
 export function graphOf(graph: CypherGraph, connecting: readonly CypherRelationship[] = []): { graph: Result['graph']; labels: string[] } {
-  // The graph view keeps nodes and relationships under one set of ids, and FalkorDB numbers each from 0.
-  const nodeId = (id: string) => `node:${id}`
+  const base = baseGraphOf(graph)
+  return connecting.length ? withConnections(base, graph, connecting) : base
+}
+
+type Drawn = { graph: Result['graph']; labels: string[] }
+
+// The graph view keeps nodes and relationships under one set of ids, and FalkorDB numbers each from 0.
+const nodeId = (id: string) => `node:${id}`
+
+/** What the query gave back, alone. */
+function baseGraphOf(graph: CypherGraph): Drawn {
   const nodes: GraphNode[] = graph.nodes.map(node => ({
     id: nodeId(node.id),
     fragment: node.labels[0] ?? NO_LABEL,
@@ -21,7 +30,17 @@ export function graphOf(graph: CypherGraph, connecting: readonly CypherRelations
     aggregates: {},
   }))
   const edges: GraphEdge[] = graph.relationships.map(r => ({ id: `relationship:${r.id}`, from: nodeId(r.from), to: nodeId(r.to), type: r.type, directed: true, properties: r.properties }))
-  // Those connecting the nodes that the query didn't give back itself, marked so they're drawn as such.
+  const labels = [...new Set(nodes.map(n => n.fragment))].sort((a, b) => a.localeCompare(b))
+  return { graph: { nodes, edges, roots: [] }, labels }
+}
+
+/**
+ * `base`, `graphOf` the query's own `graph`, with the relationships connecting its nodes that the query didn't give
+ * back, marked `added` so they're drawn as such. Its nodes, their array and its labels are base's own: the graph
+ * views take the same nodes for the same graph, and add the relationships to it where it stands.
+ */
+export function withConnections(base: Drawn, graph: CypherGraph, connecting: readonly CypherRelationship[]): Drawn {
+  const edges = [...base.graph.edges]
   const given = new Set(graph.relationships.map(r => r.id))
   const present = new Set(graph.nodes.map(n => n.id))
   for (const r of connecting) {
@@ -29,8 +48,7 @@ export function graphOf(graph: CypherGraph, connecting: readonly CypherRelations
     edges.push({ id: `relationship:${r.id}`, from: nodeId(r.from), to: nodeId(r.to), type: r.type, directed: true, properties: r.properties, added: true })
     given.add(r.id)
   }
-  const labels = [...new Set(nodes.map(n => n.fragment))].sort((a, b) => a.localeCompare(b))
-  return { graph: { nodes, edges, roots: [] }, labels }
+  return { graph: { nodes: base.graph.nodes, edges, roots: base.graph.roots }, labels: base.labels }
 }
 
 const nodeText = (node: CypherNode): string => {

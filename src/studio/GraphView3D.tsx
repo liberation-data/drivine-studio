@@ -7,6 +7,7 @@ import { captionOf, colourOf, iconLabelOf } from './GraphView'
 import type { Selection } from './GraphView'
 import { clip, degrees, edgeLit, hubOf, keyAction, legendOf, litOf, namePriority, shownOf, toggled, uncrowded } from './graph3d'
 import type { NameBox } from './graph3d'
+import { redrawOf } from './connect'
 import { Swatch } from './IconPicker'
 import { useLabelIcons } from './icons'
 
@@ -92,6 +93,9 @@ const NAME_MIN_PX = 10
 const ROOM_MS = 33
 /** How far a name eases toward shown or hidden each frame. */
 const NAME_EASE = 0.18
+/** The simulation's ticks before a new graph is shown, and after, while it settles. */
+const WARMUP = 160
+const COOLDOWN = 40
 
 const escape = (text: string) => text.replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`)
 const ends = (l: Link3D) => [typeof l.source === 'string' ? l.source : l.source.id, typeof l.target === 'string' ? l.target : l.target.id] as const
@@ -127,6 +131,9 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
   const repaint = useRef<() => void>(() => {})
   // Set once three is here: draws the graph given.
   const draw = useRef<() => void>(() => {})
+  // Set once three is here: gives the nodes drawn the relationships of the graph given, each node left where it is.
+  const relink = useRef<() => void>(() => {})
+  const drawnNow = useRef<{ graph: Result['graph']; fragments: readonly string[] } | null>(null)
 
   useEffect(() => {
     const element = container.current
@@ -370,8 +377,8 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         // How near a line the pointer must be to pick it, in the scene's units: near, so a node beside one wins.
         .linkHoverPrecision(0.4)
         // Settled before it is shown: no nodes flying in from the middle.
-        .warmupTicks(160)
-        .cooldownTicks(40)
+        .warmupTicks(WARMUP)
+        .cooldownTicks(COOLDOWN)
 
       // With no height yet there is nothing to fit to: three-forcegraph would put the camera at NaN.
       const fit = () => {
@@ -413,6 +420,8 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
       }
       let opened = false
       g.onEngineStop(() => {
+        // After relinking, which moves nothing: a drag or a new graph moves and settles as before.
+        g.warmupTicks(WARMUP).cooldownTicks(COOLDOWN)
         if (opened) return
         opened = true
         open()
@@ -654,6 +663,7 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         orderKey = ''
         opened = false
         element.dataset.shown = 'false'
+        g.warmupTicks(WARMUP).cooldownTicks(COOLDOWN)
         g.graphData({
           nodes: graph.nodes.map((node): Node3D => ({
             id: node.id,
@@ -666,6 +676,26 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
           })),
           links: graph.edges.filter(e => ids.has(e.from) && ids.has(e.to)).map((edge): Link3D => ({ source: edge.from, target: edge.to, edge, o: LINK })),
         })
+      }
+      relink.current = () => {
+        const { graph } = latest.current
+        const nodes = g.graphData().nodes as Node3D[]
+        const ids = new Set(nodes.map(n => n.id))
+        const was = new Map((g.graphData().links as Link3D[]).map(l => [l.edge.id, l]))
+        const links = graph.edges
+          .filter(e => ids.has(e.from) && ids.has(e.to))
+          .map((edge): Link3D => {
+            const kept = was.get(edge.id)
+            return kept && kept.edge === edge ? kept : { source: edge.from, target: edge.to, edge, o: LINK }
+          })
+        // The focus node's neighbours may be others now.
+        orderKey = ''
+        /*
+         * The same node objects keep their places and their shapes. Given new data, the simulation is heated again and
+         * warmed up before it is drawn: with no ticks either way it stops at once, the relationships put between the
+         * nodes where they are, and the view and focus as they were.
+         */
+        g.warmupTicks(0).cooldownTicks(0).graphData({ nodes, links })
       }
       // The graph that was there before three arrived.
       draw.current()
@@ -683,6 +713,7 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         element.replaceChildren()
         repaint.current = () => {}
         draw.current = () => {}
+        relink.current = () => {}
       }
     })
     return () => {
@@ -692,7 +723,11 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
     }
   }, [])
 
+  // A new graph is drawn and opened afresh; the same nodes with relationships come or gone keep the view and its focus.
   useEffect(() => {
+    const redraw = redrawOf(drawnNow.current, { graph, fragments })
+    drawnNow.current = { graph, fragments }
+    if (redraw.kind === 'edges') return relink.current()
     setFocus(null)
     draw.current()
   }, [graph, fragments])
