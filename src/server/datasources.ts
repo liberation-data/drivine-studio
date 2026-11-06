@@ -6,6 +6,7 @@ import type { Connection as DrivineConnection, ConnectionProvider, SqliteConnect
 import { JSON_ROWS } from '@liberation-data/drivine/backend/sqlite/SqliteGraph.js'
 import neo4j from 'neo4j-driver'
 import { statSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
 import type { Driver } from 'neo4j-driver'
 import { CHANGES, DATABASE_NAMES, DEFAULT_LIMIT, READS_ONLY, RUNS_CYPHER } from '../studio/database'
 import type { Change, CypherResult } from '../studio/database'
@@ -353,7 +354,7 @@ async function sqliteSession(provider: ConnectionProvider, writes: boolean): Pro
     }
     if (writes) {
       db.close()
-      db = new DatabaseSync(path)
+      db = new DatabaseSync(toWrite(path))
       db.exec('PRAGMA foreign_keys = ON')
     }
     // Drivine's connection waits for a locked file itself, by trying again, so that the process is not held up.
@@ -365,6 +366,16 @@ async function sqliteSession(provider: ConnectionProvider, writes: boolean): Pro
     throw sqlRefused(e, 'SQLITE', graph, writes)
   }
   return new SqliteConnection(db as never, new PostgresResultMapper(), DEFAULT_BUSY_TIMEOUT_MILLIS, it => it.close(), graph)
+}
+
+/**
+ * The file's path as SQLite opens it to write without making it: SQLite makes a file it is asked to open that is not
+ * there, unless told `mode=rw`, and the file checked a moment before may have been moved or removed since.
+ */
+export const toWrite = (path: string): URL => {
+  const url = pathToFileURL(path)
+  url.searchParams.set('mode', 'rw')
+  return url
 }
 
 /**
@@ -564,8 +575,8 @@ function refused(e: unknown, graphName: string | undefined): unknown {
 }
 
 /**
- * Connects and runs the smallest read there is, to say whether the connection works. On Postgres and Oracle, one that
- * reads the graph's nodes, so a graph whose tables are not there is said not to be.
+ * Connects and runs the smallest read there is, to say whether the connection works. On Postgres, Oracle and SQLite,
+ * one that reads the graph's nodes, so a graph whose tables are not there is said not to be.
  */
 export async function check(connection: Connection): Promise<{ milliseconds: number }> {
   const statement = SQL_STORES.includes(connection.type) ? 'MATCH (n) RETURN 1 AS one LIMIT 1' : 'RETURN 1 AS one'

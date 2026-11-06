@@ -8,6 +8,7 @@ import type { RunJob } from '../server/benchRun'
 import type { Loaded, LoadBatch, LoadJob } from '../server/benchLoad'
 import { Scale, SCALES, SLOW_SCALE } from '../server/benchData'
 import { listConnections, DATABASE_NAMES } from './database'
+import { notNow } from './connectionMenu'
 import { useOnline } from './online'
 import type { StudioConnection } from './database'
 import { listQueries } from './savedQueries'
@@ -802,7 +803,7 @@ function DatabasePicker({ legend, writes = false, note, footer, onChosen }: {
   const unloadable = (c: StudioConnection) => writes && c.type === 'SQLITE'
   const why = (c: StudioConnection) =>
     unloadable(c) ? 'not loaded into SQLite yet'
-      : writes && !c.allowWrites ? 'doesn’t allow writes' : up[c.id] === undefined ? 'checking…' : !up[c.id] ? 'not running' : undefined
+      : writes && !c.allowWrites ? 'doesn’t allow writes' : notNow(up[c.id], c.type)
   const usable = (c: StudioConnection) => !why(c)
   const chosen = (connections ?? []).filter(c => picked.has(c.id) && usable(c)).map(c => c.id)
   const key = chosen.join('|')

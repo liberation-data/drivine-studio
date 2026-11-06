@@ -39,7 +39,7 @@ export async function load(connection: Connection, catalog: Catalog, query: Quer
 /** The Cypher `loadAll` runs for the query on this connection's database, with its parameters as it binds them. */
 export function loadCypher(connection: Connection, catalog: Catalog, query: Query): { statement: string; parameters: Record<string, unknown> } {
   runsCypher(connection)
-  // Drivine loads on Postgres and Oracle with SQL of its own, not Cypher, which the studio does not run yet.
+  // Drivine loads on Postgres, Oracle and SQLite with SQL of its own, not Cypher, which the studio does not run yet.
   if (SQL_STORES.includes(connection.type)) {
     throw new StatementError(
       `The studio loads views and fragments on Neo4j, Memgraph, Neptune and FalkorDB. On ${DATABASE_NAMES[connection.type]}, run Cypher in the Cypher window.`,

@@ -9,6 +9,7 @@ import { dockerCommand, fillFor, foundName, listed, sameKind } from './docker'
 import type { DockerStatus } from './docker'
 import { addConnection, DATABASE_NAMES, DATABASE_TYPES, dockerAction, dockerStatus, freeDockerPort, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
+import { down } from './connectionMenu'
 import { filePicker } from './nativeMenu'
 import { useOnline } from './online'
 
@@ -24,7 +25,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
  */
 export function Connections() {
   const { connections, connectionProblem, reloadConnections, connection: active, chooseConnection } = useStudio()
-  // A lamp beside each that can be tried: up, or not running.
+  // A lamp beside each that can be tried: up, or not running (see down).
   const up = useOnline((connections ?? []).filter(c => RUNS_CYPHER.includes(c.type)).map(c => c.id))
   const [chosen, setChosen] = useState<Chosen>(() => active?.id ?? null)
   // Where to go once unsaved changes are let go of, while that is being asked.
@@ -333,7 +334,7 @@ function ConnectionEntry({ connection: c, chosen, inUse, test, online, onChoose,
         {...target}
       >
         <span className="studio-entry-name">
-          <Led color={online === undefined ? 'off' : online ? 'green' : 'red'} label={online === undefined ? undefined : online ? 'Up' : 'Not running'} />
+          <Led color={online === undefined ? 'off' : online ? 'green' : 'red'} label={online === undefined ? undefined : online ? 'Up' : down(c.type).replace(/^./, first => first.toUpperCase())} />
           {c.name}
           {test && test.state !== 'testing' && (
             <span className={test.state === 'passed' ? 'studio-test-passed' : 'studio-bad'} aria-label={test.state === 'passed' ? 'Connected' : 'Failed'}>

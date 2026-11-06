@@ -106,6 +106,8 @@ describe('loadCypher', () => {
     expect(() => loadCypher({ ...neo, type: 'POSTGRES' }, catalog, query({}))).toThrow(StatementError)
     expect(() => loadCypher({ ...neo, type: 'POSTGRES' }, catalog, query({}))).toThrow('On Postgres, run Cypher in the Cypher window')
     expect(() => loadCypher({ ...neo, type: 'ORACLE' }, catalog, query({}))).toThrow('On Oracle, run Cypher in the Cypher window')
+    // Nor on SQLite, whose provider would make the graph's tables: refused before anything is connected to.
+    expect(() => loadCypher({ ...neo, type: 'SQLITE' }, catalog, query({}))).toThrow('On SQLite, run Cypher in the Cypher window')
   })
 })
 

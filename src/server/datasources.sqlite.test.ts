@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ConnectionError } from './connections'
 import type { Connection } from './connections'
-import { check, forget, NoGraphError, readSql, run, StatementError } from './datasources'
+import { check, forget, NoGraphError, readSql, run, StatementError, toWrite } from './datasources'
 import { readSchema } from './schema'
 
 // SQLite needs no database running: each file here is made in a folder of the test's own, by Drivine, as an
@@ -92,6 +92,14 @@ describe('run, on SQLite', () => {
     expect(listed.graph.nodes.map(n => n.id).sort()).toEqual(['1', '2'])
   })
 
+  it('binds a statement\'s parameters, where it reads and where it writes', async () => {
+    const connection = on(await graphFile(), { allowWrites: true })
+    const read = await run(connection, 'MATCH (n) WHERE n.name IN $names AND n.born >= $born RETURN n.name AS name', { names: ['Ann', 'Bo'], born: 1960 })
+    expect(read.rows).toEqual([[{ kind: 'value', value: 'Ann' }]])
+    await run(connection, 'CREATE (c:Cat {name: $name}) RETURN c.name AS name', { name: 'Cy' }, 10, { writes: true })
+    expect((await run(connection, 'MATCH (c:Cat {name: $name}) RETURN count(c) AS c', { name: 'Cy' })).rows).toEqual([[{ kind: 'value', value: 1 }]])
+  })
+
   it('reads at most the limit, and says there were more', async () => {
     const result = await run(on(await graphFile()), 'MATCH (n) RETURN n.name AS name ORDER BY name', {}, 1)
     expect(result.rows).toEqual([[{ kind: 'value', value: 'Ann' }]])
@@ -129,6 +137,19 @@ describe('run, on SQLite', () => {
     await expect(run(connection, 'CREATE (:Person)', {}, 1, { writes: true })).rejects.toThrow(ConnectionError)
     expect(existsSync(file)).toBe(false)
     expect(readdirSync(dir).filter(name => name.startsWith('missing'))).toEqual([])
+  })
+
+  it('opens a file to write without making it, should it go between its check and its opening', () => {
+    const file = join(dir, 'gone #1?.db')
+    expect(() => new DatabaseSync(toWrite(file))).toThrow(/unable to open/)
+    expect(existsSync(file)).toBe(false)
+    const there = otherFile()
+    const db = new DatabaseSync(toWrite(there))
+    try {
+      db.exec('INSERT INTO notes VALUES (1)')
+    } finally {
+      db.close()
+    }
   })
 
   it('refuses a folder as the file', async () => {
