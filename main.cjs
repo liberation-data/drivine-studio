@@ -1,6 +1,6 @@
 // main.cjs: the desktop app. It runs the studio's standalone Next.js server in Electron's own Node and
 // opens a window on it, so the browser app talks to the same server here as it does from npm start.
-const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, nativeTheme, shell, utilityProcess } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -264,6 +264,13 @@ ipcMain.on('studio:menus', (event, menus) => {
     setMenu(win, menus);
   }
   drawn = next;
+});
+
+// The appearance chosen in the studio's Settings: the app's own menus, dialogs and window follow it, as the page does.
+// Only from the studio's own page, and only one of the three.
+ipcMain.on('studio:theme', (event, theme) => {
+  if (!event.senderFrame?.url.startsWith(URL) || !['system', 'light', 'dark'].includes(theme)) return;
+  nativeTheme.themeSource = theme;
 });
 
 // The system's folder picker, for the page to link a project by choosing it: the path chosen, or null. Only for the

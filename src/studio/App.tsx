@@ -10,10 +10,12 @@ import { loadCatalog } from './api'
 import type { Catalog } from './api'
 import { Canvas } from './Canvas'
 import { Catalogue } from './Catalogue'
+import { Connections } from './Connections'
 import { Cypher } from './Cypher'
 import { Bench } from './Bench'
 import { Files, QueryIcon } from './Files'
 import { Settings } from './Settings'
+import { appearance, applyAppearance } from './appearance'
 import { listQueries, QUERY_DRAG } from './savedQueries'
 import type { QueryDrag } from './savedQueries'
 import { connectionChoices } from './connectionMenu'
@@ -32,7 +34,7 @@ export const StudioCommands = {
   saveAs: 'studio.query.saveAs',
   open: 'studio.open',
   settings: 'studio.settings',
-  /** Settings, at its Connections section: where a window with no database to use sends the person. */
+  /** The Connections window: where a window with no database to use sends the person. */
   connections: 'studio.connections',
 } as const
 
@@ -40,7 +42,7 @@ export const StudioCommands = {
 if (typeof document !== 'undefined') {
   addCommandHandler(document, StudioCommands.open, () => desk.open('files'))
   addCommandHandler(document, StudioCommands.settings, () => desk.open('settings'))
-  addCommandHandler(document, StudioCommands.connections, () => desk.open('settings', { route: 'connections' }))
+  addCommandHandler(document, StudioCommands.connections, () => desk.open('connections'))
 }
 // In the desktop app on a Mac, the menus are the Mac's own, at the top of the screen.
 const native = nativeMenus()
@@ -52,7 +54,8 @@ const native = nativeMenus()
 const LIMITS: Record<string, WindowLimits> = {
   explore: { minWidth: 640, minHeight: 360 },
   cypher: { minWidth: 520, minHeight: 360 },
-  // Its sections, and Connections' list and editor beside them.
+  connections: { minWidth: 560, minHeight: 360 },
+  // Its sections, and Icons' table beside them.
   settings: { minWidth: 760, minHeight: 400 },
   files: { minWidth: 640, minHeight: 360 },
   bench: { minWidth: 720, minHeight: 360 },
@@ -81,7 +84,7 @@ function infoOf(id: string, connection: StudioConnection | null): ReactNode {
         <p>
           {connection?.allowWrites
             ? `${ALLOWS_WRITES} There is no undo.`
-            : 'Each statement runs where it cannot write. To change the database, turn on Allow writes for the connection in Settings, under Connections.'}
+            : 'Each statement runs where it cannot write. To change the database, turn on Allow writes for the connection in Connections.'}
         </p>
       </>
     )
@@ -92,10 +95,13 @@ function infoOf(id: string, connection: StudioConnection | null): ReactNode {
   if (id === 'bench') {
     return 'Graph Bench’s results: the ones it publishes, and the runs of a checkout you link. Compare one set with another to see what a Drivine release made faster or slower, on the same machine.'
   }
+  if (id === 'connections') {
+    return 'The databases the studio reads, kept in connections.json in its home, passwords too, readable by you alone. One from the environment is set where the studio was started.'
+  }
   if (id === 'settings') {
     return (
       <>
-        <p>Connections: the databases the studio reads, kept in connections.json in its home, passwords too, readable by you alone. One from the environment is set where the studio was started.</p>
+        <p>Appearance: light, dark, or as the system is, kept in this browser or the desktop app.</p>
         <p>Icons: each label&apos;s icon and why it has it, and your own common words and icons taken only by name, kept in icons.json in its home, for every connection alike.</p>
       </>
     )
@@ -103,7 +109,7 @@ function infoOf(id: string, connection: StudioConnection | null): ReactNode {
   return null
 }
 
-const TITLES: Record<string, string> = { files: 'Files', explore: 'Explore', cypher: 'Cypher', bench: 'Bench', settings: 'Settings' }
+const TITLES: Record<string, string> = { files: 'Files', explore: 'Explore', cypher: 'Cypher', bench: 'Bench', connections: 'Connections', settings: 'Settings' }
 const title = (id: string) => TITLES[id] ?? id
 
 /** A saved query as the Cypher window knows the one it holds. */
@@ -170,6 +176,7 @@ function renderWindow(id: string): ReactNode {
     )
   }
   if (id === 'cypher') return <Cypher />
+  if (id === 'connections') return <Connections />
   if (id === 'settings') return <Settings />
   if (id === 'files') return <Files />
   if (id === 'bench') return <Bench />
@@ -207,8 +214,9 @@ const DOCK = [
   dockItem({ id: 'explore', label: 'Explore', description: 'Views and fragments, loaded and seen as a graph', icon: icon('M6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7.7 7l8.5 2.4M16.6 11.5l-7.2 5.3M6.4 8l1.2 8') }),
   dockItem({ id: 'cypher', label: 'Cypher', description: 'Run Cypher, see a graph or rows', icon: icon('M8 6l-5 6 5 6M16 6l5 6-5 6M14 4l-4 16') }),
   dockItem({ id: 'bench', label: 'Bench', description: 'Graph Bench results, read and compared', icon: icon('M4 20V10M10 20V4M16 20v-7M22 20H2') }),
+  dockItem({ id: 'connections', label: 'Connections', description: 'The databases to read', icon: icon('M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2zM4 6v12c0 1.1 3.6 2 8 2s8-.9 8-2V6M4 12c0 1.1 3.6 2 8 2s8-.9 8-2') }),
   // Last, as a Mac's System Settings sits at the end of its dock.
-  dockItem({ id: 'settings', label: 'Settings', description: 'The databases to read, and the labels\' icons', icon: icon('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z') }),
+  dockItem({ id: 'settings', label: 'Settings', description: 'How the studio looks, and the labels\' icons', icon: icon('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z') }),
 ]
 
 export function App() {
@@ -218,6 +226,8 @@ export function App() {
   const [connections, setConnections] = useState<StudioConnection[] | null>(null)
   const [connectionProblem, setConnectionProblem] = useState<string | null>(null)
   const [chosen, setChosen] = useState<string | null>(null)
+  // The head's script set the page's appearance before React started; the desktop app's menus are told it here.
+  useEffect(() => applyAppearance(appearance()), [])
   const [pendingCypher, setPendingCypher] = useState<Studio['pendingCypher']>(null)
   const openInCypher = useCallback((statement: string, parameters: Record<string, unknown> | string, saved?: SavedAs) => {
     setPendingCypher({ statement, parameters, ...(saved ? { saved } : {}) })
@@ -282,6 +292,7 @@ export function App() {
     // The app's own menu: what is about the studio and how it is set up, as a Mac app keeps its Settings there.
     { id: 'studio', label: 'Drivine Studio', emphasis: true, items: [
         menuCommand('Settings…', StudioCommands.settings, { shortcut: 'mod+,' }),
+        menuCommand('Connections…', StudioCommands.connections),
         menuAction('Reload Connections', reloadConnections),
       ] },
     // The documents: queries to make, open and keep, and the model files the studio reads.
@@ -306,7 +317,7 @@ export function App() {
       label: 'Window',
       // The studio's windows to open, as a Mac app lists its own tools here, then the ones open now.
       items: () => [
-        ...['files', 'explore', 'cypher', 'bench', 'settings'].map(id => menuAction(title(id), () => desk.open(id))),
+        ...['files', 'explore', 'cypher', 'bench', 'connections', 'settings'].map(id => menuAction(title(id), () => desk.open(id))),
         menuSeparator(),
         menuCommand('Arrange', DeskCommands.arrange, { shortcut: 'mod+alt+a' }),
         menuSeparator(),
@@ -337,7 +348,7 @@ export function App() {
         menuAction(c.name, () => chooseConnection(c.id), { checked, detail, disabled }),
       ),
       ...(connections?.length ? [menuSeparator()] : []),
-      menuAction('Connections…', () => desk.open('settings', { route: 'connections' })),
+      menuAction('Connections…', () => desk.open('connections')),
     ],
   }], [connections, connection, chooseConnection, up])
   useNativeMenus(native, menus, desk, status)

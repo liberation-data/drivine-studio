@@ -33,6 +33,8 @@ export interface StudioNative {
   onMenu(handler: (id: string) => void): () => void
   /** The system's folder picker: the path of the folder chosen, or null. */
   pickFolder?(): Promise<string | null>
+  /** The appearance chosen in Settings, for the app's own menus and dialogs to follow. */
+  setTheme?(theme: 'system' | 'light' | 'dark'): void
 }
 
 /** The desktop app's folder picker, on any system, when the page is in the desktop app. */

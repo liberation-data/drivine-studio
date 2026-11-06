@@ -25,7 +25,7 @@ export function Canvas() {
       ) : subject && catalog ? (
         <div className="studio-hint">
           <h2>No connection in use</h2>
-          <p>Add one in Settings, under Connections, to load {subjectName(subject)} from it.</p>
+          <p>Add one in Connections to load {subjectName(subject)} from it.</p>
         </div>
       ) : (
         <div className="studio-hint">

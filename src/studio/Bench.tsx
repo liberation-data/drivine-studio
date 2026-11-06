@@ -778,7 +778,7 @@ function LoadData({ onStarted, onCancel }: { onStarted: (batch: LoadBatch) => vo
 /**
  * The databases to bench or load, each tried when the sheet opens and every few seconds after: one that isn't up
  * can't be ticked and says so, and so can't fail its turn later. Read again every few seconds too, so one set up in
- * Settings meanwhile shows up. Those that can be chosen come first. Tells its sheet what is chosen and usable now.
+ * Connections meanwhile shows up. Those that can be chosen come first. Tells its sheet what is chosen and usable now.
  */
 function DatabasePicker({ legend, writes = false, note, footer, onChosen }: {
   legend: string
