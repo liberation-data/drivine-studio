@@ -7,6 +7,7 @@ import type { GraphEdge, GraphNode, Result } from './api'
 import { applyEdges, edgeElement, redrawOf } from './connect'
 import { IconPicker, Swatch } from './IconPicker'
 import { useLabelIcons } from './icons'
+import { onThemeChange } from './appearance'
 
 // One colour per fragment, in the order the catalogue lists them. Every node is also named, and the
 // legend says which is which, so colour is never the only thing telling two apart.
@@ -245,7 +246,7 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
       }
     })
 
-    // A canvas cannot read CSS variables, so the desk's colours are read once and again when the scheme changes.
+    // A canvas cannot read CSS variables, so the desk's colours are read once and again when the theme changes.
     const paint = () => {
       const tokens = getComputedStyle(element)
       const token = (name: string, fallback: string) => tokens.getPropertyValue(name).trim() || fallback
@@ -296,13 +297,12 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
       ])
     }
     paint()
-    const scheme = window.matchMedia('(prefers-color-scheme: dark)')
-    scheme.addEventListener('change', paint)
+    const unthemed = onThemeChange(paint)
     const resized = new ResizeObserver(() => core.resize())
     resized.observe(element)
     return () => {
       stop()
-      scheme.removeEventListener('change', paint)
+      unthemed()
       resized.disconnect()
       core.destroy()
       cy.current = null

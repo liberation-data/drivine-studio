@@ -10,6 +10,7 @@ import type { NameBox } from './graph3d'
 import { redrawOf } from './connect'
 import { Swatch } from './IconPicker'
 import { useLabelIcons } from './icons'
+import { onThemeChange } from './appearance'
 
 /*
  * The same graph as GraphView, in three dimensions, for a small result (see MAX_3D_NODES): every node is a lit shape in
@@ -145,10 +146,11 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
       if (gone) return
       const tokens = getComputedStyle(element)
       const token = (name: string, fallback: string) => tokens.getPropertyValue(name).trim() || fallback
-      const surface = token('--desk-surface', '#ffffff')
-      const ink = token('--desk-ink', '#1d1d1f')
-      const muted = token('--desk-muted', '#8a8a8e')
-      const accent = token('--desk-accent', '#0a84ff')
+      // Read again when the theme changes: see retheme.
+      let surface = token('--desk-surface', '#ffffff')
+      let ink = token('--desk-ink', '#1d1d1f')
+      let muted = token('--desk-muted', '#8a8a8e')
+      let accent = token('--desk-accent', '#0a84ff')
       const font = token('--desk-font', 'system-ui, sans-serif')
 
       const g = new ForceGraph3D(element, { controlType: 'orbit' })
@@ -256,15 +258,13 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         if (n.body) n.body.emissiveIntensity = n.id === chosen ? 0.35 : 0
       }
       repaint.current = () => (g.graphData().nodes as Node3D[]).forEach(paint)
-      const nameOf = (n: Node3D) => {
+      const NAME_PX = 40
+      // The name in the theme's ink, on the canvas made for it, which is as wide as the name whatever the theme.
+      const writeName = (n: Node3D, canvas: HTMLCanvasElement) => {
         const text = clip(captionOf(n.node))
-        const px = 40
-        const canvas = document.createElement('canvas')
         const c = canvas.getContext('2d')!
-        c.font = `500 ${px}px ${font}`
-        canvas.width = Math.ceil(c.measureText(text).width) + 16
-        canvas.height = px + 16
-        c.font = `500 ${px}px ${font}`
+        c.clearRect(0, 0, canvas.width, canvas.height)
+        c.font = `500 ${NAME_PX}px ${font}`
         c.textBaseline = 'middle'
         c.lineJoin = 'round'
         // A halo of the stage's colour, so a name reads over a relationship drawn behind it.
@@ -273,6 +273,14 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
         c.strokeText(text, 8, canvas.height / 2)
         c.fillStyle = ink
         c.fillText(text, 8, canvas.height / 2)
+      }
+      const nameOf = (n: Node3D) => {
+        const canvas = document.createElement('canvas')
+        const c = canvas.getContext('2d')!
+        c.font = `500 ${NAME_PX}px ${font}`
+        canvas.width = Math.ceil(c.measureText(clip(captionOf(n.node))).width) + 16
+        canvas.height = NAME_PX + 16
+        writeName(n, canvas)
         const texture = new THREE.CanvasTexture(canvas)
         texture.colorSpace = THREE.SRGBColorSpace
         // Drawn over the shapes, its halo keeping it apart: a name half behind a nearer node can't be read.
@@ -703,7 +711,34 @@ export function GraphView3D({ graph, fragments, onSelect }: Props) {
       // For the Reset view button, and for a test to reach the view.
       Object.assign(element, { _fit: fit, _graph: g })
 
+      // Another theme: the stage, its fog, the names, the chosen node's glow and the relationships in its colours.
+      const retheme = () => {
+        const now = getComputedStyle(element)
+        const read = (name: string, was: string) => now.getPropertyValue(name).trim() || was
+        surface = read('--desk-surface', surface)
+        ink = read('--desk-ink', ink)
+        muted = read('--desk-muted', muted)
+        accent = read('--desk-accent', accent)
+        accentColour.set(accent)
+        g.backgroundColor(surface)
+        fog.color.set(surface)
+        for (const n of g.graphData().nodes as Node3D[]) {
+          mark(n)
+          const map = n.text?.material.map
+          if (map) {
+            writeName(n, map.image as HTMLCanvasElement)
+            map.needsUpdate = true
+          }
+        }
+        for (const l of g.graphData().links as Link3D[]) {
+          l.line?.color.set(l.edge.id === chosen ? accent : muted)
+          l.cone?.color.set(muted)
+        }
+      }
+      const unthemed = onThemeChange(retheme)
+
       teardown = () => {
+        unthemed()
         cancelAnimationFrame(frame)
         clearTimeout(idle)
         resized.disconnect()

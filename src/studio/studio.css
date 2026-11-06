@@ -397,6 +397,8 @@ html, body, #root { height: 100%; margin: 0; }
 /* Settings: its sections down the side, and the one chosen filling the rest. */
 .studio-settings-section { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .studio-settings-section[hidden] { display: none; }
+/* As wide as its three choices, not the pane. */
+.studio-appearance-choice { align-self: flex-start; }
 .studio-icon-small { width: 16px; height: 16px; }
 .studio-icon-large { width: 40px; height: 40px; }
 .studio-icon-settings { display: flex; flex-direction: column; height: 100%; min-height: 0; }

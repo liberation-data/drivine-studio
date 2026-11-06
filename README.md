@@ -72,10 +72,16 @@ vectors are in the repository, made by `npm run icon-vectors` after an upgrade o
 icon, or on fewer right than before: run it after a change to the model, the common words or the icons taken only by
 name.
 
+## Appearance
+
+Appearance, in Settings (Drivine Studio ▸ Settings…, ⌘, or Ctrl+,), is Light, Dark, or System, which is as the system
+is and changes when it does. The choice is kept in the browser, or in the desktop app, whose own menus and dialogs
+follow it.
+
 ## Connections
 
-Connections, the first section of Settings (Drivine Studio ▸ Settings…, ⌘, or Ctrl+,; or Connections… in the
-connection menu at the end of the menu bar), adds, tests, changes and removes the databases the studio reads: Neo4j, Memgraph, Neptune,
+The Connections window (its dock item; Drivine Studio ▸ Connections…; or Connections… in the connection menu at the
+end of the menu bar) adds, tests, changes and removes the databases the studio reads: Neo4j, Memgraph, Neptune,
 FalkorDB, Postgres and Oracle. Each may be set to allow writes from the Cypher window: see Allowing writes. The studio keeps them in `connections.json` in `~/.drivine-studio`, or in
 `DRIVINE_STUDIO_HOME`. The file holds passwords, so the studio writes it readable by its owner alone; the browser
 is only ever told whether a connection has one.
@@ -124,7 +130,7 @@ the same. Views and fragments are not loaded on them yet: Drivine loads them wit
 
 ### Allowing writes
 
-A connection's **Allow writes** setting, in Settings under Connections, lets a statement run in the Cypher
+A connection's **Allow writes** setting, in the Connections window, lets a statement run in the Cypher
 window write. It is off unless turned on, and kept in `connections.json` with the rest of the connection; the
 environment's connection never allows writes. The Cypher window says, above what a statement gives back, that the
 connection in use allows writes. The Canvas, its loads, a Bench run of saved queries and a connection's test only ever read, whatever the setting.
@@ -149,7 +155,7 @@ npm install
 npm run dev                                    # http://localhost:5187
 ```
 
-Add a connection in Settings, under Connections, and a folder with model files in the Catalogue's Folders sheet: a
+Add a connection in the Connections window, and a folder with model files in the Catalogue's Folders sheet: a
 drivine4j checkout, say, whose `drivine4j-sample` has one. Then drag a view to the Canvas, or run Cypher in the
 Cypher window.
 
