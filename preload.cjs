@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('studioNative', {
   platform: process.platform,
   setMenus: menus => ipcRenderer.send('studio:menus', menus),
   pickFolder: () => ipcRenderer.invoke('studio:pick-folder'),
+  pickFile: () => ipcRenderer.invoke('studio:pick-file'),
   // The appearance chosen in Settings, for the app's own menus and dialogs: 'system', 'light' or 'dark'.
   setTheme: theme => ipcRenderer.send('studio:theme', theme),
   onMenu: handler => {

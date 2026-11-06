@@ -34,6 +34,8 @@ export interface StudioNative {
   onMenu(handler: (id: string) => void): () => void
   /** The system's folder picker: the path of the folder chosen, or null. */
   pickFolder?(): Promise<string | null>
+  /** The system's file picker: the path of the file chosen, or null. */
+  pickFile?(): Promise<string | null>
   /** The appearance chosen in Settings, for the app's own menus and dialogs to follow. */
   setTheme?(theme: Appearance): void
 }
@@ -41,6 +43,12 @@ export interface StudioNative {
 /** The desktop app's folder picker, on any system, when the page is in the desktop app. */
 export const folderPicker = (): (() => Promise<string | null>) | undefined => {
   const pick = typeof window === 'undefined' ? undefined : window.studioNative?.pickFolder
+  return pick ? () => pick() : undefined
+}
+
+/** The desktop app's file picker, on any system, when the page is in the desktop app. */
+export const filePicker = (): (() => Promise<string | null>) | undefined => {
+  const pick = typeof window === 'undefined' ? undefined : window.studioNative?.pickFile
   return pick ? () => pick() : undefined
 }
 

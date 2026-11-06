@@ -9,6 +9,7 @@ import { dockerCommand, fillFor, foundName, listed, sameKind } from './docker'
 import type { DockerStatus } from './docker'
 import { addConnection, DATABASE_NAMES, DATABASE_TYPES, dockerAction, dockerStatus, freeDockerPort, removeConnection, RUNS_CYPHER, testConnection, updateConnection } from './database'
 import type { ConnectionInput, DatabaseType, StudioConnection } from './database'
+import { filePicker } from './nativeMenu'
 import { useOnline } from './online'
 
 type Test = { state: 'testing' } | { state: 'passed'; milliseconds: number } | { state: 'failed'; message: string }
@@ -372,8 +373,9 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
   const [problem, setProblem] = useState<string | null>(null)
   const set = (patch: Partial<Draft>) => setDraft(d => ({ ...d, ...patch }))
   const field = DATABASE_FIELD[draft.type]
-  // A file has no host, port, user or password.
+  // A file has no host, port, user or password, and is chosen in the desktop app's file picker, where there is one.
   const file = draft.type === 'SQLITE'
+  const pickFile = useMemo(filePicker, [])
   const isNew = editing === 'new'
   const hadPassword = !isNew && editing.hasPassword
   // One from the environment is the studio's to read, not to change: it is set where the studio was started.
@@ -490,7 +492,18 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
               <Checkbox label="Forget the password" checked={draft.clearPassword} onChange={clearPassword => set({ clearPassword })} />
             </div>
           )}
-          {field && <TextField label={field.label} help={field.help} value={draft.database} onChange={e => set({ database: e.target.value })} />}
+          {field && !file && <TextField label={field.label} help={field.help} value={draft.database} onChange={e => set({ database: e.target.value })} />}
+          {field && file && (
+            <div className="studio-wide studio-file">
+              <TextField
+                label={field.label} help={field.help} value={draft.database} placeholder="~/data/graph.db" spellCheck={false}
+                onChange={e => set({ database: e.target.value })}
+              />
+              {pickFile && !fixed && (
+                <Button onClick={() => void pickFile().then(path => path && set({ database: path }))}>Choose…</Button>
+              )}
+            </div>
+          )}
           {GRAPH_TYPES.includes(draft.type) && (
             <TextField label="Graph" help={graphHelp(draft.graph)} value={draft.graph} onChange={e => set({ graph: e.target.value })} />
           )}

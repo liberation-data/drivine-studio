@@ -151,6 +151,11 @@ html, body, #root { height: 100%; margin: 0; }
 }
 .studio-fields p, .studio-fields + * { margin: 0; }
 .studio-wide { grid-column: 1 / -1; }
+/* A SQLite file's field, its Choose… button beside the input: the field's label, input and help join this grid. */
+.studio-file { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--desk-space-2); row-gap: var(--desk-space-1); align-items: center; }
+.studio-file > .desk-field { display: contents; }
+.studio-file > .desk-field > * { grid-column: 1; }
+.studio-file > :not(.desk-field) { grid-column: 2; grid-row: 2; }
 .studio-fields { margin-bottom: var(--desk-space-3); container-type: inline-size; }
 /* Too narrow for two side by side, as when the list is dragged wide: one to a row. */
 @container (max-width: 440px) {
