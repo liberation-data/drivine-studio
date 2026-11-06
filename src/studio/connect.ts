@@ -36,6 +36,9 @@ export const waitsToConnect = (
 type Graph = Result['graph']
 interface Drawn { readonly graph: Graph; readonly fragments: readonly string[] }
 
+/** A redraw: a new layout, or only the relationships to add and the ids of those to take away. */
+export type Redraw = { kind: 'layout' } | { kind: 'edges'; add: GraphEdge[]; remove: string[] }
+
 /**
  * What drawing `next` after `before` takes: a new layout, for another graph; or, for the same nodes (the same array
  * of them: `withConnections` keeps it) in the same colours, only the relationships to add and the ids of those to take
@@ -43,8 +46,6 @@ interface Drawn { readonly graph: Graph; readonly fragments: readonly string[] }
  * with is begun again with these: cola keeps pulling on those it began with, and the parts it sets apart at the end
  * are the parts as they are then, so relationships joining two of them would be drawn across a jumble.
  */
-export type Redraw = { kind: 'layout' } | { kind: 'edges'; add: GraphEdge[]; remove: string[] }
-
 export function redrawOf(before: Drawn | null, next: Drawn, arranging = false): Redraw {
   if (arranging || !before || before.graph.nodes !== next.graph.nodes || before.fragments !== next.fragments) return { kind: 'layout' }
   const now = new Map(next.graph.edges.map(e => [e.id, e]))

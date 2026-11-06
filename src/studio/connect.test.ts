@@ -53,6 +53,16 @@ describe('reading the connections', () => {
     expect(connectionsOf(connected(), result, 'one')?.relationships).toBe(connecting)
   })
 
+  it('reads them again after a failed read only when it is let go of, and draws the result meanwhile', () => {
+    const failed = connected({ relationships: [], failed: true })
+    expect(toConnect(true, result, 'one', failed)).toBe(false)
+    expect(waitsToConnect(true, result, 'one', result, failed)).toBe(false)
+  })
+
+  it('holds a new result back while only another connection\'s are known', () => {
+    expect(waitsToConnect(true, result, 'two', result, connected())).toBe(true)
+  })
+
   it('holds back only a new result run with them on, until they are read', () => {
     expect(waitsToConnect(true, result, 'one', result, null)).toBe(true)
     expect(waitsToConnect(true, result, 'one', result, connected())).toBe(false)
