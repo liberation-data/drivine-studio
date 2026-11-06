@@ -798,13 +798,17 @@ function DatabasePicker({ legend, writes = false, note, footer, onChosen }: {
     return () => clearInterval(timer)
   }, [])
   const up = useOnline((connections ?? []).map(c => c.id))
-  const why = (c: StudioConnection) => (writes && !c.allowWrites ? 'doesn’t allow writes' : up[c.id] === undefined ? 'checking…' : !up[c.id] ? 'not running' : undefined)
+  // Graph Bench's data is not loaded into SQLite yet: see benchLoad.
+  const unloadable = (c: StudioConnection) => writes && c.type === 'SQLITE'
+  const why = (c: StudioConnection) =>
+    unloadable(c) ? 'not loaded into SQLite yet'
+      : writes && !c.allowWrites ? 'doesn’t allow writes' : up[c.id] === undefined ? 'checking…' : !up[c.id] ? 'not running' : undefined
   const usable = (c: StudioConnection) => !why(c)
   const chosen = (connections ?? []).filter(c => picked.has(c.id) && usable(c)).map(c => c.id)
   const key = chosen.join('|')
   useEffect(() => onChosen(key ? key.split('|') : []), [key])
   // Those that can be chosen first, then those that are down, then those that don't allow writes.
-  const rank = (c: StudioConnection) => (writes && !c.allowWrites ? 2 : up[c.id] === false ? 1 : 0)
+  const rank = (c: StudioConnection) => (unloadable(c) || (writes && !c.allowWrites) ? 2 : up[c.id] === false ? 1 : 0)
   const listed = [...(connections ?? [])].sort((a, b) => rank(a) - rank(b))
   return (
     <fieldset className="studio-bench-pick">

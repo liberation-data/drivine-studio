@@ -40,8 +40,9 @@ describe('Loading Graph Bench’s data', () => {
 
   // A compiled write's time grows with the square of its batch on Postgres and Oracle, so nodes go in small ones there;
   // Oracle matches relationships' ends a statement at a time, so they go in large ones.
-  it('sends Postgres and Oracle nodes in small batches, and the rest in large ones', () => {
+  it('sends Postgres, Oracle and SQLite nodes in small batches, and the rest in large ones', () => {
     expect(batchSize({ type: 'POSTGRES' }, 'nodes')).toBe(250)
+    expect(batchSize({ type: 'SQLITE' }, 'nodes')).toBe(250)
     expect(batchSize({ type: 'ORACLE' }, 'nodes')).toBe(250)
     expect(batchSize({ type: 'ORACLE' }, 'relationships')).toBe(5_000)
     expect(batchSize({ type: 'NEO4J' }, 'nodes')).toBeGreaterThan(batchSize({ type: 'FALKORDB' }, 'nodes'))
@@ -50,6 +51,13 @@ describe('Loading Graph Bench’s data', () => {
   it('starts none where one of the connections doesn’t allow writes', async () => {
     vi.mocked(readRows).mockClear()
     await expect(beginLoad([connection('ok'), connection('read-only', false)], SMALLEST)).rejects.toThrow(/read-only doesn't allow writes/)
+  })
+
+  it('starts none into a SQLite file, whose relationships Drivine would take hours over, even one that allows writes', async () => {
+    vi.mocked(readRows).mockClear()
+    const file: Connection = { id: 'file', name: 'file', type: 'SQLITE', host: '', database: '/data/graph.db', source: 'studio', allowWrites: true }
+    await expect(beginLoad([connection('ok'), file], SMALLEST)).rejects.toThrow(/file is a SQLite file, which Graph Bench's data isn't loaded into yet/)
+    expect(vi.mocked(readRows).mock.calls.map(([c]) => c.id)).not.toContain('file')
   })
 
   it('refuses a graph that a load stopped in partway, with orgs and no comments yet', async () => {
