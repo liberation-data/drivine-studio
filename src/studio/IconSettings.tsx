@@ -122,7 +122,7 @@ export function IconSettings() {
         {view === 'labels' && <Labels lists={lists} changes={changes} onChanged={() => setChanges(n => n + 1)} />}
         {view === 'words' && <Words lists={lists} onChanged={changedLists} onFailed={failed} />}
         {view === 'onlyByName' && <OnlyByName lists={lists} onChanged={changedLists} onFailed={failed} />}
-        {view === 'try' && <TryLabel lists={lists} changes={changes} onChanged={() => setChanges(n => n + 1)} />}
+        {view === 'try' && <TryLabel lists={lists} changes={changes} onChanged={() => setChanges(n => n + 1)} onWords={() => setView('words')} />}
       </Tabs>
       {problem && <p className="studio-bad desk-text-small studio-finder-problem" role="alert">{problem}</p>}
     </div>
@@ -439,7 +439,7 @@ function OnlyByName({ lists, onChanged, onFailed }: { lists: IconLists; onChange
 const REST_MS = 250
 
 /** A label typed, and the icon it would get and why, with the model's nearest icons and how near each is. */
-function TryLabel({ lists, changes, onChanged }: { lists: IconLists; changes: number; onChanged: () => void }) {
+function TryLabel({ lists, changes, onChanged, onWords }: { lists: IconLists; changes: number; onChanged: () => void; onWords: () => void }) {
   const [label, setLabel] = useState('')
   const [found, setFound] = useState<{ label: string; found: Explained } | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
@@ -469,8 +469,9 @@ function TryLabel({ lists, changes, onChanged }: { lists: IconLists; changes: nu
   return (
     <div className="studio-settings-page">
       <p className="desk-text-small desk-text-muted studio-settings-lead">
-        Type a label to see the icon it would get, and why: chosen, a common word, or the model&apos;s nearest when it is
-        near enough, at {score(lists.nearest)} or more.
+        Type a label to see the icon it would get, and why: the one you chose,{' '}
+        <button type="button" className="studio-inline-link" onClick={onWords}>a common word</button>, or the model&apos;s
+        nearest match, if it scores {score(lists.nearest)} or more.
       </p>
       <div className="studio-try-field">
         <TextField label="Label" placeholder="A label, such as SpaceProbe" value={label} autoFocus onChange={e => setLabel(e.target.value)} />
