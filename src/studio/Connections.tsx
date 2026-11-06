@@ -215,10 +215,10 @@ const DATABASE_FIELD: Record<DatabaseType, { label: string; help: string } | nul
   ORACLE: { label: 'Service name', help: 'Required, such as FREEPDB1.' },
 }
 
-/** What the Graph field of Postgres and Oracle is, with the tables the graph named has: drivine's when it is empty. */
+/** What the Graph field of Postgres and Oracle is, with the tables the graph named has: drivine's when it is empty, as the server trims it. */
 export const graphHelp = (graph: string): string => {
-  const name = graph || 'drivine'
-  return `The graph within the database, kept in its own two tables: here ${name}_node and ${name}_edge. drivine when empty.`
+  const name = graph.trim() || 'drivine'
+  return `The graph within the database, kept in its own tables: here ${name}_node and ${name}_edge. drivine when empty.`
 }
 
 const DEFAULT_PORTS: Record<DatabaseType, string> = {

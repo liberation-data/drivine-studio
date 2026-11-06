@@ -37,4 +37,13 @@ describe('graphHelp', () => {
     expect(graphHelp('guide')).toContain('guide_node and guide_edge')
     expect(graphHelp('')).toContain('drivine_node and drivine_edge')
   })
+
+  it('names the tables the server will use, which trims the name', () => {
+    expect(graphHelp(' guide ')).toContain('here guide_node and guide_edge')
+    expect(graphHelp('   ')).toContain('drivine_node and drivine_edge')
+  })
+
+  it("doesn't say the graph has only two tables: Drivine keeps its schema in a third", () => {
+    expect(graphHelp('guide')).not.toContain('two tables')
+  })
 })
