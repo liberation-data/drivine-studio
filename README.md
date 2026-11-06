@@ -82,13 +82,21 @@ follow it.
 
 The Connections window (its dock item; Drivine Studio ▸ Connections…; or Connections… in the connection menu at the
 end of the menu bar) adds, tests, changes and removes the databases the studio reads: Neo4j, Memgraph, Neptune,
-FalkorDB, Postgres and Oracle. Each may be set to allow writes from the Cypher window: see Allowing writes. The studio keeps them in `connections.json` in `~/.drivine-studio`, or in
+FalkorDB, Postgres, Oracle and SQLite. Each may be set to allow writes from the Cypher window: see Allowing writes. The studio keeps them in `connections.json` in `~/.drivine-studio`, or in
 `DRIVINE_STUDIO_HOME`. The file holds passwords, so the studio writes it readable by its owner alone; the browser
 is only ever told whether a connection has one.
 
 On Postgres and Oracle, the connection names the graph as well as the database: the graph names its tables,
 `<graph>_node` and `<graph>_edge`, and is `drivine` unless named, as in Drivine. A test reads the graph's nodes, so
 it says when the tables are not there. The studio makes no tables: an application using Drivine makes them.
+
+A SQLite connection is a file, with no host, port, user or password: its **File** is the file's whole path, from the
+root or from `~` (in the desktop app, **Choose…** picks it), and its graph names its tables in the file, as on
+Postgres. Drivine makes a file that is not there, and the graph's tables on its first connection, but the studio
+makes neither: a test says when there is no file at the path, or when the file has no `<graph>_node` table, which it
+reads with the file opened read-only. SQLite needs no server, so there is nothing to run in Docker for it, and
+Graph Bench's data is not loaded into a SQLite file yet: Drivine 3.5.1 takes hours over its relationships there.
+`DATABASE_TYPE=SQLITE` with `DATABASE_NAME` set to the file's whole path describes one in the environment.
 
 Drivine's own environment variables, as an application reads them (`DATABASE_TYPE`, `DATABASE_HOST`,
 `DATABASE_PORT`, `DATABASE_USER`, `DATABASE_PASSWORD`, `DATABASE_NAME`, `DATABASE_DEFAULT_GRAPH_PATH`), add one more
@@ -103,8 +111,8 @@ back as a graph, when there are nodes in it, and as rows. It reads 1000 rows unl
 The editor draws Cypher in colour, and completes labels and relationship types after a colon, property keys after a
 dot or in a map, and Cypher's own words. The names are the connection's graph's, read only: on Neo4j and FalkorDB
 from what they keep (`db.labels()` and the others), on Memgraph and Neptune from a sample of 10,000 nodes and
-relationships, and on Postgres and Oracle every label and type from the graph's tables, and property keys from a
-sample of them, so a key on only a few nodes may not be offered. The studio keeps them in the browser, per
+relationships, and on Postgres, Oracle and SQLite every label and type from the graph's tables, and property keys
+from a sample of them, so a key on only a few nodes may not be offered. The studio keeps them in the browser, per
 connection, and reads them again when the connection is chosen, after a statement that wrote, and when the studio
 comes back to the front, in the browser or the app, a minute or more since.
 
@@ -118,7 +126,7 @@ transactions, it runs as a read-only query, which FalkorDB will not let write. A
 its own, as some of APOC's do, is beyond both: give the studio a user that may only read, and that is the whole
 guarantee.
 
-On Postgres and Oracle, Drivine (TypeScript) compiles the Cypher to SQL over the graph's tables, with the compiler a
+On Postgres, Oracle and SQLite, Drivine (TypeScript) compiles the Cypher to SQL over the graph's tables, with the compiler a
 `PersistenceManager` compiles a Cypher statement with there: what it takes, and how its results can differ from a
 graph engine's, is in Drivine's README, under Cypher on Oracle and Postgres. Drivine gives a node there as its
 properties alone, so the studio compiles each item of the `RETURN` to come back whole, a node with its id and labels
@@ -126,7 +134,7 @@ and a relationship with its type and ends, and draws them as it draws a graph en
 (p:Person)-[r:ACTED_IN]->(m) RETURN p, r, m` is a graph, and `RETURN p.name` rows. A path comes back whole too. A
 statement that writes (`CREATE`, `MERGE`, `SET`, `REMOVE`, `DELETE`, `FOREACH`, in a `CALL { … }` or a `UNION` too) is
 not sent; the rest runs in a transaction made read-only before anything runs in it, which the studio rolls back all
-the same. Views and fragments are not loaded on them yet: Drivine loads them with SQL of its own, not Cypher.
+the same, or on SQLite on the file opened read-only, which SQLite will not let write. Views and fragments are not loaded on them yet: Drivine loads them with SQL of its own, not Cypher.
 
 ### Allowing writes
 
@@ -137,11 +145,11 @@ connection in use allows writes. The Canvas, its loads, a Bench run of saved que
 
 With it on, a statement in the Cypher window runs in a transaction that may write, and is committed: over Bolt, in a
 write session; on FalkorDB, as a query that may write, which FalkorDB, having no transactions, has done once it
-answers; on Postgres and Oracle, a statement that writes runs as Drivine compiles and runs it, as a
+answers; on Postgres, Oracle and SQLite, a statement that writes runs as Drivine compiles and runs it, as a
 `PersistenceManager` does, in a transaction that is committed, and a statement that only reads runs as above. Beside
 the rows, the window says what changed, as the database counts it: nodes and relationships created and deleted,
 properties set, labels added and removed, from Neo4j's and Memgraph's summary counters and from FalkorDB's statistics.
-Drivine gives no counts on Postgres and Oracle, so there the window says only that the statement ran, and what it
+Drivine gives no counts on Postgres, Oracle and SQLite, so there the window says only that the statement ran, and what it
 returns comes back as Drivine gives it, a node as its properties alone: a later `MATCH` draws it.
 
 The server answers only the studio's own pages, on `localhost`: a page of another site, or one whose name has been
@@ -159,8 +167,8 @@ Add a connection in the Connections window, and a folder with model files in the
 drivine4j checkout, say, whose `drivine4j-sample` has one. Then drag a view to the Canvas, or run Cypher in the
 Cypher window.
 
-`npm run build && npm start` serves the standalone build on the same port. `npm test` runs the tests, and
-`npm run test:db` the ones against Neo4j, FalkorDB, Postgres and Oracle, in Docker, the sample domain's loads among
+`npm run build && npm start` serves the standalone build on the same port. `npm test` runs the tests, SQLite's among
+them, since it needs no database running, and `npm run test:db` the ones against Neo4j, FalkorDB, Postgres and Oracle, in Docker, the sample domain's loads among
 them.
 
 ## Desktop app
@@ -204,7 +212,7 @@ a terminal with `PORT` set to another port. To update, `git pull`, `npm ci` and 
 
 - Model files read straight from GitHub, with nothing built.
 - Conditions on a relationship's own properties, and along a path.
-- Loading views and fragments on Oracle and Postgres, with the SQL Drivine (TypeScript) loads them with.
+- Loading views and fragments on Oracle, Postgres and SQLite, with the SQL Drivine (TypeScript) loads them with.
 - A container image, from the same standalone build.
 
 ## License
