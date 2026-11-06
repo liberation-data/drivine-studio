@@ -1,5 +1,6 @@
 import { Button, Loading, Sheet, TextField } from '@liberation-data/desk/react'
 import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { chooseIcon, iconCatalog, iconUrl, refound } from './icons'
 import type { LabelIcon } from './icons'
 
@@ -19,11 +20,12 @@ export function Swatch({ colour, icon }: { colour: string; icon: string | null }
 }
 
 /** An icon, as a mask over the text's colour. */
-function Icon({ name }: { name: string }) {
-  return <span className="studio-icon" aria-hidden="true" style={{ maskImage: `url(${iconUrl(name)})`, WebkitMaskImage: `url(${iconUrl(name)})` }} />
+export function Icon({ name, size }: { name: string; size?: 'small' | 'large' }) {
+  const className = size ? `studio-icon studio-icon-${size}` : 'studio-icon'
+  return <span className={className} aria-hidden="true" style={{ maskImage: `url(${iconUrl(name)})`, WebkitMaskImage: `url(${iconUrl(name)})` }} />
 }
 
-const SAID: Record<LabelIcon['source'], string> = {
+export const SAID: Record<LabelIcon['source'], string> = {
   chosen: 'Chosen here.',
   common: 'Found from a common word in the label.',
   nearest: 'The nearest the model found to the label.',
@@ -45,15 +47,7 @@ export function matching(catalog: Record<string, string[]>, search: string): str
  * again from the label. The choice is the studio's, kept in its home, for every model with the label.
  */
 export function IconPicker({ label, current, onDone }: { label: string; current: LabelIcon | undefined; onDone: () => void }) {
-  const [catalog, setCatalog] = useState<Record<string, string[]> | null>(null)
-  const [search, setSearch] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
-
-  useEffect(() => {
-    iconCatalog().then(setCatalog, (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)))
-  }, [])
-
-  const shown = useMemo(() => (catalog ? matching(catalog, search) : []), [catalog, search])
 
   const choose = (icon: string | null | undefined) => {
     chooseIcon(label, icon).then(
@@ -66,15 +60,57 @@ export function IconPicker({ label, current, onDone }: { label: string; current:
   }
 
   return (
-    <Sheet
-      open
-      onDismiss={onDone}
+    <IconSheet
       title={`Icon of ${label}`}
       description={current ? `${current.icon ? `Now ${current.icon}. ` : 'Now none. '}${SAID[current.source]}` : undefined}
+      current={current?.icon ?? null}
+      onChoose={choose}
+      onDone={onDone}
+      problem={problem}
       actions={
         <>
           <Button onClick={() => choose(undefined)} title="Forget the choice, and find the icon from the label again">Automatic</Button>
           <Button onClick={() => choose(null)}>None</Button>
+        </>
+      }
+    />
+  )
+}
+
+/**
+ * A sheet of Lucide's icons to choose one from, by searching their names and tags: for a label's icon, or a word's in
+ * Settings. What a choice does is the caller's; `actions` go before Cancel.
+ */
+export function IconSheet({ title, description, current, onChoose, onDone, actions, problem: given }: {
+  title: string
+  description?: string | undefined
+  /** The icon now, pressed among the rest. */
+  current: string | null
+  onChoose: (icon: string) => void
+  onDone: () => void
+  actions?: ReactNode
+  problem?: string | null
+}) {
+  const [catalog, setCatalog] = useState<Record<string, string[]> | null>(null)
+  const [search, setSearch] = useState('')
+  const [problem, setProblem] = useState<string | null>(null)
+
+  useEffect(() => {
+    iconCatalog().then(setCatalog, (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)))
+  }, [])
+
+  const shown = useMemo(() => (catalog ? matching(catalog, search) : []), [catalog, search])
+  const said = given ?? problem
+
+  return (
+    <Sheet
+      open
+      onDismiss={onDone}
+      title={title}
+      description={description}
+      actions={
+        <>
+          {actions}
           <Button onClick={onDone}>Cancel</Button>
         </>
       }
@@ -88,17 +124,17 @@ export function IconPicker({ label, current, onDone }: { label: string; current:
             <button
               key={name}
               type="button"
-              aria-pressed={current?.icon === name}
+              aria-pressed={current === name}
               aria-label={name}
               className="studio-icon-choice"
               title={name}
-              onClick={() => choose(name)}
+              onClick={() => onChoose(name)}
             >
               <Icon name={name} />
             </button>
           ))}
         </div>
-        {problem && <p className="studio-bad desk-text-small" role="alert">{problem}</p>}
+        {said && <p className="studio-bad desk-text-small" role="alert">{said}</p>}
       </div>
     </Sheet>
   )

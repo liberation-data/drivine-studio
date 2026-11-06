@@ -43,18 +43,27 @@ FalkorDB as text.
 
 Each label in a graph is drawn with an icon from [Lucide](https://lucide.dev), found in this order:
 
-1. **The one you chose.** Press a label in the graph's legend to choose another, or none, or Automatic to have it
-   found again. An icon is a label's: a node's first label, the one it is told by, so a choice shows on the Canvas
-   and in the Cypher window alike, for every model with the label. The studio keeps your choices in `icons.json` in
-   its home.
+1. **The one you chose.** Press a label in the graph's legend, or in Settings, to choose another, or none, or
+   Automatic to have it found again. An icon is a label's: a node's first label, the one it is told by, so a choice
+   shows on the Canvas and in the Cypher window alike, for every model and connection with the label. The studio
+   keeps your choices in `icons.json` in its home.
 2. **A common word in the label.** About eighty words, such as Person, Organization, Issue, Order and Note, each
-   with its icon. The label's words are looked up whole, then each from the last, so `GithubPerson` is a person and
-   `SampleDocNode` a document.
+   with its icon, and the words you add in Settings. The label's words are looked up whole, then each from the last,
+   in your words first, so `GithubPerson` is a person, `SampleDocNode` a document, and a word of yours can give one
+   of the built-in words another icon.
 3. **The nearest icon by meaning.** A small local model, `all-MiniLM-L6-v2` (23 MB, quantized, on the CPU),
    compares the label's words with each icon's name and tags, and takes the nearest. The icon is used only when it
    is near enough: below that, the model was as often wrong as right in a test of sixty labels, and the node is drawn
    plain. An icon of one particular thing, such as a cigarette, a rat or a phone, is taken only for a label that names
-   it, as the model would give one to Patient, Disease and Plan; for other labels the next nearest is taken.
+   it, as the model would give one to Patient, Disease and Plan; for other labels the next nearest is taken. You can
+   add icons of your own to that list in Settings.
+
+**Icons** in Settings (Drivine Studio ▸ Settings…, ⌘, or Ctrl+,) shows every label in the graphs of the connections
+that are up, and every label with an icon chosen, with its icon and why it has it: chosen, a common word (and which),
+the model's (and how near), or none. A label with none has the model's nearest few icons beside it, to choose one with
+a click. Your own common words and icons taken only by name are kept in `icons.json` with your choices, as
+`{ labels, words, onlyByName }`; the built-in lists are shown beside them, and are changed only in the studio's code.
+Try a Label shows what a label you type would get, and why, with the model's nearest icons and how near each is.
 
 The model is downloaded once, the first time a label needs it, to `models` in the studio's home; offline before then,
 labels get their chosen and common-word icons alone, and the download is tried again a minute later. The icons' own
@@ -65,7 +74,8 @@ name.
 
 ## Connections
 
-The Connections window adds, tests, changes and removes the databases the studio reads: Neo4j, Memgraph, Neptune,
+Connections, the first section of Settings (Drivine Studio ▸ Settings…, ⌘, or Ctrl+,; or Connections… in the
+connection menu at the end of the menu bar), adds, tests, changes and removes the databases the studio reads: Neo4j, Memgraph, Neptune,
 FalkorDB, Postgres and Oracle. Each may be set to allow writes from the Cypher window: see Allowing writes. The studio keeps them in `connections.json` in `~/.drivine-studio`, or in
 `DRIVINE_STUDIO_HOME`. The file holds passwords, so the studio writes it readable by its owner alone; the browser
 is only ever told whether a connection has one.
@@ -114,7 +124,7 @@ the same. Views and fragments are not loaded on them yet: Drivine loads them wit
 
 ### Allowing writes
 
-A connection's **Allow writes** setting, in its sheet in the Connections window, lets a statement run in the Cypher
+A connection's **Allow writes** setting, in Settings under Connections, lets a statement run in the Cypher
 window write. It is off unless turned on, and kept in `connections.json` with the rest of the connection; the
 environment's connection never allows writes. The Cypher window says, above what a statement gives back, that the
 connection in use allows writes. The Canvas, its loads, a Bench run of saved queries and a connection's test only ever read, whatever the setting.
@@ -139,7 +149,7 @@ npm install
 npm run dev                                    # http://localhost:5187
 ```
 
-Add a connection in the Connections window, and a folder with model files in the Catalogue's Folders sheet: a
+Add a connection in Settings, under Connections, and a folder with model files in the Catalogue's Folders sheet: a
 drivine4j checkout, say, whose `drivine4j-sample` has one. Then drag a view to the Canvas, or run Cypher in the
 Cypher window.
 

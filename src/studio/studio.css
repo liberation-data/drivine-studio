@@ -393,3 +393,49 @@ html, body, #root { height: 100%; margin: 0; }
 .studio-legend3d { z-index: 2; gap: var(--desk-space-1); }
 .studio-legend3d-entry { display: inline-flex; align-items: center; gap: var(--desk-space-2); }
 .studio-legend3d .studio-swatch { width: 18px; height: 18px; }
+
+/* Settings: its sections down the side, and the one chosen filling the rest. */
+.studio-settings-section { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.studio-settings-section[hidden] { display: none; }
+.studio-icon-small { width: 16px; height: 16px; }
+.studio-icon-large { width: 40px; height: 40px; }
+.studio-icon-settings { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.studio-icon-settings > .studio-tabs { flex: 1; }
+.studio-icon-settings .studio-finder { flex: 1; height: auto; }
+/* A label, and the connections it is in, under it. */
+.studio-label-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.studio-picks { display: inline-flex; gap: 2px; }
+.studio-pick { width: 28px; aspect-ratio: 1; }
+/* A page of a section: lists and what they are for, read from the top. */
+.studio-settings-page {
+  flex: 1; min-height: 0; overflow-y: auto; padding: var(--desk-space-4);
+  display: flex; flex-direction: column; gap: var(--desk-space-4);
+}
+.studio-settings-page p { margin: 0; }
+.studio-settings-lead { max-width: 72ch; }
+.studio-settings-group { display: flex; flex-direction: column; gap: var(--desk-space-2); }
+.studio-settings-heading { margin: 0; font-weight: 600; }
+.studio-word-add { display: flex; align-items: center; gap: var(--desk-space-2); max-width: 36rem; }
+.studio-word-add > :first-child { flex: 1; }
+.studio-word-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--desk-space-1) var(--desk-space-2); }
+/* A built-in entry, shown and not changed: plain, where one of the person's own is a chip to take off. */
+.studio-word {
+  display: inline-flex; align-items: center; gap: var(--desk-space-1); padding: 2px var(--desk-space-2);
+  border-radius: var(--desk-control-radius); background: color-mix(in srgb, var(--desk-ink) 5%, transparent);
+}
+.studio-word[data-overridden] { color: var(--desk-muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+.studio-word[data-overridden] .studio-icon { background: var(--desk-muted); }
+.studio-try-field { max-width: 24rem; }
+.studio-try { display: flex; flex-direction: column; gap: var(--desk-space-3); max-width: 36rem; }
+.studio-try-result {
+  display: flex; align-items: center; gap: var(--desk-space-3); padding: var(--desk-space-3);
+  border: 1px solid var(--desk-rule); border-radius: var(--desk-radius);
+}
+.studio-try-icon { display: grid; place-items: center; width: 48px; height: 48px; }
+.studio-try-picks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--desk-space-2); }
+.studio-try-picks li { display: grid; grid-template-columns: 16px 12rem 1fr 3rem; align-items: center; gap: var(--desk-space-2); }
+/* How near each pick is, as a bar: in the accent where it is near enough to be taken. */
+.studio-try-bar { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--desk-ink) 8%, transparent); overflow: hidden; }
+.studio-try-bar > span { display: block; height: 100%; background: var(--desk-muted); }
+.studio-try-bar > span[data-near] { background: var(--desk-accent); }
+.studio-try-score { text-align: end; font-variant-numeric: tabular-nums; }

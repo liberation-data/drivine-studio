@@ -10,10 +10,10 @@ import { loadCatalog } from './api'
 import type { Catalog } from './api'
 import { Canvas } from './Canvas'
 import { Catalogue } from './Catalogue'
-import { Connections } from './Connections'
 import { Cypher } from './Cypher'
 import { Bench } from './Bench'
 import { Files, QueryIcon } from './Files'
+import { Settings } from './Settings'
 import { listQueries, QUERY_DRAG } from './savedQueries'
 import type { QueryDrag } from './savedQueries'
 import { connectionChoices } from './connectionMenu'
@@ -31,13 +31,16 @@ export const StudioCommands = {
   save: 'studio.query.save',
   saveAs: 'studio.query.saveAs',
   open: 'studio.open',
+  settings: 'studio.settings',
+  /** Settings, at its Connections section: where a window with no database to use sends the person. */
   connections: 'studio.connections',
 } as const
 
 // What the whole studio answers, wherever focus is: commands, so their shortcuts work as the menu bar shows them.
 if (typeof document !== 'undefined') {
   addCommandHandler(document, StudioCommands.open, () => desk.open('files'))
-  addCommandHandler(document, StudioCommands.connections, () => desk.open('connections'))
+  addCommandHandler(document, StudioCommands.settings, () => desk.open('settings'))
+  addCommandHandler(document, StudioCommands.connections, () => desk.open('settings', { route: 'connections' }))
 }
 // In the desktop app on a Mac, the menus are the Mac's own, at the top of the screen.
 const native = nativeMenus()
@@ -49,7 +52,8 @@ const native = nativeMenus()
 const LIMITS: Record<string, WindowLimits> = {
   explore: { minWidth: 640, minHeight: 360 },
   cypher: { minWidth: 520, minHeight: 360 },
-  connections: { minWidth: 560, minHeight: 360 },
+  // Its sections, and Connections' list and editor beside them.
+  settings: { minWidth: 760, minHeight: 400 },
   files: { minWidth: 640, minHeight: 360 },
   bench: { minWidth: 720, minHeight: 360 },
 }
@@ -77,7 +81,7 @@ function infoOf(id: string, connection: StudioConnection | null): ReactNode {
         <p>
           {connection?.allowWrites
             ? `${ALLOWS_WRITES} There is no undo.`
-            : 'Each statement runs where it cannot write. To change the database, turn on Allow writes for the connection in Connections.'}
+            : 'Each statement runs where it cannot write. To change the database, turn on Allow writes for the connection in Settings, under Connections.'}
         </p>
       </>
     )
@@ -88,13 +92,18 @@ function infoOf(id: string, connection: StudioConnection | null): ReactNode {
   if (id === 'bench') {
     return 'Graph Bench’s results: the ones it publishes, and the runs of a checkout you link. Compare one set with another to see what a Drivine release made faster or slower, on the same machine.'
   }
-  if (id === 'connections') {
-    return 'The databases the studio reads, kept in connections.json in its home, passwords too, readable by you alone. One from the environment is set where the studio was started.'
+  if (id === 'settings') {
+    return (
+      <>
+        <p>Connections: the databases the studio reads, kept in connections.json in its home, passwords too, readable by you alone. One from the environment is set where the studio was started.</p>
+        <p>Icons: each label&apos;s icon and why it has it, and your own common words and icons taken only by name, kept in icons.json in its home, for every connection alike.</p>
+      </>
+    )
   }
   return null
 }
 
-const TITLES: Record<string, string> = { files: 'Files', explore: 'Explore', cypher: 'Cypher', bench: 'Bench', connections: 'Connections' }
+const TITLES: Record<string, string> = { files: 'Files', explore: 'Explore', cypher: 'Cypher', bench: 'Bench', settings: 'Settings' }
 const title = (id: string) => TITLES[id] ?? id
 
 /** A saved query as the Cypher window knows the one it holds. */
@@ -161,7 +170,7 @@ function renderWindow(id: string): ReactNode {
     )
   }
   if (id === 'cypher') return <Cypher />
-  if (id === 'connections') return <Connections />
+  if (id === 'settings') return <Settings />
   if (id === 'files') return <Files />
   if (id === 'bench') return <Bench />
   return null
@@ -198,7 +207,8 @@ const DOCK = [
   dockItem({ id: 'explore', label: 'Explore', description: 'Views and fragments, loaded and seen as a graph', icon: icon('M6 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM8 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM7.7 7l8.5 2.4M16.6 11.5l-7.2 5.3M6.4 8l1.2 8') }),
   dockItem({ id: 'cypher', label: 'Cypher', description: 'Run Cypher, see a graph or rows', icon: icon('M8 6l-5 6 5 6M16 6l5 6-5 6M14 4l-4 16') }),
   dockItem({ id: 'bench', label: 'Bench', description: 'Graph Bench results, read and compared', icon: icon('M4 20V10M10 20V4M16 20v-7M22 20H2') }),
-  dockItem({ id: 'connections', label: 'Connections', description: 'The databases to read', icon: icon('M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2zM4 6v12c0 1.1 3.6 2 8 2s8-.9 8-2V6M4 12c0 1.1 3.6 2 8 2s8-.9 8-2') }),
+  // Last, as a Mac's System Settings sits at the end of its dock.
+  dockItem({ id: 'settings', label: 'Settings', description: 'The databases to read, and the labels\' icons', icon: icon('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z') }),
 ]
 
 export function App() {
@@ -271,7 +281,7 @@ export function App() {
   const menus = useMemo(() => [
     // The app's own menu: what is about the studio and how it is set up, as a Mac app keeps its Settings there.
     { id: 'studio', label: 'Drivine Studio', emphasis: true, items: [
-        menuCommand('Connections…', StudioCommands.connections, { shortcut: 'mod+,' }),
+        menuCommand('Settings…', StudioCommands.settings, { shortcut: 'mod+,' }),
         menuAction('Reload Connections', reloadConnections),
       ] },
     // The documents: queries to make, open and keep, and the model files the studio reads.
@@ -296,7 +306,7 @@ export function App() {
       label: 'Window',
       // The studio's windows to open, as a Mac app lists its own tools here, then the ones open now.
       items: () => [
-        ...['files', 'explore', 'cypher', 'bench', 'connections'].map(id => menuAction(title(id), () => desk.open(id))),
+        ...['files', 'explore', 'cypher', 'bench', 'settings'].map(id => menuAction(title(id), () => desk.open(id))),
         menuSeparator(),
         menuCommand('Arrange', DeskCommands.arrange, { shortcut: 'mod+alt+a' }),
         menuSeparator(),
@@ -327,7 +337,7 @@ export function App() {
         menuAction(c.name, () => chooseConnection(c.id), { checked, detail, disabled }),
       ),
       ...(connections?.length ? [menuSeparator()] : []),
-      menuAction('Connections…', () => desk.open('connections')),
+      menuAction('Connections…', () => desk.open('settings', { route: 'connections' })),
     ],
   }], [connections, connection, chooseConnection, up])
   useNativeMenus(native, menus, desk, status)

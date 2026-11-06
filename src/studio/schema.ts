@@ -135,3 +135,34 @@ export function useSchema(connection: string | undefined, changed: unknown): Gra
   }, [connection, changed])
   return schema
 }
+
+/**
+ * The schemas of several connections, by connection: each kept one at once, then the fresh one as it lands. One that
+ * can't be read leaves the kept one, or none, as useSchema does.
+ */
+export function useSchemas(connections: readonly string[]): Readonly<Record<string, GraphSchema>> {
+  const key = [...new Set(connections)].sort().join('\n')
+  const keptOf = (ids: string[]) =>
+    Object.fromEntries(ids.flatMap(id => {
+      const kept = cache.get(id)
+      return kept ? [[id, kept.schema] as const] : []
+    }))
+  const [schemas, setSchemas] = useState<Record<string, GraphSchema>>(() => keptOf(key ? key.split('\n') : []))
+  useEffect(() => {
+    const ids = key ? key.split('\n') : []
+    setSchemas(keptOf(ids))
+    const controller = new AbortController()
+    for (const id of ids) {
+      fetchSchema(id, controller.signal).then(
+        fresh => {
+          if (controller.signal.aborted) return
+          cache.put(id, fresh, Date.now())
+          setSchemas(all => ({ ...all, [id]: fresh }))
+        },
+        () => undefined,
+      )
+    }
+    return () => controller.abort()
+  }, [key])
+  return schemas
+}
