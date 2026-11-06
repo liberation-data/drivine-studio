@@ -34,6 +34,12 @@ describe('connectionChoices', () => {
 
 describe('notNow', () => {
   it('says why a connection cannot be chosen, as Bench does', () => {
-    expect([notNow(undefined), notNow(false), notNow(true)]).toEqual(['checking…', 'not running', undefined])
+    expect([notNow(undefined, 'NEO4J'), notNow(false, 'NEO4J'), notNow(true, 'NEO4J')]).toEqual(['checking…', 'not running', undefined])
+  })
+
+  it('says a SQLite file that fails its test can’t be read, since a file is not a server that runs', () => {
+    expect([notNow(undefined, 'SQLITE'), notNow(false, 'SQLITE'), notNow(true, 'SQLITE')]).toEqual(['checking…', 'can’t be read', undefined])
+    const [file] = connectionChoices([{ ...connection('file', 'SQLITE'), host: '', database: '/data/graph.db' }], { file: false }, undefined)
+    expect(file).toMatchObject({ detail: 'SQLite · can’t be read', disabled: true })
   })
 })

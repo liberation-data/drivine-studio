@@ -53,11 +53,17 @@ describe('schemaSql', () => {
     expect(oracle.labels).not.toContain('SAMPLE')
     expect(oracle.propertyKeys).toContain('SAMPLE BLOCK (1)')
     expect(oracle.propertyKeys).toContain('JSON_DATAGUIDE')
+    const sqlite = schemaSql('SQLITE', 'movies')
+    expect(sqlite.labels).toContain('SELECT DISTINCT labels AS l FROM movies_node) s, json_each(s.l) j')
+    expect(sqlite.relationshipTypes).toBe('SELECT DISTINCT type AS v FROM movies_edge LIMIT 2000')
+    expect(sqlite.propertyKeys).toContain('ROW_NUMBER() OVER (PARTITION BY labels) AS r FROM movies_node) WHERE r <= 200')
+    expect(sqlite.propertyKeys).toContain('json_each(p.props)')
   })
 
   it('refuses a graph name that would change the SQL, or that Drivine would not name tables with, as the person’s to fix', () => {
     expect(() => schemaSql('POSTGRES', 'x; DROP TABLE y')).toThrow(StatementError)
     expect(() => schemaSql('ORACLE', 'x_node--')).toThrow(StatementError)
+    expect(() => schemaSql('SQLITE', 'x y')).toThrow(StatementError)
     // Postgres names at most 63 characters: Drivine keeps room in them for its own indexes' names.
     expect(() => schemaSql('POSTGRES', 'g'.repeat(60))).toThrow(StatementError)
     expect(schemaSql('ORACLE', 'g'.repeat(60)).relationshipTypes).toContain(`FROM ${'g'.repeat(60)}_edge`)

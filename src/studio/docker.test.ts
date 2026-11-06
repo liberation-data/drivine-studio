@@ -43,6 +43,8 @@ describe('a database to try the studio on, in Docker', () => {
 
   it('has none for Neptune, or for a database on another machine', () => {
     expect(dockerCommand(draft({ type: 'NEPTUNE' })).kind).toBe('none')
+    // A file, not a server.
+    expect(dockerCommand(draft({ type: 'SQLITE' }))).toEqual({ kind: 'none', why: expect.stringMatching(/^SQLite is a file/) })
     expect(dockerCommand(draft({ host: 'db.example.com' }))).toMatchObject({ kind: 'none', why: expect.stringContaining('localhost') })
     expect(dockerCommand(draft({ host: '127.0.0.1' })).kind).toBe('command')
   })

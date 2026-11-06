@@ -4,7 +4,7 @@
 import type { DockerDraft, DockerStatus } from './docker'
 import { json, read } from './fetching'
 
-export const DATABASE_TYPES = ['NEO4J', 'MEMGRAPH', 'FALKORDB', 'NEPTUNE', 'POSTGRES', 'ORACLE'] as const
+export const DATABASE_TYPES = ['NEO4J', 'MEMGRAPH', 'FALKORDB', 'NEPTUNE', 'POSTGRES', 'ORACLE', 'SQLITE'] as const
 export type DatabaseType = (typeof DATABASE_TYPES)[number]
 
 export const DATABASE_NAMES: Record<DatabaseType, string> = {
@@ -14,10 +14,11 @@ export const DATABASE_NAMES: Record<DatabaseType, string> = {
   NEPTUNE: 'Neptune',
   POSTGRES: 'Postgres',
   ORACLE: 'Oracle',
+  SQLITE: 'SQLite',
 }
 
-/** The databases the studio runs Cypher on: on Postgres and Oracle, Drivine (TypeScript) compiles it to SQL. */
-export const RUNS_CYPHER: readonly DatabaseType[] = ['NEO4J', 'MEMGRAPH', 'NEPTUNE', 'FALKORDB', 'POSTGRES', 'ORACLE']
+/** The databases the studio runs Cypher on: on Postgres, Oracle and SQLite, Drivine (TypeScript) compiles it to SQL. */
+export const RUNS_CYPHER: readonly DatabaseType[] = ['NEO4J', 'MEMGRAPH', 'NEPTUNE', 'FALKORDB', 'POSTGRES', 'ORACLE', 'SQLITE']
 
 /** Said before a database's refusal to write, so the person knows the refusal is the studio's doing. */
 export const READS_ONLY = 'The studio reads and never writes, and runs each statement where it cannot.'
@@ -109,7 +110,7 @@ export interface CypherResult {
   milliseconds: number
   /**
    * Given only where the statement ran where it may write, and was committed: what it changed, each count as its
-   * database gave it, or null where the database gives none, as Postgres and Oracle do.
+   * database gave it, or null where the database gives none, as Postgres, Oracle and SQLite do.
    */
   written?: { counts: Partial<Record<Change, number>> | null }
 }

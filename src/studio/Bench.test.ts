@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { EngineResults, Outcome } from '../server/bench'
-import { crossovers, scores, sizesOf } from './Bench'
+import { crossovers, scores, sizesOf, SLOT } from './Bench'
+import { DATABASE_TYPES } from './database'
 
 const workload = { group: 'traversal', name: '3 hops', calls: 1, p50: 0, p95: 0, mean: 0, min: 0, max: 0, throughput: null, digest: null }
 const line = (...points: [number, number][]) => points.map(([nodes, ms]) => ({ nodes, ms, p95: ms }))
@@ -120,5 +121,13 @@ describe('the sizes of a set', () => {
     const all = [at(0.001, 1140), at(0.001), at(10)]
     const nodesOf = sizesOf(all)
     expect(all.map(nodesOf)).toEqual([1140, 1140, 11_210_500])
+  })
+})
+
+describe('an engine\'s colour', () => {
+  it('is one of its own for each kind of database, SQLite\'s too, so none is drawn in another\'s', () => {
+    const slots = DATABASE_TYPES.map(type => SLOT[type.toLowerCase()])
+    expect(slots.every(slot => slot !== undefined)).toBe(true)
+    expect(new Set(slots).size).toBe(DATABASE_TYPES.length)
   })
 })

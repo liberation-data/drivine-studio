@@ -24,6 +24,9 @@ import { readHomeFile, serially, writeHomeFile } from './home'
  * load there is long.
  *
  * It writes, so only on a connection that allows writes, and only into a graph without Graph Bench's data already.
+ *
+ * Not into SQLite yet: there, Drivine 3.5.1 matches a relationship's two ends in time that grows faster than the square
+ * of the nodes, and holds gigabytes doing it, so at the smallest scale the relationships would take hours.
  */
 
 export type Load = NonNullable<EngineResults['load']>
@@ -97,6 +100,8 @@ const loading = (id: string) => [...batches_.values()].some(b => b.loads.some(l 
 const refuseWrites = (connection: Connection) =>
   new BenchError(`${connection.name} doesn't allow writes. Allow them in its settings to load Graph Bench's data there.`)
 const refuseLoading = (connection: Connection) => new BenchError(`${connection.name} is being loaded already.`)
+const refuseSqlite = (connection: Connection) =>
+  new BenchError(`${connection.name} is a SQLite file, which Graph Bench's data isn't loaded into yet: its relationships would take hours.`)
 
 /**
  * Starts a load into each connection given, once each is found able to take it: else none is started. Each is read
@@ -109,6 +114,7 @@ export async function beginLoad(
   latest: (connection: Connection) => Promise<Connection> = c => findConnection(c.id),
 ): Promise<LoadBatch> {
   for (const connection of connections) {
+    if (connection.type === 'SQLITE') throw refuseSqlite(connection)
     if (!connection.allowWrites) throw refuseWrites(connection)
     if (loading(connection.id)) throw refuseLoading(connection)
     // A graph not there yet is empty: the load makes it. The label written first is looked for, so that a load that
@@ -137,6 +143,7 @@ export async function beginLoad(
       job.state = 'running'
       await (async () => {
         const connection = await latest(given)
+        if (connection.type === 'SQLITE') throw refuseSqlite(connection)
         if (!connection.allowWrites) throw refuseWrites(connection)
         job.now = 'Making the indexes'
         await loadIn(job, connection, data)

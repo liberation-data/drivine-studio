@@ -5,22 +5,24 @@ import { CypherWriter } from '@liberation-data/drivine/cypher/sql/CypherWriter.j
 import { OracleCypherCompiler } from '@liberation-data/drivine/cypher/sql/OracleCypherCompiler.js'
 import type { Parameters } from '@liberation-data/drivine/cypher/sql/Parameters.js'
 import { PostgresCypherCompiler } from '@liberation-data/drivine/cypher/sql/PostgresCypherCompiler.js'
+import { SqliteCypherCompiler } from '@liberation-data/drivine/cypher/sql/SqliteCypherCompiler.js'
 import type { SqlCypherCompiler } from '@liberation-data/drivine/cypher/sql/SqlCypherCompiler.js'
 import { json, nodeOf, relationshipOf } from '@liberation-data/drivine/cypher/sql/Value.js'
 import type { Value } from '@liberation-data/drivine/cypher/sql/Value.js'
 import { columnsOf } from '@liberation-data/drivine/cypher/sql/ValueColumns.js'
+import type { SqlStore } from './datasources'
 
 /**
- * Cypher on Postgres and Oracle, compiled to SQL over the graph's tables by Drivine (TypeScript)'s own compiler, the one
- * a PersistenceManager compiles a Cypher statement with there.
+ * Cypher on Postgres, Oracle and SQLite, compiled to SQL over the graph's tables by Drivine (TypeScript)'s own
+ * compiler, the one a PersistenceManager compiles a Cypher statement with there.
  *
  * As Drivine gives them, a row is one value, and a node or a relationship in it is its properties alone: what an
  * application reads, but too little to draw. So the studio compiles the statement as Drivine does, and gives each
  * item its `RETURN` holds as a value of a row of its own, a node with its id and labels, a relationship with its id,
  * type and ends, and a path with its nodes and relationships so. The rest is as Drivine compiles it.
  *
- * That reaches into the compiler's own workings, which are not Drivine's API: the tests against Postgres say whether a
- * new version of Drivine still takes it.
+ * That reaches into the compiler's own workings, which are not Drivine's API: the tests against Postgres, and those on
+ * SQLite, which need no database to be running, say whether a new version of Drivine still takes it.
  */
 
 /** Marks a node, a relationship or a path the studio compiled whole, apart from a map the statement builds. */
@@ -40,8 +42,8 @@ export interface StudioSql {
   columns: string[]
 }
 
-/** The statement, which only reads, as SQL over the graph's tables on Postgres or Oracle. */
-export function compileWhole(type: 'POSTGRES' | 'ORACLE', graph: string, query: Query, parameters: Record<string, unknown>): StudioSql {
+/** The statement, which only reads, as SQL over the graph's tables on Postgres, Oracle or SQLite. */
+export function compileWhole(type: SqlStore, graph: string, query: Query, parameters: Record<string, unknown>): StudioSql {
   const compiler = compilerFor(type, graph)
   if (query.unions.length > 0) {
     // Drivine's own compiler says what is wrong with a UNION first, as two queries of it naming different columns.
@@ -54,8 +56,8 @@ export function compileWhole(type: 'POSTGRES' | 'ORACLE', graph: string, query: 
 }
 
 /** Drivine's own compiler for the store, as a PersistenceManager compiles a Cypher statement with there. */
-export const compilerFor = (type: 'POSTGRES' | 'ORACLE', graph: string): SqlCypherCompiler =>
-  type === 'ORACLE' ? new OracleCypherCompiler(graph) : new PostgresCypherCompiler(graph)
+export const compilerFor = (type: SqlStore, graph: string): SqlCypherCompiler =>
+  type === 'ORACLE' ? new OracleCypherCompiler(graph) : type === 'SQLITE' ? new SqliteCypherCompiler(graph) : new PostgresCypherCompiler(graph)
 
 /**
  * The names of what a statement's `RETURN` gives back, as Drivine gives it: none without one. A star's variables are
@@ -217,8 +219,9 @@ class WholeWriter extends Writer {
         ? [sql.edges, this.whole(relationshipOf(row)), 'eid']
         : [sql.nodes, this.whole(nodeOf(row)), 'nid']
       return (
-        `CASE WHEN ${list} IS NOT NULL THEN (SELECT ${sql.aggregateList(value, `${item}.item_no`)} ` +
-        `FROM ${sql.elements(list!, item)} LEFT JOIN ${table} ${row} ON ${row}.${id} = ${sql.idOf(`${item}.item`)}) END`
+        // Each element and its place as the store's compiler names them: SQLite's json_each calls them value and key.
+        `CASE WHEN ${list} IS NOT NULL THEN (SELECT ${sql.aggregateList(value, sql.itemNo(item))} ` +
+        `FROM ${sql.elements(list!, item)} LEFT JOIN ${table} ${row} ON ${row}.${id} = ${sql.idOf(sql.item(item))}) END`
       )
     })
   }

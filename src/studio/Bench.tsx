@@ -8,6 +8,7 @@ import type { RunJob } from '../server/benchRun'
 import type { Loaded, LoadBatch, LoadJob } from '../server/benchLoad'
 import { Scale, SCALES, SLOW_SCALE } from '../server/benchData'
 import { listConnections, DATABASE_NAMES } from './database'
+import { notNow } from './connectionMenu'
 import { useOnline } from './online'
 import type { StudioConnection } from './database'
 import { listQueries } from './savedQueries'
@@ -191,7 +192,7 @@ export function Bench() {
 }
 
 /** An engine's colour: its slot in the bench's fixed order, so a colour always means the same engine. */
-const SLOT: Record<string, number> = { neo4j: 1, falkordb: 2, oracle: 3, postgres: 4, memgraph: 5, neptune: 6 }
+export const SLOT: Record<string, number> = { neo4j: 1, falkordb: 2, oracle: 3, postgres: 4, memgraph: 5, neptune: 6, sqlite: 7 }
 /**
  * A run of the studio's own names its engines after its connections; each takes its kind of database's colour, so
  * a Postgres connection is Postgres's yellow as Graph Bench's is. Learnt as results are read.
@@ -798,13 +799,17 @@ function DatabasePicker({ legend, writes = false, note, footer, onChosen }: {
     return () => clearInterval(timer)
   }, [])
   const up = useOnline((connections ?? []).map(c => c.id))
-  const why = (c: StudioConnection) => (writes && !c.allowWrites ? 'doesn’t allow writes' : up[c.id] === undefined ? 'checking…' : !up[c.id] ? 'not running' : undefined)
+  // Graph Bench's data is not loaded into SQLite yet: see benchLoad.
+  const unloadable = (c: StudioConnection) => writes && c.type === 'SQLITE'
+  const why = (c: StudioConnection) =>
+    unloadable(c) ? 'not loaded into SQLite yet'
+      : writes && !c.allowWrites ? 'doesn’t allow writes' : notNow(up[c.id], c.type)
   const usable = (c: StudioConnection) => !why(c)
   const chosen = (connections ?? []).filter(c => picked.has(c.id) && usable(c)).map(c => c.id)
   const key = chosen.join('|')
   useEffect(() => onChosen(key ? key.split('|') : []), [key])
   // Those that can be chosen first, then those that are down, then those that don't allow writes.
-  const rank = (c: StudioConnection) => (writes && !c.allowWrites ? 2 : up[c.id] === false ? 1 : 0)
+  const rank = (c: StudioConnection) => (unloadable(c) || (writes && !c.allowWrites) ? 2 : up[c.id] === false ? 1 : 0)
   const listed = [...(connections ?? [])].sort((a, b) => rank(a) - rank(b))
   return (
     <fieldset className="studio-bench-pick">

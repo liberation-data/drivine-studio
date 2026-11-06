@@ -173,7 +173,10 @@ async function runIn(running: RunJob, input: RunInput, connections: Connection[]
         jvm: `Node ${process.versions.node}`,
         drivine: `TypeScript ${drivineVersion()}`,
         bench: null,
-        image: `${connection.type.charAt(0)}${connection.type.slice(1).toLowerCase()} · ${connection.host}${connection.port ? `:${connection.port}` : ''}`,
+        // A SQLite file has no host: what it runs on is the SQLite Node brings.
+        image: connection.type === 'SQLITE'
+          ? `SQLite ${process.versions.sqlite}`
+          : `${connection.type.charAt(0)}${connection.type.slice(1).toLowerCase()} · ${connection.host}${connection.port ? `:${connection.port}` : ''}`,
         imageId: null,
         limits: `${input.warmup} warm-up, ${input.runs} timed`,
       },

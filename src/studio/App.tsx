@@ -80,7 +80,7 @@ function infoOf(id: string, connection: StudioConnection | null): ReactNode {
   if (id === 'cypher') {
     return (
       <>
-        <p>Cypher run on the connection chosen: as it is on Neo4j, Memgraph and FalkorDB, and compiled to SQL by Drivine on Postgres and Oracle.</p>
+        <p>Cypher run on the connection chosen: as it is on Neo4j, Memgraph and FalkorDB, and compiled to SQL by Drivine on Postgres, Oracle and SQLite.</p>
         <p>
           {connection?.allowWrites
             ? `${ALLOWS_WRITES} There is no undo.`

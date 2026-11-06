@@ -36,7 +36,7 @@
     "@huggingface/transformers": "^4.3.1",
     "@lezer/highlight": "^1.2.5",
     "@liberation-data/desk": "^0.39.1",
-    "@liberation-data/drivine": "^3.4.1",
+    "@liberation-data/drivine": "^3.5.1",
     "3d-force-graph": "^1.80.1",
     "cytoscape": "^3.30.0",
     "cytoscape-cola": "^2.5.1",

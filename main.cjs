@@ -287,6 +287,20 @@ ipcMain.handle('studio:pick-folder', async event => {
   return chosen.canceled ? null : (chosen.filePaths[0] ?? null);
 });
 
+// The system's file picker, for the page to point a SQLite connection at its file: the path chosen, or null. As the
+// folder picker, only for the studio's own page, and the person's choice in the system's own dialog.
+ipcMain.handle('studio:pick-file', async event => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win || !event.senderFrame?.url.startsWith(URL)) return null;
+  const chosen = await dialog.showOpenDialog(win, {
+    title: 'Choose a SQLite File',
+    message: 'Choose the SQLite file an application using Drivine keeps its graph in.',
+    buttonLabel: 'Choose',
+    properties: ['openFile'],
+  });
+  return chosen.canceled ? null : (chosen.filePaths[0] ?? null);
+});
+
 app.whenReady().then(async () => {
   log('[Electron] App ready');
   try {
