@@ -305,12 +305,12 @@ export function App() {
     },
   ], [reload, reloadConnections, openInCypher])
 
+  // Whether each is up, tried every few seconds: a menu gives no word of opening or closing to try it then.
+  const up = useOnline((connections ?? []).map(c => c.id))
   /*
    * The connection in use, at the trailing end of the menu bar: one for the whole studio, so chosen where the whole
    * studio is, not in a window. Each window's title bar names it too.
    */
-  // Whether each is up, tried every few seconds: a menu gives no word of opening or closing to try it then.
-  const up = useOnline((connections ?? []).map(c => c.id))
   const status = useMemo(() => [{
     id: 'connection',
     label: connection?.name ?? 'No Connection',

@@ -96,6 +96,7 @@
       "build/trayTemplate@2x.png",
       "preload.cjs",
       "server-start.cjs",
+      "native-menus.cjs",
       "package.json",
       "!node_modules/**/*"
     ],
