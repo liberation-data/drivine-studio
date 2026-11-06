@@ -39,12 +39,14 @@ interface Drawn { readonly graph: Graph; readonly fragments: readonly string[] }
 /**
  * What drawing `next` after `before` takes: a new layout, for another graph; or, for the same nodes (the same array
  * of them: `withConnections` keeps it) in the same colours, only the relationships to add and the ids of those to take
- * away, the nodes left where they are.
+ * away, the nodes left where they are. A first layout still `arranging`, out of sight, with the relationships it began
+ * with is begun again with these: cola keeps pulling on those it began with, and the parts it sets apart at the end
+ * are the parts as they are then, so relationships joining two of them would be drawn across a jumble.
  */
 export type Redraw = { kind: 'layout' } | { kind: 'edges'; add: GraphEdge[]; remove: string[] }
 
-export function redrawOf(before: Drawn | null, next: Drawn): Redraw {
-  if (!before || before.graph.nodes !== next.graph.nodes || before.fragments !== next.fragments) return { kind: 'layout' }
+export function redrawOf(before: Drawn | null, next: Drawn, arranging = false): Redraw {
+  if (arranging || !before || before.graph.nodes !== next.graph.nodes || before.fragments !== next.fragments) return { kind: 'layout' }
   const now = new Map(next.graph.edges.map(e => [e.id, e]))
   const was = new Map(before.graph.edges.map(e => [e.id, e]))
   // An edge given again under its id but as another edge is taken away and added again, so its data is the new one's.

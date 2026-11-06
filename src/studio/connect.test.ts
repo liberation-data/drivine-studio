@@ -80,6 +80,10 @@ describe('redrawOf', () => {
     expect(off).toEqual({ kind: 'edges', add: [], remove: ['relationship:r1', 'relationship:r2'] })
     expect(redrawOf({ graph: base.graph, fragments }, { graph: base.graph, fragments })).toEqual({ kind: 'edges', add: [], remove: [] })
   })
+
+  it('lays the same nodes out again while their first layout is still arranging', () => {
+    expect(redrawOf({ graph: base.graph, fragments }, { graph: joined.graph, fragments }, true)).toEqual({ kind: 'layout' })
+  })
 })
 
 describe('a toggle on the 2D core', () => {

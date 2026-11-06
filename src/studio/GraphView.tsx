@@ -313,15 +313,15 @@ export function GraphView({ graph, live, fragments, onSelect }: Props) {
   useEffect(() => {
     const core = cy.current
     if (!core) return
-    const redraw = redrawOf(drawnNow.current, { graph, fragments })
+    const redraw = redrawOf(drawnNow.current, { graph, fragments }, arranging.current !== null)
     drawnNow.current = { graph, fragments }
     if (redraw.kind === 'edges') {
       /*
        * The same nodes, with relationships come or gone: those only, and every node left where it is, chosen or pinned
-       * as it was. A simulation running for a drag holds the relationships it started with, so it stops; a first
-       * layout still settling out of sight is left to finish.
+       * as it was. A simulation running for a drag holds the relationships it started with, so it stops. (A first
+       * layout still settling out of sight is begun again, with them: see `redrawOf`.)
        */
-      if (running.current && running.current !== arranging.current) {
+      if (running.current) {
         clearTimeout(settling.current)
         running.current.stop()
         running.current = null
