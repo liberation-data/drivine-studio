@@ -72,6 +72,17 @@ describe('appearance', () => {
     expect(heard).toHaveBeenCalledTimes(1)
   })
 
+  it('applies a choice and tells those listening when the store cannot keep it, outside the desktop app', () => {
+    vi.stubGlobal('window', { localStorage: { setItem: () => { throw new Error('full') }, getItem: () => null } })
+    const heard = vi.fn()
+    const stop = onAppearanceChange(heard)
+    setAppearance('dark')
+    stop()
+    expect(root.attributes.get('data-theme')).toBe('dark')
+    expect(heard).toHaveBeenCalledTimes(1)
+    expect(appearance()).toBe('system')
+  })
+
   it('tells a theme listener of a choice and of the system changing, until it stops', () => {
     const heard = vi.fn()
     const stop = onThemeChange(heard)

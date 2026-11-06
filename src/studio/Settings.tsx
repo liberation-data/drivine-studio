@@ -16,9 +16,10 @@ export type SettingsSection = (typeof SECTIONS)[number]
 
 const isSection = (it: string | null | undefined): it is SettingsSection => SECTIONS.includes(it as SettingsSection)
 
-// The section used last, kept in this browser only: a convenience, and lost without harm.
+// The section used last, kept in this browser only: a convenience, and lost without harm. One no longer here, such as
+// Connections before it had its own window again, opens on Appearance.
 const SECTION = 'drivine-studio.settings.section'
-const remembered = (): SettingsSection => {
+export const remembered = (): SettingsSection => {
   try {
     const kept = window.localStorage.getItem(SECTION)
     return isSection(kept) ? kept : 'appearance'
