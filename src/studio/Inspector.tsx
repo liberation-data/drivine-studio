@@ -26,7 +26,7 @@ export function Inspector({ selection, nodes, fragments }: { selection: NonNulla
         <span className="studio-swatch" style={{ background: colourOf(fragments, node.fragment) }} />
         {captionOf(node)}
       </h3>
-      <p className="desk-text-small desk-text-muted">{node.fragment} {node.labels.map(l => `:${l}`).join('')}</p>
+      <p className="desk-text-small desk-text-muted">{kindOf(node)}</p>
       <Properties values={node.properties} empty="No properties." />
       {Object.keys(node.aggregates).length > 0 && (
         <>
@@ -53,4 +53,13 @@ function Properties({ values, empty }: { values: Record<string, unknown>; empty:
       ))}
     </dl>
   )
+}
+
+/**
+ * What a node is, under its name: the fragment it was loaded as, then its labels. A node from Cypher has no fragment
+ * of its own, so it is told by its first label, and that label is not said twice.
+ */
+export function kindOf(node: Pick<GraphNode, 'fragment' | 'labels'>): string {
+  const labels = node.labels.map(l => `:${l}`).join('')
+  return node.fragment === node.labels[0] || !node.fragment ? labels : `${node.fragment} ${labels}`.trim()
 }
