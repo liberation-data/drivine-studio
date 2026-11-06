@@ -81,6 +81,12 @@ describe('redrawOf', () => {
     expect(redrawOf({ graph: base.graph, fragments }, { graph: base.graph, fragments })).toEqual({ kind: 'edges', add: [], remove: [] })
   })
 
+  it('takes away and adds again an edge given again under its id as another edge', () => {
+    const changed = { ...base.graph.edges[0]!, type: 'LIKES' }
+    const next = { ...base.graph, edges: [changed] }
+    expect(redrawOf({ graph: base.graph, fragments }, { graph: next, fragments })).toEqual({ kind: 'edges', add: [changed], remove: ['relationship:r0'] })
+  })
+
   it('lays the same nodes out again while their first layout is still arranging', () => {
     expect(redrawOf({ graph: base.graph, fragments }, { graph: joined.graph, fragments }, true)).toEqual({ kind: 'layout' })
   })
@@ -115,6 +121,16 @@ describe('a toggle on the 2D core', () => {
     expect(core.edges().map(e => e.id())).toEqual(['relationship:r0'])
     expect(places(core)).toEqual(before)
     expect(core.getElementById('node:a').selected()).toBe(true)
+    core.destroy()
+  })
+
+  it('gives an edge given again under its id the new edge\'s data', () => {
+    const core = drawnCore()
+    const changed = { ...base.graph.edges[0]!, type: 'LIKES' }
+    const again = redrawOf({ graph: base.graph, fragments }, { graph: { ...base.graph, edges: [changed] }, fragments })
+    if (again.kind !== 'edges') throw new Error('expected an edges redraw')
+    applyEdges(core, again)
+    expect(core.edges().map(e => [e.id(), e.data('type'), e.data('edge')])).toEqual([['relationship:r0', 'LIKES', changed]])
     core.destroy()
   })
 
