@@ -110,7 +110,7 @@ export interface CypherResult {
   milliseconds: number
   /**
    * Given only where the statement ran where it may write, and was committed: what it changed, each count as its
-   * database gave it, or null where the database gives none, as Postgres and Oracle do.
+   * database gave it, or null where the database gives none, as Postgres, Oracle and SQLite do.
    */
   written?: { counts: Partial<Record<Change, number>> | null }
 }

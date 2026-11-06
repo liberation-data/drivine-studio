@@ -277,11 +277,11 @@ html, body, #root { height: 100%; margin: 0; }
  * for the scheme and checked for colour blindness against the studio's own surfaces. Text stays in ink; the colour is on
  * the chip, the bar and the tile beside it.
  */
-.studio-bench-report, .studio-bench-busy { --bench-1: #2a78d6; --bench-2: #eb6834; --bench-3: #1baf7a; --bench-4: #eda100; --bench-5: #e87ba4; --bench-6: #008300; }
+.studio-bench-report, .studio-bench-busy { --bench-1: #2a78d6; --bench-2: #eb6834; --bench-3: #1baf7a; --bench-4: #eda100; --bench-5: #e87ba4; --bench-6: #008300; --bench-7: #8b5cf6; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .studio-bench-report, :root:not([data-theme="light"]) .studio-bench-busy { --bench-1: #3987e5; --bench-2: #d95926; --bench-3: #199e70; --bench-4: #c98500; --bench-5: #d55181; --bench-6: #008300; }
+  :root:not([data-theme="light"]) .studio-bench-report, :root:not([data-theme="light"]) .studio-bench-busy { --bench-1: #3987e5; --bench-2: #d95926; --bench-3: #199e70; --bench-4: #c98500; --bench-5: #d55181; --bench-6: #008300; --bench-7: #9d74f7; }
 }
-:root[data-theme="dark"] .studio-bench-report, :root[data-theme="dark"] .studio-bench-busy { --bench-1: #3987e5; --bench-2: #d95926; --bench-3: #199e70; --bench-4: #c98500; --bench-5: #d55181; --bench-6: #008300; }
+:root[data-theme="dark"] .studio-bench-report, :root[data-theme="dark"] .studio-bench-busy { --bench-1: #3987e5; --bench-2: #d95926; --bench-3: #199e70; --bench-4: #c98500; --bench-5: #d55181; --bench-6: #008300; --bench-7: #9d74f7; }
 
 .studio-bench-engine { display: inline-flex; align-items: center; gap: 6px; }
 .studio-bench-chip { width: 10px; height: 10px; border-radius: 3px; flex: none; }

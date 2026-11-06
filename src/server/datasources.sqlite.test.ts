@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ConnectionError } from './connections'
 import type { Connection } from './connections'
-import { check, forget, NoGraphError, readSql, run, StatementError, toWrite } from './datasources'
+import { check, connect, forget, NoGraphError, readSql, run, StatementError, toWrite } from './datasources'
 import { readSchema } from './schema'
 
 // SQLite needs no database running: each file here is made in a folder of the test's own, by Drivine, as an
@@ -199,6 +199,16 @@ describe('run, on SQLite', () => {
   it('says a value a statement could not take is the person\'s to fix', async () => {
     const connection = on(await graphFile())
     await expect(run(connection, "MATCH (n) WHERE n.name =~ '[' RETURN n")).rejects.toThrow(StatementError)
+  })
+
+  it('connects a result\'s nodes by the ids it gave them, reading only', async () => {
+    const file = await graphFile()
+    const before = written(file)
+    expect(await connect(on(file), ['1', '2'])).toEqual({
+      relationships: [{ id: '1', type: 'KNOWS', from: '1', to: '2', properties: { since: 2001 } }],
+      truncated: false,
+    })
+    expect(written(file)).toEqual(before)
   })
 })
 

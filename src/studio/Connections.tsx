@@ -461,7 +461,7 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
       )}
       {fixed && (
         <p className="desk-text-small desk-text-muted">
-          From the environment the studio was started in, by Drivine&apos;s DATABASE_TYPE, DATABASE_HOST and the rest. Change
+          From the environment the studio was started in, by Drivine&apos;s DATABASE_TYPE, {file ? 'DATABASE_NAME' : 'DATABASE_HOST'} and the rest. Change
           those, and start the studio again, to change it.
         </p>
       )}

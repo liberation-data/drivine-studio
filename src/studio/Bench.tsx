@@ -192,7 +192,7 @@ export function Bench() {
 }
 
 /** An engine's colour: its slot in the bench's fixed order, so a colour always means the same engine. */
-const SLOT: Record<string, number> = { neo4j: 1, falkordb: 2, oracle: 3, postgres: 4, memgraph: 5, neptune: 6 }
+export const SLOT: Record<string, number> = { neo4j: 1, falkordb: 2, oracle: 3, postgres: 4, memgraph: 5, neptune: 6, sqlite: 7 }
 /**
  * A run of the studio's own names its engines after its connections; each takes its kind of database's colour, so
  * a Postgres connection is Postgres's yellow as Graph Bench's is. Learnt as results are read.
