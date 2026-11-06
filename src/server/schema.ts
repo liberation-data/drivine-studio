@@ -1,6 +1,7 @@
-import { DrivineError, OracleGraph, PostgresGraph } from '@liberation-data/drivine'
+import { DrivineError, OracleGraph, PostgresGraph, SqliteGraph } from '@liberation-data/drivine'
 import type { Connection } from './connections'
 import { readRows, readSql, SQL_STORES, StatementError } from './datasources'
+import type { SqlStore } from './datasources'
 import type { GraphSchema } from '../studio/schema'
 
 /**
@@ -8,10 +9,11 @@ import type { GraphSchema } from '../studio/schema'
  * keys. Read only, and cheap enough to ask for in the background: on a big graph, from a sample.
  *
  * Neo4j and FalkorDB keep these and say them at once (`db.labels()` and the rest). Memgraph and Neptune don't without
- * a setting, so they are read from a sample of nodes and relationships. Postgres and Oracle are read straight from
- * Drivine's node and edge tables: every label and relationship type, since a label on one node is as likely to be
+ * a setting, so they are read from a sample of nodes and relationships. Postgres, Oracle and SQLite are read straight
+ * from Drivine's node and edge tables: every label and relationship type, since a label on one node is as likely to be
  * typed as any (on 1.1M nodes and 4.4M relationships, about 100 and 250 ms on Postgres), and property keys from the
- * first rows and a sample of blocks spread through the tables, so a key on a handful of rows only may be missed.
+ * first rows and a sample of blocks spread through the tables, or on SQLite, which samples no blocks, the first rows
+ * of each set of labels, so a key on a handful of rows only may be missed.
  */
 export async function readSchema(connection: Connection): Promise<GraphSchema> {
   if (SQL_STORES.includes(connection.type)) return sqlSchema(connection)
@@ -27,7 +29,7 @@ export async function readSchema(connection: Connection): Promise<GraphSchema> {
 
 /** Rows read for a sample on an engine that doesn't keep its labels: enough to see a graph's shape, quickly. */
 export const SAMPLE_ROWS = 10_000
-/** Nodes read for their keys from each set of labels, on Postgres. */
+/** Nodes read for their keys from each set of labels, on Postgres and SQLite. */
 export const PER_LABELS = 200
 /** Each list is cut at this many, so a graph of free-form keys doesn't send thousands. */
 export const MOST = 2_000
@@ -78,10 +80,10 @@ function firstString(row: object): string | undefined {
  * The graph's name goes into the SQL as it is, since it names tables: so its tables are named as Drivine names them,
  * which refuses a name that is more than letters, digits and underscores, or too long for the database.
  */
-export function schemaSql(type: 'POSTGRES' | 'ORACLE', graph: string): { labels: string; relationshipTypes: string; propertyKeys: string } {
-  let tables: PostgresGraph | OracleGraph
+export function schemaSql(type: SqlStore, graph: string): { labels: string; relationshipTypes: string; propertyKeys: string } {
+  let tables: PostgresGraph | OracleGraph | SqliteGraph
   try {
-    tables = type === 'POSTGRES' ? new PostgresGraph(graph) : new OracleGraph(graph)
+    tables = type === 'POSTGRES' ? new PostgresGraph(graph) : type === 'SQLITE' ? new SqliteGraph(graph) : new OracleGraph(graph)
   } catch (e) {
     if (e instanceof DrivineError) throw new StatementError(e.message)
     throw e
@@ -103,6 +105,20 @@ export function schemaSql(type: 'POSTGRES' | 'ORACLE', graph: string): { labels:
         `UNION ALL SELECT jsonb_object_keys(p.props) AS v FROM (SELECT DISTINCT labels AS l FROM ${nodes}) s, ` +
         `LATERAL (SELECT props FROM ${nodes} WHERE labels @> s.l LIMIT ${PER_LABELS}) p ` +
         `UNION ALL SELECT jsonb_object_keys(props) AS v FROM (${sample(edges, 'props')}) e) k LIMIT ${MOST}`,
+    }
+  }
+  if (type === 'SQLITE') {
+    // Labels are a JSON list, as text: json_each gives each of them, and each key of a node's or relationship's props.
+    const firstRows = (table: string) => `SELECT props FROM (SELECT props FROM ${table} LIMIT ${first})`
+    return {
+      labels: `SELECT DISTINCT j.value AS v FROM (SELECT DISTINCT labels AS l FROM ${nodes}) s, json_each(s.l) j LIMIT ${MOST}`,
+      relationshipTypes: `SELECT DISTINCT type AS v FROM ${edges} LIMIT ${MOST}`,
+      // SQLite samples no blocks: the first rows, and the first of each set of labels, so a label on a few nodes gives
+      // its keys too.
+      propertyKeys:
+        `SELECT DISTINCT j.key AS v FROM (${firstRows(nodes)} ` +
+        `UNION ALL SELECT props FROM (SELECT props, ROW_NUMBER() OVER (PARTITION BY labels) AS r FROM ${nodes}) WHERE r <= ${PER_LABELS} ` +
+        `UNION ALL ${firstRows(edges)}) p, json_each(p.props) j LIMIT ${MOST}`,
     }
   }
   const sample = (table: string, columns: string) =>
@@ -149,7 +165,7 @@ function topKey(path: string): string | undefined {
 }
 
 async function sqlSchema(connection: Connection): Promise<GraphSchema> {
-  const type = connection.type as 'POSTGRES' | 'ORACLE'
+  const type = connection.type as SqlStore
   const sql = schemaSql(type, connection.graph || 'drivine')
   const [labels, relationshipTypes, keys] = await Promise.all([
     readSql(connection, sql.labels),

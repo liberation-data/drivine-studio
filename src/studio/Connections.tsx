@@ -157,7 +157,7 @@ export function Connections() {
         ) : (
           <div className="studio-hint">
             <h2>No connections</h2>
-            <p>Add the database the studio is to read: Neo4j, Memgraph, FalkorDB, Neptune, Postgres or Oracle.</p>
+            <p>Add the database the studio is to read: Neo4j, Memgraph, FalkorDB, Neptune, Postgres, Oracle or a SQLite file.</p>
             <Button onClick={() => choose('new')}>Add Connection</Button>
           </div>
         )}
@@ -213,16 +213,20 @@ const DATABASE_FIELD: Record<DatabaseType, { label: string; help: string } | nul
   FALKORDB: { label: 'Graph', help: 'The graph to query: graph when empty.' },
   POSTGRES: { label: 'Database', help: 'The Postgres database to connect to, which can hold several graphs. Required.' },
   ORACLE: { label: 'Service name', help: 'Required, such as FREEPDB1.' },
+  SQLITE: { label: 'File', help: 'The SQLite file an application using Drivine keeps its graph in. The studio never makes one.' },
 }
 
-/** What the Graph field of Postgres and Oracle is, with the tables the graph named has: drivine's when it is empty, as the server trims it. */
+/** The types whose graph names its tables, which the Graph field names: Drivine's SQL stores. */
+const GRAPH_TYPES: readonly DatabaseType[] = ['POSTGRES', 'ORACLE', 'SQLITE']
+
+/** What the Graph field of Postgres, Oracle and SQLite is, with the tables the graph named has: drivine's when it is empty, as the server trims it. */
 export const graphHelp = (graph: string): string => {
   const name = graph.trim() || 'drivine'
   return `The graph within the database, kept in its own tables: here ${name}_node and ${name}_edge. drivine when empty.`
 }
 
 const DEFAULT_PORTS: Record<DatabaseType, string> = {
-  NEO4J: '7687', MEMGRAPH: '7687', NEPTUNE: '8182', FALKORDB: '6379', POSTGRES: '5432', ORACLE: '1521',
+  NEO4J: '7687', MEMGRAPH: '7687', NEPTUNE: '8182', FALKORDB: '6379', POSTGRES: '5432', ORACLE: '1521', SQLITE: '',
 }
 
 interface Draft {
@@ -247,9 +251,22 @@ const draftOf = (editing: StudioConnection | 'new'): Draft =>
         allowWrites: editing.allowWrites === true,
       }
 
-/** The draft as the server takes it. An empty field is left out, so the server's defaults apply. */
+/**
+ * The draft as the server takes it. An empty field is left out, so the server's defaults apply. A SQLite file has no
+ * host, port, user or password, so none is sent, even one typed while the draft was another type.
+ */
 export function inputOf(draft: Draft): ConnectionInput {
   const port = Number.parseInt(draft.port, 10)
+  if (draft.type === 'SQLITE') {
+    return {
+      name: draft.name,
+      type: draft.type,
+      host: '',
+      ...(draft.database ? { database: draft.database } : {}),
+      ...(draft.graph ? { graph: draft.graph } : {}),
+      ...(draft.allowWrites ? { allowWrites: true } : {}),
+    }
+  }
   return {
     name: draft.name,
     type: draft.type,
@@ -259,7 +276,7 @@ export function inputOf(draft: Draft): ConnectionInput {
     ...(draft.password ? { password: draft.password } : {}),
     ...(draft.clearPassword && !draft.password ? { clearPassword: true } : {}),
     ...(draft.database && DATABASE_FIELD[draft.type] ? { database: draft.database } : {}),
-    ...(draft.graph && (draft.type === 'ORACLE' || draft.type === 'POSTGRES') ? { graph: draft.graph } : {}),
+    ...(draft.graph && GRAPH_TYPES.includes(draft.type) ? { graph: draft.graph } : {}),
     ...(draft.allowWrites ? { allowWrites: true } : {}),
   }
 }
@@ -326,7 +343,7 @@ function ConnectionEntry({ connection: c, chosen, inUse, test, online, onChoose,
           {c.allowWrites && <span className="studio-tag studio-tag-warn">Writes allowed</span>}
         </span>
         <span className="studio-entry-detail desk-text-caption desk-text-muted">
-          {DATABASE_NAMES[c.type]} · {c.host}{c.port ? `:${c.port}` : ''}
+          {DATABASE_NAMES[c.type]} · {c.type === 'SQLITE' ? c.database : <>{c.host}{c.port ? `:${c.port}` : ''}</>}
         </span>
       </button>
       {menu}
@@ -355,6 +372,8 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
   const [problem, setProblem] = useState<string | null>(null)
   const set = (patch: Partial<Draft>) => setDraft(d => ({ ...d, ...patch }))
   const field = DATABASE_FIELD[draft.type]
+  // A file has no host, port, user or password.
+  const file = draft.type === 'SQLITE'
   const isNew = editing === 'new'
   const hadPassword = !isNew && editing.hasPassword
   // One from the environment is the studio's to read, not to change: it is set where the studio was started.
@@ -453,10 +472,12 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
             disabled={fixed}
             options={DATABASE_TYPES.map(t => ({ value: t, label: DATABASE_NAMES[t] }))}
           />
-          <TextField label="Host" value={draft.host} onChange={e => set({ host: e.target.value })} />
-          <TextField label="Port" type="number" min={1} max={65535} value={draft.port} placeholder={DEFAULT_PORTS[draft.type]} onChange={e => set({ port: e.target.value })} />
-          {draft.type !== 'NEPTUNE' && <TextField label="User" value={draft.user} autoComplete="off" onChange={e => set({ user: e.target.value })} />}
-          {draft.type !== 'NEPTUNE' && (
+          {!file && <TextField label="Host" value={draft.host} onChange={e => set({ host: e.target.value })} />}
+          {!file && (
+            <TextField label="Port" type="number" min={1} max={65535} value={draft.port} placeholder={DEFAULT_PORTS[draft.type]} onChange={e => set({ port: e.target.value })} />
+          )}
+          {draft.type !== 'NEPTUNE' && !file && <TextField label="User" value={draft.user} autoComplete="off" onChange={e => set({ user: e.target.value })} />}
+          {draft.type !== 'NEPTUNE' && !file && (
             <TextField
               label="Password" type="password" autoComplete="new-password"
               value={draft.password}
@@ -464,22 +485,24 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
               onChange={e => set({ password: e.target.value })}
             />
           )}
-          {hadPassword && !draft.password && !fixed && (
+          {hadPassword && !draft.password && !fixed && !file && (
             <div className="studio-wide">
               <Checkbox label="Forget the password" checked={draft.clearPassword} onChange={clearPassword => set({ clearPassword })} />
             </div>
           )}
           {field && <TextField label={field.label} help={field.help} value={draft.database} onChange={e => set({ database: e.target.value })} />}
-          {(draft.type === 'ORACLE' || draft.type === 'POSTGRES') && (
+          {GRAPH_TYPES.includes(draft.type) && (
             <TextField label="Graph" help={graphHelp(draft.graph)} value={draft.graph} onChange={e => set({ graph: e.target.value })} />
           )}
           <div className="studio-wide">
             <Checkbox
               label="Allow writes"
               description={
-                draft.type === 'ORACLE' || draft.type === 'POSTGRES'
-                  ? 'From the Cypher window only, compiled to SQL by Drivine. Off, each statement runs read-only and is rolled back.'
-                  : 'From the Cypher window only. Off, each statement runs where it cannot write. The Canvas only ever reads.'
+                file
+                  ? 'From the Cypher window only, compiled to SQL by Drivine. Off, each statement runs on the file opened read-only.'
+                  : GRAPH_TYPES.includes(draft.type)
+                    ? 'From the Cypher window only, compiled to SQL by Drivine. Off, each statement runs read-only and is rolled back.'
+                    : 'From the Cypher window only. Off, each statement runs where it cannot write. The Canvas only ever reads.'
               }
               checked={draft.allowWrites}
               onChange={allowWrites => set({ allowWrites })}
@@ -496,7 +519,8 @@ function ConnectionEditor({ editing, inUse, test, onTest, onUse, onDirty, onSave
         {/* Enter submits from any field. */}
         <button type="submit" hidden />
       </form>
-      {!fixed && (
+      {/* A file is not a server: there is nothing to run in Docker. */}
+      {!fixed && !file && (
         <RunInDocker draft={draft} connectionId={isNew ? undefined : editing.id} passwordKept={hadPassword && !draft.clearPassword} onFill={set} ask={dockerAsk} />
       )}
     </Pane>
@@ -658,8 +682,8 @@ function RunInDocker({ draft, connectionId, passwordKept, onFill, ask }: {
   )
 }
 
-/** The kinds of database Docker runs here: all but Neptune, which runs on AWS only. */
-const IN_DOCKER = DATABASE_TYPES.filter(type => type !== 'NEPTUNE')
+/** The kinds of database Docker runs here: all but Neptune, which runs on AWS only, and SQLite, a file. */
+const IN_DOCKER = DATABASE_TYPES.filter(type => type !== 'NEPTUNE' && type !== 'SQLITE')
 
 /**
  * A new database, run in Docker: which kind, under what name, on which port. The connection is made with the settings

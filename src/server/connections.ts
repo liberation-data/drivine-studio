@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { homedir } from 'node:os'
+import { isAbsolute, join } from 'node:path'
 
 import { DATABASE_TYPES } from '../studio/database'
 import type { DatabaseType } from '../studio/database'
@@ -13,9 +15,9 @@ export interface Connection {
   port?: number
   user?: string
   password?: string
-  /** The database to use: Neo4j's database, Postgres's and Oracle's service. */
+  /** The database to use: Neo4j's database, Postgres's and Oracle's service, and on SQLite the path of its file. */
   database?: string
-  /** The graph on Postgres and Oracle, which names its tables: `drivine` unless named. */
+  /** The graph on Postgres, Oracle and SQLite, which names its tables: `drivine` unless named. */
   graph?: string
   /**
    * A statement run in the Cypher window may write, and is committed. Kept only when true: off unless set. The
@@ -109,6 +111,7 @@ export function validate(input: unknown): ConnectionInput {
   if (!type || !(DATABASE_TYPES as readonly string[]).includes(type)) {
     throw new ConnectionError(`The type must be one of ${DATABASE_TYPES.join(', ')}.`)
   }
+  if (type === 'SQLITE') return sqliteInput(name, raw, text)
   const host = text('host')
   if (!host) throw new ConnectionError('Give the host the database runs on.')
   let port: number | undefined
@@ -138,6 +141,47 @@ export function validate(input: unknown): ConnectionInput {
     ...(raw.allowWrites === true ? { allowWrites: true } : {}),
     ...(raw.clearPassword === true ? { clearPassword: true } : {}),
   }
+}
+
+/**
+ * A SQLite connection: a file, with no host, port, user or password, so none is kept, even where the form sent one
+ * from when it was another type. See sqlitePath for the file.
+ */
+function sqliteInput(name: string, raw: Record<string, unknown>, text: (key: string) => string | undefined): ConnectionInput {
+  const database = sqlitePath(text('database'))
+  const graph = text('graph')
+  if (raw.allowWrites !== undefined && raw.allowWrites !== null && typeof raw.allowWrites !== 'boolean') {
+    throw new ConnectionError('allowWrites must be true or false.')
+  }
+  return {
+    name,
+    type: 'SQLITE',
+    host: '',
+    database,
+    ...(graph ? { graph } : {}),
+    ...(raw.allowWrites === true ? { allowWrites: true } : {}),
+    // The password a connection had before it was made a file's is forgotten with the rest.
+    clearPassword: true,
+  }
+}
+
+/**
+ * The path of a SQLite file, as Drivine is given it: a leading `~` is the home folder, and it must then be absolute,
+ * since the studio's server runs in a folder of its own, not the person's. `:memory:` is refused, as Drivine refuses
+ * it: each connection would open a database of its own, with nothing in it. Whether a file is there is asked when it
+ * is connected to, since it may be made or moved after the connection is saved.
+ */
+export function sqlitePath(given: string | undefined): string {
+  const path = given?.trim()
+  if (!path) throw new ConnectionError('Give the path of the SQLite file.')
+  if (/:memory:|mode=memory/.test(path)) {
+    throw new ConnectionError(`${path} names no file: the studio reads a graph from a SQLite file. Give the path of one.`)
+  }
+  const expanded = path === '~' || path.startsWith('~/') ? join(homedir(), path.slice(1)) : path
+  if (!isAbsolute(expanded)) {
+    throw new ConnectionError(`Give the SQLite file's whole path, from the root or from ~, not ${path}.`)
+  }
+  return expanded
 }
 
 const settled = ({ clearPassword: _, ...input }: ConnectionInput): Omit<Connection, 'id' | 'source'> => input

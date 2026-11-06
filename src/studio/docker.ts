@@ -51,8 +51,9 @@ export type DockerCommand =
 
 const LOCAL = new Set(['', 'localhost', '127.0.0.1', '::1', '[::1]'])
 
+// SQLite is a file, and has no port.
 export const DEFAULT_PORTS: Record<DatabaseType, string> = {
-  NEO4J: '7687', MEMGRAPH: '7687', NEPTUNE: '8182', FALKORDB: '6379', POSTGRES: '5432', ORACLE: '1521',
+  NEO4J: '7687', MEMGRAPH: '7687', NEPTUNE: '8182', FALKORDB: '6379', POSTGRES: '5432', ORACLE: '1521', SQLITE: '',
 }
 
 /** As the shell reads it: plain words as they are, anything else between single quotes. */
@@ -80,6 +81,7 @@ const command = (run: DockerRun, rest: { note?: string; fill: Fill }): DockerCom
 
 export function dockerCommand(draft: DockerDraft): DockerCommand {
   if (draft.type === 'NEPTUNE') return { kind: 'none', why: 'Neptune runs on AWS only: there is no image of it to run here.' }
+  if (draft.type === 'SQLITE') return { kind: 'none', why: 'SQLite is a file, not a server: there is nothing to run in Docker.' }
   if (!LOCAL.has(draft.host.trim())) {
     return { kind: 'none', why: 'Docker runs a database on this machine. Set Host to localhost to run one here.' }
   }

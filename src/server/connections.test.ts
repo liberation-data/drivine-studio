@@ -1,5 +1,5 @@
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -48,12 +48,42 @@ describe('validate', () => {
     [{ ...neo4j, port: 7687.5 }, 'The port must be a whole number'],
     [{ ...neo4j, type: 'POSTGRES' }, 'Give the Postgres database name.'],
     [{ ...neo4j, type: 'ORACLE' }, 'Give the Oracle service name.'],
+    [{ ...neo4j, type: 'SQLITE' }, 'Give the path of the SQLite file.'],
+    [{ ...neo4j, type: 'SQLITE', database: ':memory:' }, ':memory: names no file'],
+    [{ ...neo4j, type: 'SQLITE', database: 'file::memory:?cache=shared' }, 'names no file'],
+    [{ ...neo4j, type: 'SQLITE', database: 'data/graph.db' }, "Give the SQLite file's whole path, from the root or from ~, not data/graph.db."],
+    [{ ...neo4j, type: 'SQLITE', database: '~other/graph.db' }, 'whole path'],
+    [{ ...neo4j, type: 'SQLITE', database: '/data/graph.db', allowWrites: 'yes' }, 'allowWrites must be true or false.'],
     [{ ...neo4j, user: 7 }, 'user must be text.'],
     [{ ...neo4j, allowWrites: 'yes' }, 'allowWrites must be true or false.'],
     [null, 'A connection is an object.'],
   ])('refuses %j', (input, message) => {
     expect(() => validate(input)).toThrow(ConnectionError)
     expect(() => validate(input)).toThrow(message)
+  })
+})
+
+describe('validate, for a SQLite file', () => {
+  it('keeps the file and the graph, with no host, port, user or password, and forgets a password kept before', () => {
+    expect(validate({ ...neo4j, type: 'SQLITE', database: ' /data/graph.db ', graph: 'movies', allowWrites: true })).toEqual({
+      name: 'Local', type: 'SQLITE', host: '', database: '/data/graph.db', graph: 'movies', allowWrites: true, clearPassword: true,
+    })
+  })
+
+  it('takes a leading ~ to be the home folder', () => {
+    expect(validate({ name: 'Here', type: 'SQLITE', database: '~/data/graph.db' }).database).toBe(join(homedir(), 'data/graph.db'))
+  })
+
+  it('needs no host, and no file to be there yet: that is asked when it is connected to', () => {
+    expect(validate({ name: 'Later', type: 'SQLITE', database: '/nowhere/yet.db' })).toMatchObject({ database: '/nowhere/yet.db' })
+  })
+
+  it('forgets the password a connection had when it is made a SQLite one', async () => {
+    const added = await addConnection(validate({ ...neo4j }))
+    const changed = await updateConnection(added.id, validate({ name: 'Local', type: 'SQLITE', database: '/data/graph.db' }))
+    expect(changed).not.toHaveProperty('password')
+    expect(changed).toMatchObject({ type: 'SQLITE', host: '', database: '/data/graph.db' })
+    expect(changed).not.toHaveProperty('user')
   })
 })
 

@@ -21,6 +21,12 @@ describe('inputOf', () => {
     expect(inputOf({ ...draft, type: 'POSTGRES', database: 'studio', graph: 'g' })).toMatchObject({ database: 'studio', graph: 'g' })
   })
 
+  it('sends a SQLite file with its graph, and no host, port, user or password, even ones typed as another type', () => {
+    const typed = { ...draft, port: '7688', user: 'neo4j', password: 'secret', clearPassword: true, database: '~/graph.db', graph: 'g', allowWrites: true }
+    expect(inputOf({ ...typed, type: 'SQLITE' })).toEqual({ name: 'Local', type: 'SQLITE', host: '', database: '~/graph.db', graph: 'g', allowWrites: true })
+    expect(inputOf({ ...draft, type: 'SQLITE' })).toEqual({ name: 'Local', type: 'SQLITE', host: '' })
+  })
+
   it('forgets the password only when no new one is typed', () => {
     expect(inputOf({ ...draft, clearPassword: true })).toMatchObject({ clearPassword: true })
     expect(inputOf({ ...draft, clearPassword: true, password: 'new' })).not.toHaveProperty('clearPassword')
