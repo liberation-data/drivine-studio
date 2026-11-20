@@ -1,0 +1,136 @@
+name: macOS signed build
+
+# Builds, signs (Developer ID Application) and notarizes the macOS Studio app
+# with electron-builder + Apple notarytool.
+#
+# All signing secrets come from the `apple-signing` GitHub Environment
+# (deployment branches limited to main and v* tags). The job below declares
+# `environment: apple-signing`, so the secrets are only ever exposed to this
+# signing job and only on those refs.
+#
+# PER-ARCH, NOT UNIVERSAL. The app's icon feature loads @huggingface/transformers
+# on the Next.js server (src/server/icons/labels.ts), which pulls in the native
+# modules onnxruntime-node and sharp. Those ship as single-architecture darwin
+# binaries (@img/sharp-darwin-arm64 vs -x64, and onnxruntime-node's .node), and
+# with output: 'standalone' + serverExternalPackages they are copied into
+# .next/standalone/node_modules and signed inside the .app. A universal (lipo)
+# build cannot merge single-arch .node files cleanly, so we build arm64 and x64
+# separately, each on a runner of its own architecture so `npm ci` fetches that
+# arch's native binaries natively (no cross-arch install).
+
+on:
+  workflow_dispatch:
+  # Uncomment to also sign + notarize on every published GitHub Release.
+  # The `apple-signing` environment's deployment-branch rule (main + v* tags)
+  # still gates which refs may read the secrets.
+  # release:
+  #   types: [published]
+
+# Read-only: the signed artifacts go to the run, not committed. (A later
+# release: published trigger would add contents: write on the job to upload
+# release assets, keeping this workflow default read-only.)
+permissions:
+  contents: read
+
+jobs:
+  build-signed:
+    name: Build, sign and notarize (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    environment: apple-signing
+    strategy:
+      # Keep both legs running so one arch's failure still yields the other's logs.
+      fail-fast: false
+      matrix:
+        include:
+          # Arch-matched runners: macos-15 is Apple silicon, macos-15-intel is the Intel image
+          # (macos-13, the old Intel image, is retired).
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # No .nvmrc / engines field in the repo; pinning to the current LTS.
+          # See the OPEN QUESTIONS in the PR body.
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Build the Next.js app with NO signing secrets in scope, so a build-time
+      # dependency script can't read the certificate or the API key. The secrets
+      # are set only on the electron-builder step below, after the .p8 is written.
+      - name: Build the app
+        run: npm run build
+
+      - name: Write Apple API key
+        # notarytool authenticates with an App Store Connect API key (.p8).
+        # electron-builder reads APPLE_API_KEY (a path), APPLE_API_KEY_ID and
+        # APPLE_API_ISSUER from the environment. The base64 key is passed through
+        # env rather than interpolated into the command line, and `set +x` keeps
+        # the decoded key out of the log. Written after the build, used only by
+        # the signing step, and removed in the cleanup step.
+        env:
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        run: |
+          set +x
+          printf '%s' "$APPLE_API_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+
+      - name: Sign and notarize
+        # --${{ matrix.arch }} packages a single-architecture app on this runner's
+        # native arch. electron-builder signs every Mach-O inside the .app
+        # (including the bundled onnxruntime-node / sharp .node files), notarizes
+        # it, and staples the ticket to the .app. This is the only step the
+        # signing secrets are exposed to.
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish never
+        env:
+          # Developer ID Application certificate as a base64-encoded .p12.
+          # electron-builder imports it into its own temporary keychain.
+          CSC_LINK: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          # Notarization credentials (App Store Connect API key).
+          APPLE_API_KEY: ${{ runner.temp }}/AuthKey.p8
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          # APPLE_TEAM_ID isn't required for API-key auth but is harmless and lets
+          # electron-builder record the team. KEYCHAIN_PASSWORD is deliberately
+          # NOT set: electron-builder manages its own temporary keychain from
+          # CSC_LINK.
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Stapling: electron-builder staples the ticket to the .app, and the
+          # .zip is built from that stapled app, so the app a user drags out is
+          # stapled. The .dmg is NOT signed or stapled by default (dmg.sign is
+          # false); Gatekeeper checks the stapled app on first run. A clean
+          # `spctl -t open` on the .dmg itself would need the dmg signed plus a
+          # second notarize + staple — parked as a follow-up, not this PR.
+
+      - name: Verify code signature
+        # Real gates (no `|| true`): the build must produce a properly signed,
+        # notarized and stapled app bundle. stapler validate proves notarization
+        # and stapling actually happened, not just that the app is signed.
+        run: |
+          APP="$(ls -d dist/mac*/*.app | head -n 1)"
+          echo "Verifying: $APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          xcrun stapler validate "$APP"
+          spctl -a -vvv -t exec "$APP"
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: drivine-studio-macos-${{ matrix.arch }}-signed
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+
+      - name: Remove Apple API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
