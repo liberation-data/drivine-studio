@@ -69,6 +69,7 @@
     "asar": false,
     "mac": {
       "category": "public.app-category.developer-tools",
+      "artifactName": "drivine-studio-mac-${arch}.${ext}",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",

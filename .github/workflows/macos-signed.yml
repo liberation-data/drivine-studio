@@ -19,16 +19,17 @@ name: macOS signed build
 # arch's native binaries natively (no cross-arch install).
 
 on:
+  # By hand: builds, signs and notarizes both architectures and keeps them as
+  # the run's artifacts. Nothing is attached to a release.
   workflow_dispatch:
-  # Uncomment to also sign + notarize on every published GitHub Release.
-  # The `apple-signing` environment's deployment-branch rule (main + v* tags)
-  # still gates which refs may read the secrets.
-  # release:
-  #   types: [published]
+  # On a published GitHub Release: the same build, from the release's tag, with
+  # the dmg and zip for each architecture attached to the release. The tag must
+  # match v*, as the `apple-signing` environment allows only main and v* tags.
+  release:
+    types: [published]
 
-# Read-only: the signed artifacts go to the run, not committed. (A later
-# release: published trigger would add contents: write on the job to upload
-# release assets, keeping this workflow default read-only.)
+# Read-only by default. Only the attach job below, which runs no build code and
+# sees no Apple secret, may write to the repo, and only to upload the assets.
 permissions:
   contents: read
 
@@ -37,6 +38,11 @@ jobs:
     name: Build, sign and notarize (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     environment: apple-signing
+    # A newer manual run replaces an older one, but a release run is never
+    # cancelled: a second event must not kill a notarization in flight.
+    concurrency:
+      group: macos-signed-${{ github.event.release.tag_name || github.ref }}-${{ matrix.arch }}
+      cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
     strategy:
       # Keep both legs running so one arch's failure still yields the other's logs.
       fail-fast: false
@@ -134,3 +140,28 @@ jobs:
       - name: Remove Apple API key
         if: always()
         run: rm -f "$RUNNER_TEMP/AuthKey.p8"
+
+  # Attach both architectures' dmg and zip to the release. A job of its own, so
+  # the token that may write to the repo never shares a job with npm, the build
+  # or the Apple secrets. Runs on a published release only, once both legs pass.
+  attach:
+    name: Attach to the release
+    needs: build-signed
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: drivine-studio-macos-*-signed
+          merge-multiple: true
+          path: assets
+      # --clobber, so re-running a failed release run replaces the assets.
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          ls -l assets
+          gh release upload "$TAG" assets/*.dmg assets/*.zip --repo "$GITHUB_REPOSITORY" --clobber
