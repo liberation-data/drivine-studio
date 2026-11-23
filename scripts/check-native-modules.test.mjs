@@ -19,8 +19,9 @@ afterEach(() => {
 
 const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' })
 
-// A repo's node_modules, and a packaged one below it: sharp in the one `sharp` names, and what each argument adds.
-function layout({ sharp = 'packaged', ort = true, packagedBinding = false, installedBinding = false } = {}) {
+// A repo's node_modules, and a packaged one below it: sharp in the one `sharp` names, onnxruntime-node's bindings folder
+// in the repo's, and what each argument adds.
+function layout({ sharp = 'packaged', ort = true, installedBindings = true, packagedBinding = false, installedBinding = false } = {}) {
   dir = mkdtempSync(join(tmpdir(), 'check-native-modules-'))
   const installed = join(dir, 'node_modules')
   const packaged = join(dir, 'dist', 'app', '.next', 'standalone', 'node_modules')
@@ -33,6 +34,7 @@ function layout({ sharp = 'packaged', ort = true, packagedBinding = false, insta
       cpSync(join(root, 'node_modules', name), join(modules, name), { recursive: true, dereference: true })
   }
   if (ort) mkdirSync(join(packaged, 'onnxruntime-node'))
+  if (installedBindings) mkdirSync(join(installed, 'onnxruntime-node', 'bin', 'napi-v6'), { recursive: true })
   for (const [has, modules] of [[packagedBinding, packaged], [installedBinding, installed]]) {
     if (!has) continue
     mkdirSync(dirname(join(modules, binding)), { recursive: true })
@@ -70,6 +72,13 @@ describe('check-native-modules', () => {
     const { status, stdout } = run(packaged, installed)
     expect(status).toBe(1)
     expect(stdout).toContain(`::error::the packaged app has no ${binding}`)
+  })
+
+  it('fails when the repo has no napi-v6 bindings folder to compare with, rather than warn and pass', () => {
+    const { packaged, installed } = layout({ installedBindings: false })
+    const { status, stdout } = run(packaged, installed)
+    expect(status).toBe(1)
+    expect(stdout).toContain('::error::the repo has no onnxruntime-node/bin/napi-v6')
   })
 
   it('warns and passes where onnxruntime-node ships no binding, as on an Intel Mac', () => {

@@ -40,7 +40,12 @@ fromPackage('sharp')
 console.log(`sharp ${sharp.versions.sharp}, libvips ${sharp.versions.vips}: loads`)
 
 if (!fs.existsSync(path.join(packaged, 'onnxruntime-node'))) fail('onnxruntime-node is not in the packaged app')
-const binding = `onnxruntime-node/bin/napi-v6/${target}/onnxruntime_binding.node`
+// The folder onnxruntime-node's dist/binding.js loads its binding from. Should a new version move it, or the repo's
+// node_modules be given wrongly, the repo would seem to ship no binding and the check would pass with a warning on
+// every target; fail instead.
+const bindings = 'onnxruntime-node/bin/napi-v6'
+if (!fs.existsSync(path.join(installed, bindings))) fail(`the repo has no ${bindings} to compare the package with; has onnxruntime-node moved its bindings?`)
+const binding = `${bindings}/${target}/onnxruntime_binding.node`
 if (!fs.existsSync(path.join(packaged, binding))) {
   if (fs.existsSync(path.join(installed, binding))) fail(`the packaged app has no ${binding}, though onnxruntime-node ships one`)
   console.log(`::warning::onnxruntime-node ships no binding for ${target}, so the icons' model can't run here; the studio uses the common words' icons`)
