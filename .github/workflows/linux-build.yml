@@ -1,0 +1,172 @@
+name: Linux build
+
+# Builds the Linux Studio app with electron-builder: an AppImage, a .deb and a
+# .tar.gz, x64. Part of #77. Nothing is signed: Linux has no Gatekeeper or
+# SmartScreen to satisfy, so this needs no secrets and no environment.
+#
+# - By hand (workflow_dispatch), and on a pull request that changes the
+#   packaging: builds, checks, and keeps the packages as the run's artifacts.
+# - On a published GitHub Release: the same, from the release's tag, with the
+#   packages attached to the release, beside macos-signed.yml's.
+#
+# x64 only for now. onnxruntime-node and sharp are single-architecture native
+# modules, so the job builds on an x64 runner, where `npm ci` installs their
+# linux-x64 builds, and checks below that the packaged app loads them. arm64
+# would be a second leg on an arm64 runner (ubuntu-24.04-arm), not done here.
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - .github/workflows/linux-build.yml
+      - package.json
+      - package-lock.json
+      - next.config.ts
+      - main.cjs
+      - preload.cjs
+      - server-start.cjs
+      - native-menus.cjs
+      - build/**
+
+# Read-only by default. Only the attach job below, which runs no build code,
+# may write to the repo, and only to upload the release assets.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check (x64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    # A newer run replaces an older one on the same ref, but a release run is
+    # never cancelled, so a release isn't left without its Linux packages.
+    concurrency:
+      group: linux-build-${{ github.event.release.tag_name || github.ref }}
+      cancel-in-progress: ${{ github.event_name != 'release' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the app
+        run: npm run build
+
+      - name: Package
+        run: npx electron-builder --linux --x64 --publish never
+
+      # The packaged app must carry the linux-x64 builds of its native modules,
+      # and its own Node (Electron's, as utilityProcess runs the server) must
+      # load them. A missing or wrong-architecture .node fails here rather than
+      # on a user's first icon lookup.
+      - name: Check the native modules load
+        run: |
+          set -euo pipefail
+          root=dist/linux-unpacked
+          modules="$root/resources/app/.next/standalone/node_modules"
+          echo "Native modules in the package:"
+          find "$root" -name '*.node' -exec file {} + | sed "s|$root/||"
+          for m in sharp onnxruntime-node; do
+            test -d "$modules/$m" || { echo "::error::$m is not in the packaged app"; exit 1; }
+          done
+          ort=$(find "$modules/onnxruntime-node" -path '*linux/x64*' -name '*.node' | head -n 1)
+          test -n "$ort" || { echo "::error::no linux-x64 onnxruntime binding in the packaged app"; exit 1; }
+          # Electron's own Node, as the packaged server runs under it.
+          ELECTRON_RUN_AS_NODE=1 "$root/drivine-studio" -e '
+            const [dir, ort] = process.argv.slice(1);
+            const sharp = require(require.resolve("sharp", { paths: [dir] }));
+            console.log("sharp", sharp.versions.sharp, "libvips", sharp.versions.vips);
+            require(ort);
+            console.log("onnxruntime binding loads:", ort);
+          ' "$modules" "$ort"
+
+      # Start the AppImage as a user would, under a virtual display, and wait
+      # for the studio's server to answer. APPIMAGE_EXTRACT_AND_RUN avoids
+      # needing FUSE on the runner. --no-sandbox: see the note in the summary.
+      - name: Smoke-test the AppImage
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
+          app="$(ls dist/*.AppImage)"
+          chmod +x "$app"
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          launch() {
+            xvfb-run -a "$app" "$@" > "$RUNNER_TEMP/app.log" 2>&1 &
+            pid=$!
+            for _ in $(seq 1 90); do
+              if curl -fsS -o /dev/null http://localhost:5187/; then kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; return 0; fi
+              kill -0 "$pid" 2>/dev/null || break
+              sleep 2
+            done
+            kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+            return 1
+          }
+          # Informational: with Chromium's sandbox on, as a user's plain
+          # double-click runs it. Ubuntu 23.10 and later restrict the user
+          # namespaces that sandbox needs, so this may fail on a stock system.
+          if launch; then sandboxed="starts"; else sandboxed="does NOT start (see the log)"; tail -n 20 "$RUNNER_TEMP/app.log" || true; fi
+          stop() {
+            pkill -f drivine-studio || true
+            for _ in $(seq 1 15); do curl -fsS -o /dev/null http://localhost:5187/ || return 0; sleep 1; done
+            echo "::error::something still answers on localhost:5187"; exit 1
+          }
+          stop
+          # The gate: the app itself starts and its server answers.
+          if ! launch --no-sandbox; then
+            echo "::error::the AppImage did not answer on localhost:5187"
+            cat "$RUNNER_TEMP/app.log"
+            exit 1
+          fi
+          stop
+          {
+            echo "### Drivine Studio, Linux x64"
+            echo
+            echo "- AppImage with --no-sandbox: starts, server answers"
+            echo "- AppImage with the sandbox on (a plain double-click): $sandboxed"
+            echo
+            ls -l dist/*.AppImage dist/*.deb dist/*.tar.gz | awk '{print "- " $NF ": " $5 " bytes"}'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: drivine-studio-linux-x64
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  # Attach the packages to the release. A job of its own, so the token that may
+  # write to the repo never shares a job with npm or the build. Runs on a
+  # published release only.
+  attach:
+    name: Attach to the release
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: drivine-studio-linux-x64
+          path: assets
+      # --clobber, so re-running a failed release run replaces the assets.
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          ls -l assets
+          gh release upload "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --clobber

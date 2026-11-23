@@ -6,6 +6,7 @@
   "private": true,
   "description": "Browse a Drivine model, load it, and see the graph. Reads, and writes only where a connection allows it.",
   "license": "Apache-2.0",
+  "homepage": "https://drivine.org",
   "scripts": {
     "dev": "next dev --port 5187",
     "build": "next build && mkdir -p .next/standalone/.next/static && cp -R .next/static/. .next/standalone/.next/static/ && (test ! -d public || cp -R public/. .next/standalone/public/)",
@@ -88,9 +89,13 @@
     },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb",
+        "tar.gz"
       ],
-      "category": "Development"
+      "category": "Development",
+      "artifactName": "drivine-studio-linux-${arch}.${ext}",
+      "maintainer": "Jasper Blues <jasper@liberation-data.com>"
     },
     "files": [
       ".next/standalone/**/*",
