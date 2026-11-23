@@ -30,6 +30,7 @@ on:
       - native-menus.cjs
       - build/**
       - scripts/check-native-modules.cjs
+      - scripts/check-native-modules.test.mjs
       # The icon routes and the model code behind them: what next.config.ts's
       # tracing includes are keyed on, and what loads the native modules.
       - src/app/api/icons/**

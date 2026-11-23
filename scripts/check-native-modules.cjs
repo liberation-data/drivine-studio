@@ -24,10 +24,19 @@ function fail(message) {
   process.exit(1)
 }
 
+// The app is packaged inside the checkout (dist/), so a module, or a module's dependency, left out of the package still
+// resolves upward to the repo's node_modules and loads. Fail on any file loaded from outside the package.
+const packagedReal = fs.realpathSync(packaged) + path.sep
+function fromPackage(what) {
+  const outside = Object.keys(require.cache).filter(file => file !== __filename && !file.startsWith(packagedReal))
+  if (outside.length) fail(`${what} loads ${outside.length} files from outside the packaged app, which lacks them: ${outside.slice(0, 3).join(', ')}…`)
+}
+
 const target = `${process.platform}/${process.arch}`
 console.log(`Checking the native modules for ${target} in ${packaged}`)
 
 const sharp = require(require.resolve('sharp', { paths: [packaged] }))
+fromPackage('sharp')
 console.log(`sharp ${sharp.versions.sharp}, libvips ${sharp.versions.vips}: loads`)
 
 if (!fs.existsSync(path.join(packaged, 'onnxruntime-node'))) fail('onnxruntime-node is not in the packaged app')
@@ -43,4 +52,5 @@ console.log(`${binding}: loads`)
 // As transformers loads it, which takes in onnxruntime-common's CommonJS build too.
 const ort = require(require.resolve('onnxruntime-node', { paths: [packaged] }))
 if (typeof ort.InferenceSession !== 'function') fail('onnxruntime-node loads but has no InferenceSession')
+fromPackage('onnxruntime-node')
 console.log('onnxruntime-node: loads')
