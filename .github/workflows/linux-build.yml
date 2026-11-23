@@ -29,6 +29,10 @@ on:
       - server-start.cjs
       - native-menus.cjs
       - build/**
+      # The icon routes and the model code behind them: what next.config.ts's
+      # tracing includes are keyed on, and what loads the native modules.
+      - src/app/api/icons/**
+      - src/server/icons/**
 
 # Read-only by default. Only the attach job below, which runs no build code,
 # may write to the repo, and only to upload the release assets.
@@ -120,6 +124,7 @@ jobs:
           # double-click runs it. Ubuntu 23.10 and later restrict the user
           # namespaces that sandbox needs, so this may fail on a stock system.
           if launch; then sandboxed="starts"; else sandboxed="does NOT start (see the log)"; tail -n 20 "$RUNNER_TEMP/app.log" || true; fi
+          echo "With the sandbox on, the AppImage $sandboxed"
           stop() {
             pkill -f drivine-studio || true
             for _ in $(seq 1 15); do curl -fsS -o /dev/null http://localhost:5187/ || return 0; sleep 1; done
@@ -151,6 +156,8 @@ jobs:
             dist/*.deb
             dist/*.tar.gz
           if-no-files-found: error
+          # About a gigabyte a run; a release keeps its own copy as release assets.
+          retention-days: 7
 
   # Attach the packages to the release. A job of its own, so the token that may
   # write to the repo never shares a job with npm or the build. Runs on a
