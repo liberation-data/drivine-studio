@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -82,5 +82,30 @@ describe('check-native-modules', () => {
   it('fails when a binding in the package does not load', () => {
     const { packaged, installed } = layout({ packagedBinding: true, installedBinding: true })
     expect(run(packaged, installed).status).not.toBe(0)
+  }, 20_000)
+
+  // The real onnxruntime-node, with only this target's binding copied, where the repo has one (not on an Intel Mac).
+  const realOrt = existsSync(join(root, 'node_modules', binding))
+  function withRealOrt(layoutDirs, commonIn) {
+    const from = join(root, 'node_modules', 'onnxruntime-node')
+    const to = join(layoutDirs.packaged, 'onnxruntime-node')
+    for (const part of ['package.json', 'dist', dirname(binding.slice('onnxruntime-node/'.length))])
+      cpSync(join(from, part), join(to, part), { recursive: true, dereference: true })
+    cpSync(join(root, 'node_modules', 'onnxruntime-common'), join(layoutDirs[commonIn], 'onnxruntime-common'), { recursive: true, dereference: true })
+    return layoutDirs
+  }
+
+  it.runIf(realOrt)('passes when everything loads from the package', () => {
+    const { packaged, installed } = withRealOrt(layout(), 'packaged')
+    const { status, stdout } = run(packaged, installed)
+    expect(status).toBe(0)
+    expect(stdout).toContain('onnxruntime-node: loads')
+  }, 20_000)
+
+  it.runIf(realOrt)('fails when a dependency of onnxruntime-node loads from the repo above the package', () => {
+    const { packaged, installed } = withRealOrt(layout(), 'installed')
+    const { status, stdout } = run(packaged, installed)
+    expect(status).toBe(1)
+    expect(stdout).toContain('::error::onnxruntime-node loads')
   }, 20_000)
 })
