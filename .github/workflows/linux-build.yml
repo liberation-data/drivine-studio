@@ -101,7 +101,7 @@ jobs:
 
       # Start the AppImage as a user would, under a virtual display, and wait
       # for the studio's server to answer. APPIMAGE_EXTRACT_AND_RUN avoids
-      # needing FUSE on the runner. --no-sandbox: see the note in the summary.
+      # needing FUSE on the runner. --no-sandbox: see the note below.
       - name: Smoke-test the AppImage
         run: |
           set -euo pipefail
