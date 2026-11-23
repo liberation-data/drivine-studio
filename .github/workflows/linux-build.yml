@@ -29,6 +29,7 @@ on:
       - server-start.cjs
       - native-menus.cjs
       - build/**
+      - scripts/check-native-modules.cjs
       # The icon routes and the model code behind them: what next.config.ts's
       # tracing includes are keyed on, and what loads the native modules.
       - src/app/api/icons/**
@@ -80,24 +81,8 @@ jobs:
           modules="$root/resources/app/.next/standalone/node_modules"
           echo "Native modules in the package:"
           find "$root" -name '*.node' -exec file {} + | sed "s|$root/||"
-          for m in sharp onnxruntime-node; do
-            test -d "$modules/$m" || { echo "::error::$m is not in the packaged app"; exit 1; }
-          done
-          ort=$(find "$modules/onnxruntime-node" -path '*linux/x64*' -name '*.node' | head -n 1)
-          test -n "$ort" || { echo "::error::no linux-x64 onnxruntime binding in the packaged app"; exit 1; }
           # Electron's own Node, as the packaged server runs under it.
-          ELECTRON_RUN_AS_NODE=1 "$root/drivine-studio" -e '
-            const path = require("node:path");
-            const [dir, binding] = process.argv.slice(1).map(p => path.resolve(p));
-            const sharp = require(require.resolve("sharp", { paths: [dir] }));
-            console.log("sharp", sharp.versions.sharp, "libvips", sharp.versions.vips);
-            require(binding);
-            console.log("onnxruntime binding loads:", path.relative(dir, binding));
-            // As transformers loads it, which takes in onnxruntime-common too.
-            const ort = require(require.resolve("onnxruntime-node", { paths: [dir] }));
-            if (typeof ort.InferenceSession !== "function") throw new Error("onnxruntime-node has no InferenceSession");
-            console.log("onnxruntime-node loads");
-          ' "$modules" "$ort"
+          ELECTRON_RUN_AS_NODE=1 "$root/drivine-studio" scripts/check-native-modules.cjs "$modules" node_modules
 
       # Start the AppImage as a user would, under a virtual display, and wait
       # for the studio's server to answer. APPIMAGE_EXTRACT_AND_RUN avoids

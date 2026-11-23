@@ -128,6 +128,21 @@ jobs:
           xcrun stapler validate "$APP"
           spctl -a -vvv -t exec "$APP"
 
+      # The signed app must carry, and load, the native modules its server
+      # needs for this architecture: sharp, and onnxruntime-node for the icons'
+      # model. v0.1.0 shipped without onnxruntime-node, and the studio fell back
+      # to the common words' icons without saying so. Run under the app's own
+      # Electron, as its server runs. On x64 onnxruntime-node ships no binding,
+      # so the script warns there and passes. Same script as linux-build.yml.
+      - name: Check the native modules load
+        run: |
+          set -euo pipefail
+          APP="$(ls -d dist/mac*/*.app | head -n 1)"
+          modules="$APP/Contents/Resources/app/.next/standalone/node_modules"
+          echo "Native modules in the app:"
+          find "$APP/Contents/Resources/app" -name '*.node' -exec file {} + | sed "s|$APP/Contents/Resources/app/||"
+          ELECTRON_RUN_AS_NODE=1 "$APP/Contents/MacOS/Drivine Studio" scripts/check-native-modules.cjs "$modules" node_modules
+
       - name: Upload signed artifacts
         uses: actions/upload-artifact@v4
         with:
