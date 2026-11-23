@@ -83,11 +83,16 @@ jobs:
           test -n "$ort" || { echo "::error::no linux-x64 onnxruntime binding in the packaged app"; exit 1; }
           # Electron's own Node, as the packaged server runs under it.
           ELECTRON_RUN_AS_NODE=1 "$root/drivine-studio" -e '
-            const [dir, ort] = process.argv.slice(1);
+            const path = require("node:path");
+            const [dir, binding] = process.argv.slice(1).map(p => path.resolve(p));
             const sharp = require(require.resolve("sharp", { paths: [dir] }));
             console.log("sharp", sharp.versions.sharp, "libvips", sharp.versions.vips);
-            require(ort);
-            console.log("onnxruntime binding loads:", ort);
+            require(binding);
+            console.log("onnxruntime binding loads:", path.relative(dir, binding));
+            // As transformers loads it, which takes in onnxruntime-common too.
+            const ort = require(require.resolve("onnxruntime-node", { paths: [dir] }));
+            if (typeof ort.InferenceSession !== "function") throw new Error("onnxruntime-node has no InferenceSession");
+            console.log("onnxruntime-node loads");
           ' "$modules" "$ort"
 
       # Start the AppImage as a user would, under a virtual display, and wait
