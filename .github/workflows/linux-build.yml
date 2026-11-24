@@ -1,8 +1,8 @@
 name: Linux build
 
-# Builds the Linux Studio app with electron-builder: an AppImage, a .deb and an
-# .rpm, x64. Part of #77. Nothing is signed: Linux has no Gatekeeper or
-# SmartScreen to satisfy, so this needs no secrets and no environment.
+# Builds the Linux Studio app with electron-builder: a .deb and an .rpm, x64.
+# Part of #77. Nothing is signed: Linux has no Gatekeeper or SmartScreen to
+# satisfy, so this needs no secrets and no environment.
 #
 # - By hand (workflow_dispatch), and on a pull request that changes the
 #   packaging: builds, checks, and keeps the packages as the run's artifacts.
@@ -90,16 +90,16 @@ jobs:
           # Electron's own Node, as the packaged server runs under it.
           ELECTRON_RUN_AS_NODE=1 "$root/drivine-studio" scripts/check-native-modules.cjs "$modules" node_modules
 
-      # Start the AppImage as a user would, under a virtual display, and wait
-      # for the studio's server to answer. APPIMAGE_EXTRACT_AND_RUN avoids
-      # needing FUSE on the runner. --no-sandbox: see the note below.
-      - name: Smoke-test the AppImage
+      # Start the packaged app under a virtual display and wait for the studio's
+      # server to answer. We run the unpacked build — the same binary that goes
+      # into the .deb and .rpm — with --no-sandbox, because Chromium's SUID
+      # sandbox helper isn't set up in the unpacked tree (the installed package
+      # sets it up); that's an install-time concern, not what this gate checks.
+      - name: Smoke-test the app
         run: |
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb > /dev/null
-          app="$(ls dist/*.AppImage)"
-          chmod +x "$app"
-          export APPIMAGE_EXTRACT_AND_RUN=1
+          app="dist/linux-unpacked/drivine-studio"
           launch() {
             xvfb-run -a "$app" "$@" > "$RUNNER_TEMP/app.log" 2>&1 &
             pid=$!
@@ -111,20 +111,14 @@ jobs:
             kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
             return 1
           }
-          # Informational: with Chromium's sandbox on, as a user's plain
-          # double-click runs it. Ubuntu 23.10 and later restrict the user
-          # namespaces that sandbox needs, so this may fail on a stock system.
-          if launch; then sandboxed="starts"; else sandboxed="does NOT start (see the log)"; tail -n 20 "$RUNNER_TEMP/app.log" || true; fi
-          echo "With the sandbox on, the AppImage $sandboxed"
           stop() {
             pkill -f drivine-studio || true
             for _ in $(seq 1 15); do curl -fsS -o /dev/null http://localhost:5187/ || return 0; sleep 1; done
             echo "::error::something still answers on localhost:5187"; exit 1
           }
-          stop
           # The gate: the app itself starts and its server answers.
           if ! launch --no-sandbox; then
-            echo "::error::the AppImage did not answer on localhost:5187"
+            echo "::error::the app did not answer on localhost:5187"
             cat "$RUNNER_TEMP/app.log"
             exit 1
           fi
@@ -132,10 +126,9 @@ jobs:
           {
             echo "### Drivine Studio, Linux x64"
             echo
-            echo "- AppImage with --no-sandbox: starts, server answers"
-            echo "- AppImage with the sandbox on (a plain double-click): $sandboxed"
+            echo "- the app starts and its server answers (--no-sandbox, under xvfb)"
             echo
-            ls -l dist/*.AppImage dist/*.deb dist/*.rpm | awk '{print "- " $NF ": " $5 " bytes"}'
+            ls -l dist/*.deb dist/*.rpm | awk '{print "- " $NF ": " $5 " bytes"}'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the packages
@@ -143,7 +136,6 @@ jobs:
         with:
           name: drivine-studio-linux-x64
           path: |
-            dist/*.AppImage
             dist/*.deb
             dist/*.rpm
           if-no-files-found: error
