@@ -1,8 +1,8 @@
 name: Linux build
 
-# Builds the Linux Studio app with electron-builder: an AppImage, a .deb, an
-# .rpm and a .tar.gz, x64. Part of #77. Nothing is signed: Linux has no
-# Gatekeeper or SmartScreen to satisfy, so this needs no secrets and no environment.
+# Builds the Linux Studio app with electron-builder: an AppImage, a .deb and an
+# .rpm, x64. Part of #77. Nothing is signed: Linux has no Gatekeeper or
+# SmartScreen to satisfy, so this needs no secrets and no environment.
 #
 # - By hand (workflow_dispatch), and on a pull request that changes the
 #   packaging: builds, checks, and keeps the packages as the run's artifacts.
@@ -135,7 +135,7 @@ jobs:
             echo "- AppImage with --no-sandbox: starts, server answers"
             echo "- AppImage with the sandbox on (a plain double-click): $sandboxed"
             echo
-            ls -l dist/*.AppImage dist/*.deb dist/*.rpm dist/*.tar.gz | awk '{print "- " $NF ": " $5 " bytes"}'
+            ls -l dist/*.AppImage dist/*.deb dist/*.rpm | awk '{print "- " $NF ": " $5 " bytes"}'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the packages
@@ -146,7 +146,6 @@ jobs:
             dist/*.AppImage
             dist/*.deb
             dist/*.rpm
-            dist/*.tar.gz
           if-no-files-found: error
           # About a gigabyte a run; a release keeps its own copy as release assets.
           retention-days: 7
