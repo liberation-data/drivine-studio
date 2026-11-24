@@ -202,8 +202,9 @@ npm ci
   Drag it to Applications. It is signed for this Mac alone, which is all a Mac needs to run what it built.
 - **Windows:** `npm run package:win` makes `dist\win-unpacked\Drivine Studio.exe`, to run where it is;
   `npm run package:win:installer` makes an installer in `dist\` as well. Build it on Windows.
-- **Linux:** `npm run package:linux:appimage` makes an AppImage in `dist/`, with a .deb and a .tar.gz beside it. Run
-  `chmod +x` on the AppImage, then run it. Build it on Linux.
+- **Linux:** `npm run package:linux:appimage` makes an AppImage in `dist/`, with a .deb and an .rpm beside it. Run
+  `chmod +x` on the AppImage, then run it. Build it on Linux. The .rpm needs `rpmbuild` on the machine
+  (`sudo dnf install rpm-build`, or `sudo apt install rpm`).
 
 The app serves the studio on port 5187, as `npm run dev` does, so stop a dev server before opening it, or open it from
 a terminal with `PORT` set to another port. To update, `git pull`, `npm ci` and package again.

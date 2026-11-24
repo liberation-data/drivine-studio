@@ -1,7 +1,7 @@
 name: Linux build
 
-# Builds the Linux Studio app with electron-builder: an AppImage, a .deb and a
-# .tar.gz, x64. Part of #77. Nothing is signed: Linux has no Gatekeeper or
+# Builds the Linux Studio app with electron-builder: an AppImage, a .deb and an
+# .rpm, x64. Part of #77. Nothing is signed: Linux has no Gatekeeper or
 # SmartScreen to satisfy, so this needs no secrets and no environment.
 #
 # - By hand (workflow_dispatch), and on a pull request that changes the
@@ -64,6 +64,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # electron-builder shells out to rpmbuild to make the .rpm; it isn't on
+      # the stock Ubuntu runner, so the .rpm target fails without it.
+      - name: Install rpm tooling
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm > /dev/null
 
       - name: Build the app
         run: npm run build
@@ -130,7 +135,7 @@ jobs:
             echo "- AppImage with --no-sandbox: starts, server answers"
             echo "- AppImage with the sandbox on (a plain double-click): $sandboxed"
             echo
-            ls -l dist/*.AppImage dist/*.deb dist/*.tar.gz | awk '{print "- " $NF ": " $5 " bytes"}'
+            ls -l dist/*.AppImage dist/*.deb dist/*.rpm | awk '{print "- " $NF ": " $5 " bytes"}'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the packages
@@ -140,7 +145,7 @@ jobs:
           path: |
             dist/*.AppImage
             dist/*.deb
-            dist/*.tar.gz
+            dist/*.rpm
           if-no-files-found: error
           # About a gigabyte a run; a release keeps its own copy as release assets.
           retention-days: 7
