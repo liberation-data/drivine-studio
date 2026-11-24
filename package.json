@@ -1,7 +1,7 @@
 {
   "name": "drivine-studio",
   "productName": "Drivine Studio",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "main": "main.cjs",
   "private": true,
   "description": "Browse a Drivine model, load it, and see the graph. Reads, and writes only where a connection allows it.",
