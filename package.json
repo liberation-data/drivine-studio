@@ -20,7 +20,7 @@
     "package:win": "npm run build && electron-builder --win --dir",
     "package:win:installer": "npm run build && electron-builder --win",
     "package:linux": "npm run build && electron-builder --linux --dir",
-    "package:linux:appimage": "npm run build && electron-builder --linux",
+    "package:linux:installers": "npm run build && electron-builder --linux",
     "package:all": "npm run build && electron-builder --mac --win --linux",
     "test": "vitest run --exclude '**/*.db.test.ts' --exclude '**/*.model.test.ts' --exclude '**/node_modules/**' --exclude '.next/**'",
     "test:db": "vitest run db.test",
@@ -89,7 +89,6 @@
     },
     "linux": {
       "target": [
-        "AppImage",
         "deb",
         "rpm"
       ],
