@@ -11,19 +11,19 @@ name: macOS signed build
 # PER-ARCH, NOT UNIVERSAL. The app's icon feature loads @huggingface/transformers
 # on the Next.js server (src/server/icons/labels.ts), which pulls in the native
 # modules onnxruntime-node and sharp. Those ship as single-architecture darwin
-# binaries (@img/sharp-darwin-arm64 vs -x64, and onnxruntime-node's .node), and
+# binaries (@img/sharp-darwin-arm64, and onnxruntime-node's .node), and
 # with output: 'standalone' + serverExternalPackages they are copied into
 # .next/standalone/node_modules and signed inside the .app. A universal (lipo)
-# build cannot merge single-arch .node files cleanly, so we build arm64 and x64
-# separately, each on a runner of its own architecture so `npm ci` fetches that
-# arch's native binaries natively (no cross-arch install).
+# build cannot merge single-arch .node files cleanly, so we build a single arm64
+# app on an Apple-silicon runner, where `npm ci` fetches the arm64 native
+# binaries natively. Apple Silicon only — the Intel (x64) build was dropped.
 
 on:
-  # By hand: builds, signs and notarizes both architectures and keeps them as
-  # the run's artifacts. Nothing is attached to a release.
+  # By hand: builds, signs and notarizes the arm64 app and keeps it as the
+  # run's artifacts. Nothing is attached to a release.
   workflow_dispatch:
   # On a published GitHub Release: the same build, from the release's tag, with
-  # the dmg and zip for each architecture attached to the release. The tag must
+  # the dmg and zip attached to the release. The tag must
   # match v*, as the `apple-signing` environment allows only main and v* tags.
   release:
     types: [published]
@@ -44,16 +44,12 @@ jobs:
       group: macos-signed-${{ github.event.release.tag_name || github.ref }}-${{ matrix.arch }}
       cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
     strategy:
-      # Keep both legs running so one arch's failure still yields the other's logs.
       fail-fast: false
       matrix:
         include:
-          # Arch-matched runners: macos-15 is Apple silicon, macos-15-intel is the Intel image
-          # (macos-13, the old Intel image, is retired).
+          # Apple Silicon only. macos-15 is the Apple-silicon runner image.
           - arch: arm64
             runner: macos-15
-          - arch: x64
-            runner: macos-15-intel
 
     steps:
       - name: Checkout
@@ -129,11 +125,10 @@ jobs:
           spctl -a -vvv -t exec "$APP"
 
       # The signed app must carry, and load, the native modules its server
-      # needs for this architecture: sharp, and onnxruntime-node for the icons'
-      # model. v0.1.0 shipped without onnxruntime-node, and the studio fell back
-      # to the common words' icons without saying so. Run under the app's own
-      # Electron, as its server runs. On x64 onnxruntime-node ships no binding,
-      # so the script warns there and passes. Same script as linux-build.yml.
+      # needs: sharp, and onnxruntime-node for the icons' model. v0.1.0 shipped
+      # without onnxruntime-node, and the studio fell back to the common words'
+      # icons without saying so. Run under the app's own Electron, as its server
+      # runs. Same script as linux-build.yml.
       - name: Check the native modules load
         run: |
           set -euo pipefail
@@ -156,9 +151,9 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/AuthKey.p8"
 
-  # Attach both architectures' dmg and zip to the release. A job of its own, so
+  # Attach the macOS dmg and zip to the release. A job of its own, so
   # the token that may write to the repo never shares a job with npm, the build
-  # or the Apple secrets. Runs on a published release only, once both legs pass.
+  # or the Apple secrets. Runs on a published release only, once the build passes.
   attach:
     name: Attach to the release
     needs: build-signed
